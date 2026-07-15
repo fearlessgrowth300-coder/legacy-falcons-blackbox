@@ -421,6 +421,11 @@ public class DeviceProfile {
         setBuild("PRODUCT", product);
         setBuild("MANUFACTURER", manufacturer);
         setBuild("BOARD", board);
+        // Build.HARDWARE (Java) was leaking the REAL SoC (e.g. exynos980) while BOARD/MODEL claimed a
+        // different device (kirin980/HUAWEI) — an obvious "this fingerprint is fake" mismatch apps like
+        // Instagram flag → session logout. Set it to the profile's SoC so Java reads are coherent. We do
+        // NOT push ro.hardware natively (kept real so the GPU driver loads correctly — no EGL crash).
+        setBuild("HARDWARE", board);
         setBuild("FINGERPRINT", fingerprint);
         setBuild("SERIAL", serial);
         setBuild("ID", buildId);
