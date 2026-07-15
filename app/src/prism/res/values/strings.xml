@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Prism variant. Must match manifestPlaceholders[procToken] in app/build.gradle. -->
+    <string name="black_box_proc_token">px</string>
+    <string name="black_box_service_name">:prx</string>
+</resources>

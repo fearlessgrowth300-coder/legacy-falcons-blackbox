@@ -1,0 +1,160 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.jetbrains.kotlin.android)
+}
+
+android {
+
+    namespace 'top.niunaijun.blackboxa'
+    compileSdk rootProject.ext.compileSdkVersion
+    ndkVersion = "29.0.13846066"
+    defaultConfig {
+        applicationId "top.niunaijun.blackbox"
+        minSdk rootProject.ext.minSdk
+        targetSdk rootProject.ext.targetSdkVersion
+        versionCode rootProject.ext.versionCode
+        versionName rootProject.ext.versionName
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        // Default identity (the "orig" flavor keeps this). Each variant overrides it.
+        // procToken feeds Bcore's stub <process> names ("<pkg>:<procToken><n>"). Keep it in
+        // sync with each flavor's black_box_proc_token string resource (read at runtime).
+        manifestPlaceholders = [appLabel: "BlackBox", procToken: "p"]
+        buildConfigField "String", "VARIANT_TAG", "\"orig\""
+
+        splits {
+            abi {
+                enable true
+                reset()
+                
+                include 'armeabi-v7a', "arm64-v8a"
+                universalApk true
+            }
+        }
+    }
+
+    // ── Build variants ──────────────────────────────────────────────────────
+    // Ship the same container under several distinct package names + labels so
+    // millions of installs don't all present an identical host identity. Each
+    // flavor is a fully separate installable app (own applicationId → own data
+    // dir → own bridge authority "${applicationId}.bridge"). VARIANT_TAG lets
+    // code branch on the flavor for small behavioral differences.
+    flavorDimensions "brand"
+    productFlavors {
+        orig {
+            dimension "brand"
+            // keeps the default applicationId / label / tag from defaultConfig
+        }
+        nova {
+            dimension "brand"
+            applicationId "com.novspace.box"
+            manifestPlaceholders = [appLabel: "NovSpace", procToken: "np"]
+            buildConfigField "String", "VARIANT_TAG", "\"nova\""
+        }
+        vault {
+            dimension "brand"
+            applicationId "app.cloudvault.multi"
+            manifestPlaceholders = [appLabel: "CloudVault", procToken: "cv"]
+            buildConfigField "String", "VARIANT_TAG", "\"vault\""
+        }
+        prism {
+            dimension "brand"
+            applicationId "io.prismhub.clone"
+            manifestPlaceholders = [appLabel: "Prism", procToken: "px"]
+            buildConfigField "String", "VARIANT_TAG", "\"prism\""
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+    buildFeatures {
+        viewBinding true
+        buildConfig true
+    }
+    kotlinOptions {
+        jvmTarget = '21'
+    }
+
+    applicationVariants.configureEach { variant ->
+        variant.outputs.configureEach { output ->
+            output.outputFileName = "BlackBox-${variant.flavorName}_${variant.versionName}_${output.baseName}.apk"
+        }
+    }
+}
+
+// ── Per-variant native engine lib name ───────────────────────────────────────
+// The engine is built once as libblackbox.so, but each variant should ship it under a
+// DIFFERENT filename so all 4 don't share the tell-tale "libblackbox.so" in /proc/self/maps
+// or the APK's lib dir. Rename the stripped .so right before it's packaged. Keep this map in
+// sync with VariantConfig.libName() (Bcore) and NativeCore's System.loadLibrary().
+def variantLibBase = [Nova: 'nvspace', Vault: 'cvault', Prism: 'prism']
+tasks.configureEach { theTask ->
+    def m = (theTask.name =~ /^strip(Nova|Vault|Prism)(Debug|Release)DebugSymbols$/)
+    if (m.matches()) {
+        def base = variantLibBase[m.group(1)]
+        theTask.doLast {
+            theTask.outputs.files.each { root ->
+                fileTree(root).matching { include '**/libblackbox.so' }.each { f ->
+                    def dest = new File(f.parentFile, "lib${base}.so")
+                    if (dest.exists()) dest.delete()
+                    f.renameTo(dest)
+                    println "variant-lib: ${theTask.name} -> ${dest.name}"
+                }
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: "libs", include: ["*.jar", "*.aar"])
+    implementation project(':Bcore')
+
+    implementation libs.appcompat
+    implementation libs.material
+    implementation libs.constraintlayout
+    implementation libs.core.ktx
+    testImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.espresso.core
+
+    implementation "androidx.preference:preference-ktx:1.1.1"
+    
+    implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:2.3.1"
+    implementation "androidx.lifecycle:lifecycle-livedata-ktx:2.3.1"
+    implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.3.1"
+
+    
+    implementation 'androidx.recyclerview:recyclerview:1.2.1'
+    implementation 'com.gitee.cbfg5210:RVAdapter:0.3.7'
+
+    
+    implementation 'com.github.Othershe:CornerLabelView:1.0.0'
+    
+    implementation 'com.github.nukc.stateview:kotlin:2.2.0'
+    
+    implementation 'com.github.Ferfalk:SimpleSearchView:0.2.0'
+    implementation 'com.tbuonomo:dotsindicator:4.2'
+    
+    implementation 'org.osmdroid:osmdroid-android:6.1.11'
+    
+    implementation 'com.afollestad.material-dialogs:core:3.3.0'
+    implementation 'com.afollestad.material-dialogs:input:3.3.0'
+
+
+
+
+
+    
+    implementation 'androidx.work:work-runtime:2.7.1'
+
+}

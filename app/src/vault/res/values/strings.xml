@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- CloudVault variant. Must match manifestPlaceholders[procToken] in app/build.gradle. -->
+    <string name="black_box_proc_token">cv</string>
+    <string name="black_box_service_name">:cvx</string>
+</resources>

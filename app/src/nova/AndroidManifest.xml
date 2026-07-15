@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Per-variant proxy-stub component count: remove the stubs above this variant's"
+         pool size (VariantConfig.stubPoolSize) so the declared component footprint
+         differs from the other variants. Indices 46..49 are never used at runtime. -->
+    <application>
+        <activity android:name="top.niunaijun.blackbox.proxy.ProxyActivity$P46" tools:node="remove" />
+        <activity android:name="top.niunaijun.blackbox.proxy.TransparentProxyActivity$P46" tools:node="remove" />
+        <activity android:name="top.niunaijun.blackbox.proxy.ProxyPendingActivity$P46" tools:node="remove" />
+        <service android:name="top.niunaijun.blackbox.proxy.ProxyService$P46" tools:node="remove" />
+        <service android:name="top.niunaijun.blackbox.proxy.ProxyJobService$P46" tools:node="remove" />
+        <activity android:name="top.niunaijun.blackbox.proxy.ProxyActivity$P47" tools:node="remove" />
+        <activity android:name="top.niunaijun.blackbox.proxy.TransparentProxyActivity$P47" tools:node="remove" />
+        <activity android:name="top.niunaijun.blackbox.proxy.ProxyPendingActivity$P47" tools:node="remove" />
+        <service android:name="top.niunaijun.blackbox.proxy.ProxyService$P47" tools:node="remove" />
+        <service android:name="top.niunaijun.blackbox.proxy.ProxyJobService$P47" tools:node="remove" />
+        <activity android:name="top.niunaijun.blackbox.proxy.ProxyActivity$P48" tools:node="remove" />
+        <activity android:name="top.niunaijun.blackbox.proxy.TransparentProxyActivity$P48" tools:node="remove" />
+        <activity android:name="top.niunaijun.blackbox.proxy.ProxyPendingActivity$P48" tools:node="remove" />
+        <service android:name="top.niunaijun.blackbox.proxy.ProxyService$P48" tools:node="remove" />
+        <service android:name="top.niunaijun.blackbox.proxy.ProxyJobService$P48" tools:node="remove" />
+        <activity android:name="top.niunaijun.blackbox.proxy.ProxyActivity$P49" tools:node="remove" />
+        <activity android:name="top.niunaijun.blackbox.proxy.TransparentProxyActivity$P49" tools:node="remove" />
+        <activity android:name="top.niunaijun.blackbox.proxy.ProxyPendingActivity$P49" tools:node="remove" />
+        <service android:name="top.niunaijun.blackbox.proxy.ProxyService$P49" tools:node="remove" />
+        <service android:name="top.niunaijun.blackbox.proxy.ProxyJobService$P49" tools:node="remove" />
+    </application>
+</manifest>

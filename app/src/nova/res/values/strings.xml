@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- NovSpace variant: diverge the stub + server process names from the default BlackBox
+         signature. Must match manifestPlaceholders[procToken] in app/build.gradle. -->
+    <string name="black_box_proc_token">np</string>
+    <string name="black_box_service_name">:nvx</string>
+</resources>
