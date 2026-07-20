@@ -286,11 +286,14 @@ class AppsRepository {
                         return@forEachIndexed
                     }
 
-                    val customName = AppManager.mRemarkSharedPreferences
-                            .getString("cloneName_${userId}_${applicationInfo.packageName}", null)
+                    val fallbackName = safeLoadAppLabel(applicationInfo)
                     val info =
                             AppInfo(
-                                    if (!customName.isNullOrBlank()) customName else safeLoadAppLabel(applicationInfo),
+                                    top.niunaijun.blackboxa.util.CloneNameResolver.resolve(
+                                            userId,
+                                            applicationInfo.packageName,
+                                            fallbackName
+                                    ),
                                     safeLoadAppIcon(
                                             applicationInfo
                                     ),
@@ -418,7 +421,6 @@ class AppsRepository {
             } else {
                 resultLiveData.postValue(getString(R.string.install_fail, installResult.msg))
             }
-            scanUser()
         } catch (e: Exception) {
             Log.e(TAG, "Error installing APK: ${e.message}")
             resultLiveData.postValue("Installation failed: ${e.message}")
@@ -429,7 +431,6 @@ class AppsRepository {
         try {
             BlackBoxCore.get().uninstallPackageAsUser(packageName, userID)
             updateAppSortList(userID, packageName, false)
-            scanUser()
             resultLiveData.postValue(getString(R.string.uninstall_success))
         } catch (e: Exception) {
             Log.e(TAG, "Error uninstalling APK: ${e.message}")
@@ -457,33 +458,6 @@ class AppsRepository {
         }
     }
 
-    
-    private fun scanUser() {
-        try {
-            val blackBoxCore = BlackBoxCore.get()
-            val userList = blackBoxCore.users
-
-            if (userList.isEmpty()) {
-                return
-            }
-
-            val id = userList.last().id
-
-            if (blackBoxCore.getInstalledApplications(0, id).isEmpty()) {
-                blackBoxCore.deleteUser(id)
-                AppManager.mRemarkSharedPreferences.edit().apply {
-                    remove("Remark$id")
-                    remove("AppList$id")
-                    apply()
-                }
-                scanUser()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in scanUser: ${e.message}")
-        }
-    }
-
-    
     private fun updateAppSortList(userID: Int, pkg: String, isAdd: Boolean) {
         try {
             val savedSortList = AppManager.mRemarkSharedPreferences.getString("AppList$userID", "")

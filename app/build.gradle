@@ -3,6 +3,17 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.android)
 }
 
+def suiteKeystorePath = providers.environmentVariable('SHIELD_SUITE_KEYSTORE')
+        .orElse(providers.gradleProperty('shieldSuiteKeystore')).orNull
+def suiteStorePassword = providers.environmentVariable('SHIELD_SUITE_STORE_PASSWORD')
+        .orElse(providers.gradleProperty('shieldSuiteStorePassword')).orNull
+def suiteKeyAlias = providers.environmentVariable('SHIELD_SUITE_KEY_ALIAS')
+        .orElse(providers.gradleProperty('shieldSuiteKeyAlias')).orNull
+def suiteKeyPassword = providers.environmentVariable('SHIELD_SUITE_KEY_PASSWORD')
+        .orElse(providers.gradleProperty('shieldSuiteKeyPassword')).orNull
+def suiteSigningReady = [suiteKeystorePath, suiteStorePassword, suiteKeyAlias, suiteKeyPassword]
+        .every { it != null && !it.toString().trim().isEmpty() }
+
 android {
 
     namespace 'top.niunaijun.blackboxa'
@@ -66,9 +77,20 @@ android {
         }
     }
 
+    signingConfigs {
+        suiteRelease {
+            if (suiteSigningReady) {
+                storeFile new File(suiteKeystorePath)
+                storePassword suiteStorePassword
+                keyAlias suiteKeyAlias
+                keyPassword suiteKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.suiteRelease
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
@@ -156,5 +178,23 @@ dependencies {
 
     
     implementation 'androidx.work:work-runtime:2.7.1'
+    implementation 'androidx.documentfile:documentfile:1.0.1'
 
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def packagesRelease = graph.allTasks.any { task ->
+        task.project == project && task.name ==~ /(?i).*(assemble|bundle|package|install|publish).*release.*/
+    }
+    if (packagesRelease) {
+        if (!suiteSigningReady) {
+            throw new GradleException('Release signing is locked. Set SHIELD_SUITE_KEYSTORE, ' +
+                    'SHIELD_SUITE_STORE_PASSWORD, SHIELD_SUITE_KEY_ALIAS, and ' +
+                    'SHIELD_SUITE_KEY_PASSWORD (or the matching shieldSuite* Gradle properties).')
+        }
+        def keyFile = new File(suiteKeystorePath)
+        if (!keyFile.isAbsolute() || !keyFile.isFile()) {
+            throw new GradleException('SHIELD_SUITE_KEYSTORE must be an existing absolute keystore path.')
+        }
+    }
 }

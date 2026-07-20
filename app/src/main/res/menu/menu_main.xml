@@ -2,6 +2,11 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
         xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <item
+        android:id="@+id/main_account"
+        android:title="Account &amp; backup"
+        app:showAsAction="never" />
+
 
     <item
             android:id="@+id/main_setting"

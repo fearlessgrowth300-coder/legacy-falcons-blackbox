@@ -65,6 +65,48 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
     }
 
     @Override
+    public boolean onTransact(int code, android.os.Parcel data, android.os.Parcel reply, int flags)
+            throws RemoteException {
+        // The local compatibility AIDL has the old two-argument method, while Android 8+ sends the
+        // hidden three-argument IServiceConnection payload (ComponentName, binder, dead). Decode
+        // that payload explicitly on Android 16 so the generated two-argument Stub cannot reject or
+        // misread the trailing boolean. IBinderSession belongs to the public ServiceConnection
+        // callback layer; it is not part of this IServiceConnection Binder transaction.
+        if (code == android.os.IBinder.FIRST_CALL_TRANSACTION
+                && android.os.Build.VERSION.SDK_INT >= 36) {
+            android.os.Parcel forwarded = null;
+            try {
+                // API 36 payload: ComponentName, service binder, dead. Rebuild it so the guest sees
+                // its target component and its per-user GAID binder.
+                data.setDataPosition(0);
+                data.enforceInterface("android.app.IServiceConnection");
+                ComponentName name = data.readTypedObject(ComponentName.CREATOR);
+                IBinder service = data.readStrongBinder();
+                boolean dead = data.readBoolean();
+
+                forwarded = android.os.Parcel.obtain();
+                forwarded.writeInterfaceToken("android.app.IServiceConnection");
+                forwarded.writeTypedObject(mComponentName != null ? mComponentName : name, 0);
+                forwarded.writeStrongBinder(maybeSpoofAdvertisingId(service));
+                forwarded.writeBoolean(dead);
+                top.niunaijun.blackbox.utils.Slog.d("SvcConn",
+                        "Forwarding API 36 service callback for "
+                                + (mComponentName != null ? mComponentName : name));
+                return mConn.asBinder().transact(code, forwarded, reply, flags);
+            } catch (Throwable t) {
+                top.niunaijun.blackbox.utils.Slog.d("SvcConn",
+                        "API 36 callback rewrite failed: " + t.getClass().getSimpleName());
+                if (mIsAdId) return true; // fail closed: unavailable is safer than host GAID
+                data.setDataPosition(0);
+                return mConn.asBinder().transact(code, data, reply, flags);
+            } finally {
+                if (forwarded != null) forwarded.recycle();
+            }
+        }
+        return super.onTransact(code, data, reply, flags);
+    }
+
+    @Override
     public void connected(ComponentName name, IBinder service) throws RemoteException {
         connected(name, service, false);
     }
@@ -91,7 +133,7 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
                 top.niunaijun.blackbox.core.DeviceProfile cur =
                         top.niunaijun.blackbox.core.DeviceProfile.CURRENT;
                 if (cur != null && cur.gaid != null) {
-                    top.niunaijun.blackbox.utils.Slog.d("GAID", "served advertising id " + cur.gaid + " to guest");
+                    top.niunaijun.blackbox.utils.Slog.d("GAID", "served per-user advertising id to guest");
                     return new AdIdStub(cur.gaid);
                 }
             }

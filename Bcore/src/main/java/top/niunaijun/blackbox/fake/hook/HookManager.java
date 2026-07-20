@@ -22,6 +22,8 @@ import top.niunaijun.blackbox.fake.service.IAutofillManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISensitiveContentProtectionManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISettingsSystemProxy;
 import top.niunaijun.blackbox.fake.service.IConnectivityManagerProxy;
+import top.niunaijun.blackbox.fake.service.ICredentialManagerProxy;
+import top.niunaijun.blackbox.fake.service.IClipboardManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISystemSensorManagerProxy;
 import top.niunaijun.blackbox.fake.service.IContentProviderProxy;
 import top.niunaijun.blackbox.fake.service.IXiaomiAttributionSourceProxy;
@@ -77,6 +79,7 @@ import top.niunaijun.blackbox.fake.service.IStorageStatsManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISystemUpdateProxy;
 import top.niunaijun.blackbox.fake.service.ITelephonyManagerProxy;
 import top.niunaijun.blackbox.fake.service.ITelephonyRegistryProxy;
+import top.niunaijun.blackbox.fake.service.ISubProxy;
 import top.niunaijun.blackbox.fake.service.IUserManagerProxy;
 import top.niunaijun.blackbox.fake.service.IVibratorServiceProxy;
 import top.niunaijun.blackbox.fake.service.IVpnManagerProxy;
@@ -153,9 +156,11 @@ public class HookManager {
             addInjector(new IJobServiceProxy());
             addInjector(new IAccessibilityManagerProxy());
             addInjector(new ITelephonyRegistryProxy());
+            addInjector(new ISubProxy());
             addInjector(new IDevicePolicyManagerProxy());
             addInjector(new IAccountManagerProxy());
             addInjector(new IConnectivityManagerProxy());
+            addInjector(new IClipboardManagerProxy());
             addInjector(new IDnsResolverProxy());
                     addInjector(new IAttributionSourceProxy());
         addInjector(new IContentProviderProxy());
@@ -187,6 +192,10 @@ public class HookManager {
             
             if (BuildCompat.isS()) {
                 addInjector(new ISensitiveContentProtectionManagerProxy());
+            }
+
+            if (android.os.Build.VERSION.SDK_INT >= 34) {
+                addInjector(new ICredentialManagerProxy());
             }
             
             if (BuildCompat.isR()) {

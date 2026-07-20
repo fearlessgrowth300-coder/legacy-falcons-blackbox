@@ -383,8 +383,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
             return;
         }
 
-        Slog.d(TAG, "Copying account " + account.toString()
-                + " from user " + userFrom + " to user " + userTo);
+        Slog.d(TAG, "Copying an account between virtual users");
         new Session(fromAccounts, response, account.type, false,
                 false , account.name,
                 false ) {
@@ -540,8 +539,15 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         final String callerPkg = loginOptions.getString(AccountManager.KEY_ANDROID_PACKAGE_NAME);
 
         
-        loginOptions.putInt(AccountManager.KEY_CALLER_UID, Binder.getCallingUid());
-        loginOptions.putInt(AccountManager.KEY_CALLER_PID, Binder.getCallingPid());
+        // The guest-side account proxy already stamps the verified virtual caller. Preserve it;
+        // Binder.getCallingUid() here is only BlackBox's shared host UID and would collapse Gmail
+        // and every clone into the same identity. Keep the fallback for legacy/internal callers.
+        if (!loginOptions.containsKey(AccountManager.KEY_CALLER_UID)) {
+            loginOptions.putInt(AccountManager.KEY_CALLER_UID, Binder.getCallingUid());
+        }
+        if (!loginOptions.containsKey(AccountManager.KEY_CALLER_PID)) {
+            loginOptions.putInt(AccountManager.KEY_CALLER_PID, Binder.getCallingPid());
+        }
 
         if (notifyOnAuthFailure) {
             loginOptions.putBoolean(AccountManagerCompat.KEY_NOTIFY_ON_FAILURE, true);
@@ -592,11 +598,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
             @Override
             protected String toDebugString(long now) {
                 if (loginOptions != null) loginOptions.keySet();
-                return super.toDebugString(now) + ", getAuthToken"
-                        + ", " + account.toString()
-                        + ", authTokenType " + authTokenType
-                        + ", loginOptions " + loginOptions
-                        + ", notifyOnAuthFailure " + notifyOnAuthFailure;
+                return super.toDebugString(now) + ", getAuthToken";
             }
 
             @Override
@@ -705,10 +707,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
             @Override
             protected String toDebugString(long now) {
                 if (loginOptions != null) loginOptions.keySet();
-                return super.toDebugString(now) + ", updateCredentials"
-                        + ", " + account.toString()
-                        + ", authTokenType " + authTokenType
-                        + ", loginOptions " + loginOptions;
+                return super.toDebugString(now) + ", updateCredentials";
             }
         }.bind();
     }
@@ -1564,9 +1563,13 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
+            Log.d(TAG, "Authenticator connected: " + name + ", binder="
+                    + (service == null ? "null" : service.getClass().getName()));
             mAuthenticator = IAccountAuthenticator.Stub.asInterface(service);
             try {
+                Log.d(TAG, "Calling authenticator for account type " + mAccountType);
                 run();
+                Log.d(TAG, "Authenticator call dispatched for account type " + mAccountType);
             } catch (RemoteException e) {
                 onError(AccountManager.ERROR_CODE_REMOTE_EXCEPTION,
                         "remote exception");
@@ -1761,10 +1764,23 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
 
 
 
-            if (!mContext.bindService(intent, this, flags)) {
-                if (Log.isLoggable(TAG, Log.VERBOSE)) {
-                    Log.v(TAG, "bindService to " + componentName + " failed");
+            try {
+                Log.d(TAG, "Requesting authenticator bind to " + componentName
+                        + " for virtual user " + mAccounts.userId);
+                boolean bound = mContext.bindService(intent, this, flags);
+                Log.d(TAG, "Authenticator bind request returned " + bound + " for " + componentName);
+                if (!bound) {
+                    if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                        Log.v(TAG, "bindService to " + componentName + " failed");
+                    }
+                    return false;
                 }
+            } catch (SecurityException e) {
+                // Android 13+ refuses to let the container bind to Google Play Services'
+                // GoogleAccountAuthenticatorService ("Not allowed to bind to service"). Treat it as a
+                // failed bind and let the session end cleanly, instead of throwing the exception back
+                // into the guest process (which was crashing Gmail to a black screen on account add).
+                Log.w(TAG, "bindService to " + componentName + " blocked: " + e.getMessage());
                 return false;
             }
 

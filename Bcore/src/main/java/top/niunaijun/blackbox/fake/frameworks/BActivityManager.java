@@ -84,6 +84,32 @@ public class BActivityManager extends BlackManager<IBActivityManagerService> {
         }
     }
 
+    public Bundle verifyProxyRoute(String packageName, int userId, String expectedRouteId, String expectedExitIp) {
+        try {
+            IBActivityManagerService service = getService();
+            if (service != null) {
+                return service.verifyProxyRoute(packageName, userId, expectedRouteId, expectedExitIp);
+            }
+        } catch (RemoteException e) {
+            Slog.e(TAG, "RemoteException in verifyProxyRoute", e);
+        }
+        Bundle result = new Bundle();
+        result.putBoolean("ok", false);
+        result.putString("state", "SERVICE_ERROR");
+        result.putString("err", "BlackBox activity service is unavailable");
+        return result;
+    }
+
+    public boolean isAppProcessRunning(String packageName, int userId) {
+        try {
+            IBActivityManagerService service = getService();
+            return service != null && service.isAppProcessRunning(packageName, userId);
+        } catch (RemoteException e) {
+            Slog.e(TAG, "RemoteException in isAppProcessRunning", e);
+            return false;
+        }
+    }
+
     public void startActivity(Intent intent, int userId) {
         int retryCount = 0;
         final int maxRetries = 3;

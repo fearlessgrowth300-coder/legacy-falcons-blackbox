@@ -139,22 +139,23 @@ extern "C" void vs_set(const char *key, const char *value);
 extern "C" void vs_ensure_installed();
 
 // Per-guest transparent proxy (see Utils/ProxyRedirect.cpp).
-extern "C" void pr_set_proxy(int type, const char *host, int port, const char *user, const char *pass);
+extern "C" bool pr_set_proxy(int type, const char *host, int port, const char *user, const char *pass);
 extern "C" void pr_disable();
 
 // Block guest apps from running `logcat` (Meta crash reporter -> Android-13 "allow device logs"
 // dialog). See Utils/BlockLogcat.cpp.
 extern "C" void bl_install();
 
-void setProxy(JNIEnv *env, jclass clazz, jint type, jstring host, jint port, jstring user, jstring pass) {
-    if (host == nullptr) { pr_disable(); return; }
+static jboolean setProxy(JNIEnv *env, jclass clazz, jint type, jstring host, jint port, jstring user, jstring pass) {
+    if (host == nullptr) { pr_disable(); return JNI_FALSE; }
     const char *h = env->GetStringUTFChars(host, nullptr);
     const char *u = user ? env->GetStringUTFChars(user, nullptr) : nullptr;
     const char *p = pass ? env->GetStringUTFChars(pass, nullptr) : nullptr;
-    pr_set_proxy(type, h, port, u ? u : "", p ? p : "");
+    bool ok = pr_set_proxy(type, h, port, u ? u : "", p ? p : "");
     env->ReleaseStringUTFChars(host, h);
     if (user) env->ReleaseStringUTFChars(user, u);
     if (pass) env->ReleaseStringUTFChars(pass, p);
+    return ok ? JNI_TRUE : JNI_FALSE;
 }
 
 void disableProxy(JNIEnv *env, jclass clazz) {
@@ -187,7 +188,7 @@ void spoofDevice(JNIEnv *env, jclass clazz, jobjectArray keys, jobjectArray valu
 
 static JNINativeMethod gMethods[] = {
         {"spoofDevice", "([Ljava/lang/String;[Ljava/lang/String;)V", (void *) spoofDevice},
-        {"setProxy",    "(ILjava/lang/String;ILjava/lang/String;Ljava/lang/String;)V", (void *) setProxy},
+        {"setProxy",    "(ILjava/lang/String;ILjava/lang/String;Ljava/lang/String;)Z", (void *) setProxy},
         {"disableProxy","()V",                                       (void *) disableProxy},
         {"disableHiddenApi", "()Z",                               (void *) disableHiddenApi},
         {"disableResourceLoading", "()Z",                         (void *) disableResourceLoading},

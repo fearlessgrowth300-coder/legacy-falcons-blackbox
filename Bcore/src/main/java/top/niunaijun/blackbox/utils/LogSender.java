@@ -11,9 +11,13 @@ import java.net.URL;
 
 public class LogSender {
     private static final String TAG = "LogSender";
+    private static final boolean REMOTE_UPLOAD_ENABLED = false;
     private static final String API_URL_TEMPLATE = "https://logs-sender-api.vercel.app/api/%s/upload";
 
     public static String send(String chatId, File logFile, String caption) {
+        // Production privacy gate: never send guest logs to the upstream third-party endpoint.
+        // A future crash backend must be owner-controlled and explicitly consented to in UI.
+        if (!REMOTE_UPLOAD_ENABLED) return "Remote log upload is disabled";
         if (chatId == null || chatId.isEmpty()) {
             Slog.w(TAG, "Chat ID invalid, cannot send logs");
             return "Invalid Chat ID";

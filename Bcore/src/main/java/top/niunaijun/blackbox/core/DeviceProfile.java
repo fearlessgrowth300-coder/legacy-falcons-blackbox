@@ -238,8 +238,8 @@ public class DeviceProfile {
      * return THIS clone's value. BlackBox's own settings proxies are dead stubs, so
      * without this every clone reports the host's real android_id (linkage).
      */
-    private static void hookAndroidId() {
-        if (sAndroidIdHooked) return;
+    private static boolean hookAndroidId() {
+        if (sAndroidIdHooked) return true;
         try {
             top.canyie.pine.PineConfig.debug = false;
             top.canyie.pine.PineConfig.debuggable = false;
@@ -258,20 +258,25 @@ public class DeviceProfile {
                     }
                 }
             };
+            boolean installed = false;
             try {
                 java.lang.reflect.Method m = secure.getMethod("getString",
                         android.content.ContentResolver.class, String.class);
                 top.canyie.pine.Pine.hook(m, cb);
+                installed = true;
             } catch (Throwable ignored) {}
             try {
                 java.lang.reflect.Method m = secure.getDeclaredMethod("getStringForUser",
                         android.content.ContentResolver.class, String.class, int.class);
                 top.canyie.pine.Pine.hook(m, cb);
             } catch (Throwable ignored) {}
+            if (!installed) throw new IllegalStateException("Settings.Secure hook unavailable");
             sAndroidIdHooked = true;
             Slog.d(TAG, "android_id hook installed");
+            return true;
         } catch (Throwable t) {
             Slog.w(TAG, "hookAndroidId failed: " + t.getMessage());
+            return false;
         }
     }
 
@@ -295,7 +300,7 @@ public class DeviceProfile {
                     top.canyie.pine.Pine.hook(m, new top.canyie.pine.callback.MethodReplacement() {
                         @Override public Object replaceCall(top.canyie.pine.Pine.CallFrame f) { return info; }
                     });
-                    Slog.d(TAG, "GAID hook installed = " + id);
+                    Slog.d(TAG, "GAID hook installed");
                 } catch (ClassNotFoundException notYet) {
                     if (tries++ < 6) h.postDelayed(this, 3000); // GMS SDK not loaded yet — retry
                 } catch (Throwable t) {
@@ -314,10 +319,10 @@ public class DeviceProfile {
      * MediaDrm getters so each clone reports its own value. Also normalise a couple of
      * device-revealing string properties (vendor/deviceId) to the spoofed identity.
      */
-    private void hookMediaDrm() {
-        if (sMediaDrmHooked) return;
+    private boolean hookMediaDrm() {
+        if (sMediaDrmHooked) return true;
         final byte[] wid = hexToBytes(widevineId);
-        if (wid == null) return;
+        if (wid == null) return false;
         try {
             final Class<?> cls = android.media.MediaDrm.class;
             // getPropertyByteArray(String) -> "deviceUniqueId"
@@ -347,8 +352,10 @@ public class DeviceProfile {
                 });
             sMediaDrmHooked = true;
             Slog.d(TAG, "MediaDrm/Widevine hook installed");
+            return true;
         } catch (Throwable t) {
             Slog.w(TAG, "hookMediaDrm failed: " + t.getMessage());
+            return false;
         }
     }
 
@@ -367,10 +374,15 @@ public class DeviceProfile {
 
     /** Apply this profile to the current (guest) process. Call as early as possible. */
     public void apply() {
+        if (isBlank(androidId) || isBlank(imei) || isBlank(imsi) || isBlank(serial)
+                || isBlank(macWifi) || isBlank(gaid) || isBlank(fingerprint)
+                || isBlank(widevineId)) {
+            throw new SecurityException("Incomplete clone identity profile");
+        }
         CURRENT = this;   // make it visible to the framework proxies
-        hookAndroidId();
+        if (!hookAndroidId()) throw new SecurityException("android_id isolation unavailable");
         hookGaid();
-        hookMediaDrm();
+        if (!hookMediaDrm()) throw new SecurityException("Widevine isolation unavailable");
         List<String> keys = new ArrayList<>();
         List<String> vals = new ArrayList<>();
         add(keys, vals, "ro.product.model", model);
@@ -412,6 +424,7 @@ public class DeviceProfile {
             NativeCore.spoofDevice(ks, vs);
         } catch (Throwable t) {
             Slog.w(TAG, "native spoofDevice failed: " + t.getMessage());
+            throw new SecurityException("Native identity isolation unavailable", t);
         }
 
         // Timing-proof backup: overwrite the Build static fields directly.
@@ -432,7 +445,17 @@ public class DeviceProfile {
         setBuild("DISPLAY", buildId);
         setBuildVersion("INCREMENTAL", incremental);
         setBuildVersion("SECURITY_PATCH", securityPatch);
-        Slog.d(TAG, "applied profile '" + label + "' fp=" + fingerprint);
+        if (!model.equals(Build.MODEL) || !brand.equals(Build.BRAND)
+                || !device.equals(Build.DEVICE) || !product.equals(Build.PRODUCT)
+                || !manufacturer.equals(Build.MANUFACTURER) || !board.equals(Build.BOARD)
+                || !fingerprint.equals(Build.FINGERPRINT)) {
+            throw new SecurityException("Build identity isolation incomplete");
+        }
+        Slog.d(TAG, "per-user device identity applied");
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     private static void setBuildVersion(String field, String value) {

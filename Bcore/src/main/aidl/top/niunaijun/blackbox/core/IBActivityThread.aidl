@@ -9,6 +9,7 @@ import android.content.Intent;
 import java.util.List;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ActivityInfo;
+import android.os.Bundle;
 import top.niunaijun.blackbox.entity.am.ReceiverData;
 
 interface IBActivityThread {
@@ -24,4 +25,7 @@ interface IBActivityThread {
     void handleNewIntent(IBinder token, in Intent intent);
 
     void scheduleReceiver(in ReceiverData data);
+
+    /** Runs an exit-IP probe inside this exact guest process and route. */
+    Bundle verifyProxyRoute(String expectedRouteId, String expectedExitIp);
 }

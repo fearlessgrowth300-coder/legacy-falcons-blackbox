@@ -4,11 +4,13 @@
 // process — where the BlackBox userId is known — each User/clone can use a
 // different proxy, which the external (shared-UID) VpnService cannot do.
 //
-// Non-blocking sockets (IG/WhatsApp use these) are handled by briefly switching
-// the fd to blocking for the proxy handshake, then restoring the flag.
+// Non-blocking sockets (IG/WhatsApp use these) are connected immediately to a
+// process-local loopback relay. The relay performs the upstream proxy handshake
+// on its own worker, so app event loops never block on SOCKS/HTTP round trips.
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <fcntl.h>
@@ -18,6 +20,15 @@
 #include <cstdio>
 #include <string>
 #include <mutex>
+#include <unordered_map>
+#include <algorithm>
+#include <cctype>
+#include <poll.h>
+#include <sys/time.h>
+#include <thread>
+#include <array>
+#include <atomic>
+#include <cstdint>
 #include <android/log.h>
 #include "./xdl.h"
 #include "Dobby/dobby.h"
@@ -30,7 +41,6 @@ enum { PROXY_HTTP = 0, PROXY_SOCKS5 = 1 };
 static std::mutex g_lock;
 static bool g_enabled = false;
 static bool g_installed = false;
-static bool g_blockQuic = true;         // fail public UDP:443 so apps fall back to TCP (no QUIC leak)
 static int g_type = PROXY_HTTP;
 static std::string g_user, g_pass;
 static sockaddr_storage g_proxy{};        // proxy as AF_INET
@@ -40,10 +50,38 @@ static bool g_haveProxy6 = false;
 
 static int (*orig_connect)(int, const sockaddr *, socklen_t) = nullptr;
 static int (*orig_getaddrinfo)(const char *, const char *, const addrinfo *, addrinfo **) = nullptr;
+static int (*orig_android_getaddrinfofornet)(const char *, const char *, const addrinfo *,
+                                             unsigned, unsigned, addrinfo **) = nullptr;
+static int (*orig_android_getaddrinfofornetcontext)(const char *, const char *, const addrinfo *,
+                                                     const void *, addrinfo **) = nullptr;
 static ssize_t (*orig_sendto)(int, const void *, size_t, int, const sockaddr *, socklen_t) = nullptr;
 static ssize_t (*orig_sendmsg)(int, const struct msghdr *, int) = nullptr;
 static int (*orig_sendmmsg)(int, struct mmsghdr *, unsigned int, int) = nullptr;
-static int g_quicBlocks = 0;
+static int g_udpBlocks = 0;
+static std::mutex g_dnsLock;
+static uint32_t g_nextSynthetic = 1;
+static std::unordered_map<std::string, uint32_t> g_hostToSynthetic;
+static std::unordered_map<uint32_t, std::string> g_syntheticToHost;
+static std::atomic<uint64_t> g_routeGeneration{1};
+static std::atomic<int> g_relayStarts{0};
+static std::atomic<int> g_relayFailures{0};
+
+struct ProxySnapshot {
+    int type = PROXY_HTTP;
+    sockaddr_storage proxy{};
+    socklen_t proxyLen = 0;
+    std::string user;
+    std::string pass;
+    uint64_t generation = 0;
+};
+
+struct ProxyTarget {
+    sockaddr_storage address{};
+    socklen_t addressLen = 0;
+    std::string host;
+    int port = 0;
+    bool remoteDns = false;
+};
 
 // ---- small helpers ---------------------------------------------------------
 
@@ -121,51 +159,101 @@ static bool destToIpPort(const sockaddr *addr, char *ip, size_t iplen, int *port
     return false;
 }
 
-// Don't proxy loopback / LAN / link-local / the proxy server itself.
-static bool isDirect(const sockaddr *addr) {
+// Only loopback may bypass the assigned proxy. LAN/link-local exceptions let apps discover the
+// physical network and are therefore not safe in an isolated clone.
+static bool isLoopback(const sockaddr *addr) {
     if (addr->sa_family == AF_INET) {
         uint32_t h = ntohl(((const sockaddr_in *) addr)->sin_addr.s_addr);
-        uint8_t a = (h >> 24) & 0xFF, b = (h >> 16) & 0xFF;
-        if (a == 127) return true;                 // loopback
-        if (a == 10) return true;                  // 10/8
-        if (a == 172 && b >= 16 && b <= 31) return true; // 172.16/12
-        if (a == 192 && b == 168) return true;     // 192.168/16
-        if (a == 169 && b == 254) return true;     // link-local
-        if (a == 0) return true;
+        return ((h >> 24) & 0xFF) == 127;
     } else if (addr->sa_family == AF_INET6) {
         auto *a = (const sockaddr_in6 *) addr;
         const uint8_t *p = a->sin6_addr.s6_addr;
         static const uint8_t lo[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1};
-        if (memcmp(p, lo, 16) == 0) return true;   // ::1
-        if (p[0] == 0xfe && (p[1] & 0xc0) == 0x80) return true; // fe80::/10
-        if ((p[0] & 0xfe) == 0xfc) return true;    // fc00::/7 ULA
+        if (memcmp(p, lo, 16) == 0) return true;
+        return IN6_IS_ADDR_V4MAPPED(&a->sin6_addr) && p[12] == 127;
     }
     return false;
 }
 
-static bool sameAsProxy(const sockaddr *addr) {
-    if (addr->sa_family != g_proxy.ss_family) return false;
-    if (addr->sa_family == AF_INET) {
-        auto *x = (const sockaddr_in *) addr;
-        auto *p = (const sockaddr_in *) &g_proxy;
-        return x->sin_addr.s_addr == p->sin_addr.s_addr && x->sin_port == p->sin_port;
+static bool isNumericHost(const char *node) {
+    if (!node || !*node) return true;
+    in_addr v4{}; in6_addr v6{};
+    return inet_pton(AF_INET, node, &v4) == 1 || inet_pton(AF_INET6, node, &v6) == 1;
+}
+
+static bool isLocalHostName(const char *node) {
+    if (!node) return false;
+    std::string h(node);
+    std::transform(h.begin(), h.end(), h.begin(), [](unsigned char c) { return (char) std::tolower(c); });
+    return h == "localhost" || (h.size() > 10 && h.compare(h.size() - 10, 10, ".localhost") == 0);
+}
+
+// Return an address in 198.18.0.0/15 (RFC 2544 benchmarking range). It is never dialled directly:
+// connect() recognizes it and sends the original hostname in HTTP CONNECT / SOCKS5, giving us
+// proxy-side DNS without asking Android/netd to resolve the guest's destination.
+static std::string syntheticForHost(const char *node) {
+    std::string host(node ? node : "");
+    std::transform(host.begin(), host.end(), host.begin(), [](unsigned char c) { return (char) std::tolower(c); });
+    std::lock_guard<std::mutex> lk(g_dnsLock);
+    auto found = g_hostToSynthetic.find(host);
+    uint32_t net;
+    if (found != g_hostToSynthetic.end()) {
+        net = found->second;
+    } else {
+        // 198.18.0.1 through 198.19.255.254; wrap only after exhausting the process-local pool.
+        uint32_t offset = g_nextSynthetic++ % 131070u;
+        if (offset == 0) offset = 1;
+        uint32_t hostOrder = 0xC6120000u + offset;
+        net = htonl(hostOrder);
+        g_hostToSynthetic[host] = net;
+        g_syntheticToHost[net] = host;
     }
-    return false;
+    in_addr a{}; a.s_addr = net;
+    char text[INET_ADDRSTRLEN]{};
+    inet_ntop(AF_INET, &a, text, sizeof(text));
+    return text;
+}
+
+static bool syntheticDomainFor(const sockaddr *addr, std::string *domain) {
+    uint32_t net = 0;
+    if (addr->sa_family == AF_INET) {
+        net = ((const sockaddr_in *) addr)->sin_addr.s_addr;
+    } else if (addr->sa_family == AF_INET6) {
+        auto *a6 = (const sockaddr_in6 *) addr;
+        if (!IN6_IS_ADDR_V4MAPPED(&a6->sin6_addr)) return false;
+        memcpy(&net, &a6->sin6_addr.s6_addr[12], sizeof(net));
+    } else return false;
+    std::lock_guard<std::mutex> lk(g_dnsLock);
+    auto found = g_syntheticToHost.find(net);
+    if (found == g_syntheticToHost.end()) return false;
+    *domain = found->second;
+    return true;
 }
 
 // ---- proxy handshake on an already-proxy-connected fd -----------------------
 
-static bool doHandshake(int fd, const sockaddr *dest) {
+static bool buildTarget(const sockaddr *dest, socklen_t len, ProxyTarget *out) {
+    if (!dest || !out || len > sizeof(out->address)) return false;
     char ip[64]; int port = 0;
     if (!destToIpPort(dest, ip, sizeof(ip), &port)) return false;
+    memcpy(&out->address, dest, len);
+    out->addressLen = len;
+    out->port = port;
+    std::string domain;
+    out->remoteDns = syntheticDomainFor(dest, &domain);
+    out->host = out->remoteDns ? domain : std::string(ip);
+    return !out->host.empty() && out->port > 0;
+}
 
-    if (g_type == PROXY_HTTP) {
+static bool doHandshake(int fd, const ProxyTarget &target, const ProxySnapshot &proxy) {
+    if (proxy.type == PROXY_HTTP) {
         std::string req = "CONNECT ";
-        req += ip; req += ":"; req += std::to_string(port);
-        req += " HTTP/1.1\r\nHost: "; req += ip; req += ":"; req += std::to_string(port); req += "\r\n";
-        if (!g_user.empty()) {
+        req += target.host; req += ":"; req += std::to_string(target.port);
+        req += " HTTP/1.1\r\nHost: "; req += target.host; req += ":";
+        req += std::to_string(target.port); req += "\r\n";
+        if (!proxy.user.empty()) {
             req += "Proxy-Authorization: Basic ";
-            req += base64(g_user + ":" + g_pass);
+            req += base64(proxy.user + ":" + proxy.pass);
             req += "\r\n";
         }
         req += "\r\n";
@@ -179,7 +267,7 @@ static bool doHandshake(int fd, const sockaddr *dest) {
     }
 
     // SOCKS5
-    bool auth = !g_user.empty();
+    bool auth = !proxy.user.empty();
     unsigned char greet[3] = {0x05, 0x01, (unsigned char) (auth ? 0x02 : 0x00)};
     if (!writeAll(fd, greet, 3)) return false;
     unsigned char sel[2];
@@ -187,24 +275,32 @@ static bool doHandshake(int fd, const sockaddr *dest) {
     if ((sel[1] & 0xFF) == 0x02) {
         std::string a;
         a.push_back(0x01);
-        a.push_back((char) g_user.size()); a += g_user;
-        a.push_back((char) g_pass.size()); a += g_pass;
+        if (proxy.user.size() > 255 || proxy.pass.size() > 255) return false;
+        a.push_back((char) proxy.user.size()); a += proxy.user;
+        a.push_back((char) proxy.pass.size()); a += proxy.pass;
         if (!writeAll(fd, a.data(), a.size())) return false;
         unsigned char ar[2];
         if (!readFull(fd, ar, 2) || ar[1] != 0x00) return false;
     } else if ((sel[1] & 0xFF) != 0x00) {
         return false;
     }
-    // CONNECT by IP
+    // CONNECT by domain for synthetic DNS entries; numeric destinations stay numeric.
     std::string r;
     r.push_back(0x05); r.push_back(0x01); r.push_back(0x00);
-    if (dest->sa_family == AF_INET) {
+    if (target.remoteDns) {
+        if (target.host.empty() || target.host.size() > 255) return false;
+        r.push_back(0x03);
+        r.push_back((char) target.host.size());
+        r.append(target.host);
+        uint16_t networkPort = htons((uint16_t) target.port);
+        r.append((const char *) &networkPort, 2);
+    } else if (target.address.ss_family == AF_INET) {
         r.push_back(0x01);
-        auto *a = (const sockaddr_in *) dest;
+        auto *a = (const sockaddr_in *) &target.address;
         r.append((const char *) &a->sin_addr, 4);
         r.append((const char *) &a->sin_port, 2);
     } else {
-        auto *a = (const sockaddr_in6 *) dest;
+        auto *a = (const sockaddr_in6 *) &target.address;
         if (IN6_IS_ADDR_V4MAPPED(&a->sin6_addr)) {
             r.push_back(0x01);   // send the embedded IPv4
             r.append((const char *) &a->sin6_addr.s6_addr[12], 4);
@@ -226,78 +322,320 @@ static bool doHandshake(int fd, const sockaddr *dest) {
 
 // ---- the hook --------------------------------------------------------------
 
+static void resetAndClose(int fd) {
+    if (fd < 0) return;
+    linger reset{1, 0};
+    setsockopt(fd, SOL_SOCKET, SO_LINGER, &reset, sizeof(reset));
+    close(fd);
+}
+
+static int connectUpstream(const ProxySnapshot &proxy) {
+    if (proxy.proxyLen == 0) return -1;
+    int fd = socket(proxy.proxy.ss_family, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
+    if (fd < 0) return -1;
+
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    int result = orig_connect(fd, (const sockaddr *) &proxy.proxy, proxy.proxyLen);
+    if (result != 0 && (errno == EINPROGRESS || errno == EALREADY)) {
+        pollfd pfd{fd, POLLOUT, 0};
+        do { result = poll(&pfd, 1, 2500); } while (result < 0 && errno == EINTR);
+        if (result > 0) {
+            int socketError = 0;
+            socklen_t errorLen = sizeof(socketError);
+            if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &socketError, &errorLen) != 0
+                    || socketError != 0) {
+                if (socketError != 0) errno = socketError;
+                result = -1;
+            } else {
+                result = 0;
+            }
+        } else {
+            if (result == 0) errno = ETIMEDOUT;
+            result = -1;
+        }
+    }
+    if (result != 0) {
+        close(fd);
+        return -1;
+    }
+
+    if (flags >= 0) fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
+    timeval handshakeTimeout{2, 0};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &handshakeTimeout, sizeof(handshakeTimeout));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &handshakeTimeout, sizeof(handshakeTimeout));
+    int one = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof(one));
+    return fd;
+}
+
+struct RelayBuffer {
+    std::array<char, 32768> bytes{};
+    size_t begin = 0;
+    size_t end = 0;
+    bool eof = false;
+    bool shutdownSent = false;
+};
+
+static bool hasData(const RelayBuffer &buffer) {
+    return buffer.end > buffer.begin;
+}
+
+static bool makeRoom(RelayBuffer *buffer) {
+    if (buffer->end == buffer->bytes.size() && buffer->begin > 0) {
+        memmove(buffer->bytes.data(), buffer->bytes.data() + buffer->begin,
+                buffer->end - buffer->begin);
+        buffer->end -= buffer->begin;
+        buffer->begin = 0;
+    }
+    return buffer->end < buffer->bytes.size();
+}
+
+static bool readInto(int fd, RelayBuffer *buffer) {
+    if (buffer->eof || !makeRoom(buffer)) return true;
+    ssize_t count = recv(fd, buffer->bytes.data() + buffer->end,
+                         buffer->bytes.size() - buffer->end, 0);
+    if (count > 0) {
+        buffer->end += (size_t) count;
+        return true;
+    }
+    if (count == 0) {
+        buffer->eof = true;
+        return true;
+    }
+    return errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK;
+}
+
+static bool writeFrom(int fd, RelayBuffer *buffer) {
+    if (!hasData(*buffer)) return true;
+    ssize_t count = send(fd, buffer->bytes.data() + buffer->begin,
+                         buffer->end - buffer->begin, MSG_NOSIGNAL);
+    if (count > 0) {
+        buffer->begin += (size_t) count;
+        if (buffer->begin == buffer->end) buffer->begin = buffer->end = 0;
+        return true;
+    }
+    return count < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK);
+}
+
+static void relayBidirectional(int client, int upstream, uint64_t generation) {
+    int clientFlags = fcntl(client, F_GETFL, 0);
+    int upstreamFlags = fcntl(upstream, F_GETFL, 0);
+    if (clientFlags >= 0) fcntl(client, F_SETFL, clientFlags | O_NONBLOCK);
+    if (upstreamFlags >= 0) fcntl(upstream, F_SETFL, upstreamFlags | O_NONBLOCK);
+    timeval noTimeout{0, 0};
+    setsockopt(upstream, SOL_SOCKET, SO_RCVTIMEO, &noTimeout, sizeof(noTimeout));
+    setsockopt(upstream, SOL_SOCKET, SO_SNDTIMEO, &noTimeout, sizeof(noTimeout));
+
+    RelayBuffer clientToProxy;
+    RelayBuffer proxyToClient;
+    bool healthy = true;
+    while (healthy) {
+        if (g_routeGeneration.load(std::memory_order_acquire) != generation) break;
+
+        pollfd fds[2]{};
+        fds[0].fd = client;
+        fds[1].fd = upstream;
+        if (!clientToProxy.eof && makeRoom(&clientToProxy)) fds[0].events |= POLLIN;
+        if (hasData(proxyToClient)) fds[0].events |= POLLOUT;
+        if (!proxyToClient.eof && makeRoom(&proxyToClient)) fds[1].events |= POLLIN;
+        if (hasData(clientToProxy)) fds[1].events |= POLLOUT;
+
+        int ready;
+        do { ready = poll(fds, 2, 30000); } while (ready < 0 && errno == EINTR);
+        if (ready < 0) break;
+        if (ready > 0) {
+            if (fds[0].revents & (POLLERR | POLLNVAL)) healthy = false;
+            if (fds[1].revents & (POLLERR | POLLNVAL)) healthy = false;
+            if (healthy && (fds[0].revents & POLLOUT)) healthy = writeFrom(client, &proxyToClient);
+            if (healthy && (fds[1].revents & POLLOUT)) healthy = writeFrom(upstream, &clientToProxy);
+            if (healthy && (fds[0].revents & (POLLIN | POLLHUP))) healthy = readInto(client, &clientToProxy);
+            if (healthy && (fds[1].revents & (POLLIN | POLLHUP))) healthy = readInto(upstream, &proxyToClient);
+        }
+
+        if (clientToProxy.eof && !hasData(clientToProxy) && !clientToProxy.shutdownSent) {
+            shutdown(upstream, SHUT_WR);
+            clientToProxy.shutdownSent = true;
+        }
+        if (proxyToClient.eof && !hasData(proxyToClient) && !proxyToClient.shutdownSent) {
+            shutdown(client, SHUT_WR);
+            proxyToClient.shutdownSent = true;
+        }
+        if (clientToProxy.shutdownSent && proxyToClient.shutdownSent) break;
+    }
+    close(upstream);
+    close(client);
+}
+
+static void relayWorker(int listener, ProxyTarget target, ProxySnapshot proxy) {
+    int client;
+    do { client = accept4(listener, nullptr, nullptr, SOCK_CLOEXEC); }
+    while (client < 0 && errno == EINTR);
+    close(listener);
+    if (client < 0) return;
+    if (g_routeGeneration.load(std::memory_order_acquire) != proxy.generation) {
+        resetAndClose(client);
+        return;
+    }
+
+    int upstream = connectUpstream(proxy);
+    if (upstream < 0 || !doHandshake(upstream, target, proxy)) {
+        if (upstream >= 0) resetAndClose(upstream);
+        resetAndClose(client);
+        int failure = g_relayFailures.fetch_add(1) + 1;
+        if (failure <= 8) LOGD("async proxy relay failed (#%d)", failure);
+        return;
+    }
+
+    int started = g_relayStarts.fetch_add(1) + 1;
+    if (started <= 5) LOGD("async proxy relay established (#%d)", started);
+    relayBidirectional(client, upstream, proxy.generation);
+}
+
+static int startLoopbackRelay(int fd, const sockaddr *destination,
+                              const ProxyTarget &target, const ProxySnapshot &proxy) {
+    int family = destination->sa_family;
+    int listener = socket(family, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
+    if (listener < 0) return -1;
+    int one = 1;
+    setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+
+    sockaddr_storage local{};
+    socklen_t localLen;
+    if (family == AF_INET) {
+        auto *v4 = (sockaddr_in *) &local;
+        v4->sin_family = AF_INET;
+        v4->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        v4->sin_port = 0;
+        localLen = sizeof(*v4);
+    } else {
+        auto *v6 = (sockaddr_in6 *) &local;
+        v6->sin6_family = AF_INET6;
+        v6->sin6_addr = in6addr_loopback;
+        v6->sin6_port = 0;
+        localLen = sizeof(*v6);
+        setsockopt(listener, IPPROTO_IPV6, IPV6_V6ONLY, &one, sizeof(one));
+    }
+    if (bind(listener, (sockaddr *) &local, localLen) != 0 || listen(listener, 1) != 0) {
+        close(listener);
+        return -1;
+    }
+    if (getsockname(listener, (sockaddr *) &local, &localLen) != 0) {
+        close(listener);
+        return -1;
+    }
+
+    int result = orig_connect(fd, (const sockaddr *) &local, localLen);
+    int connectErrno = errno;
+    if (result != 0 && connectErrno != EINPROGRESS && connectErrno != EALREADY
+            && connectErrno != EISCONN) {
+        close(listener);
+        errno = connectErrno;
+        return -1;
+    }
+    try {
+        std::thread(relayWorker, listener, target, proxy).detach();
+    } catch (...) {
+        close(listener);
+        errno = EAGAIN;
+        return -1;
+    }
+    if (result != 0) errno = connectErrno;
+    return result;
+}
+
 static int my_connect(int fd, const sockaddr *addr, socklen_t len) {
-    bool enabled; int type;
-    { std::lock_guard<std::mutex> lk(g_lock); enabled = g_enabled; type = 0; (void)type; }
+    ProxySnapshot proxy;
+    bool enabled;
+    {
+        std::lock_guard<std::mutex> lk(g_lock);
+        enabled = g_enabled;
+        if (enabled) {
+            proxy.type = g_type;
+            proxy.proxy = g_proxy;
+            proxy.proxyLen = g_proxyLen;
+            proxy.user = g_user;
+            proxy.pass = g_pass;
+            proxy.generation = g_routeGeneration.load(std::memory_order_acquire);
+        }
+    }
     if (!enabled || !addr) return orig_connect(fd, addr, len);
 
     int stype = 0; socklen_t tl = sizeof(stype);
     getsockopt(fd, SOL_SOCKET, SO_TYPE, &stype, &tl);
 
-    // QUIC leak guard: block public UDP:443 so the app retries over TCP (proxied).
+    // This redirector has no UDP relay. Fail every non-loopback Internet datagram closed;
+    // allowing even one port would expose DNS/STUN/custom telemetry on the phone's real route.
     if (stype == SOCK_DGRAM) {
-        if (g_blockQuic && (addr->sa_family == AF_INET || addr->sa_family == AF_INET6) && !isDirect(addr)) {
-            char ip[64]; int port = 0;
-            if (destToIpPort(addr, ip, sizeof(ip), &port) && port == 443) {
-                errno = ECONNREFUSED;
-                return -1;
-            }
+        if ((addr->sa_family == AF_INET || addr->sa_family == AF_INET6) && !isLoopback(addr)) {
+            errno = ECONNREFUSED;
+            return -1;
         }
         return orig_connect(fd, addr, len);
     }
 
     if (stype != SOCK_STREAM) return orig_connect(fd, addr, len);
     if (addr->sa_family != AF_INET && addr->sa_family != AF_INET6) return orig_connect(fd, addr, len);
-    if (isDirect(addr) || sameAsProxy(addr)) return orig_connect(fd, addr, len);
+    if (isLoopback(addr)) return orig_connect(fd, addr, len);
 
     // Pick a proxy address whose family matches the guest SOCKET. IPv6 sockets are
     // fine as long as they carry a v4-mapped destination (::ffff:x.x.x.x) — we dial
     // the proxy via its v4-mapped form. A genuine IPv6 destination can't be proxied
     // by an IPv4 proxy, so refuse it (forces the app onto IPv4).
-    const sockaddr *pxy;
-    socklen_t pxyLen;
     if (addr->sa_family == AF_INET6) {
         auto *a6 = (const sockaddr_in6 *) addr;
-        if (!IN6_IS_ADDR_V4MAPPED(&a6->sin6_addr) || !g_haveProxy6) {
+        if (!IN6_IS_ADDR_V4MAPPED(&a6->sin6_addr)) {
             errno = ECONNREFUSED;
             return -1;
         }
-        pxy = (const sockaddr *) &g_proxy6;
-        pxyLen = sizeof(g_proxy6);
-    } else {
-        pxy = (const sockaddr *) &g_proxy;
-        pxyLen = g_proxyLen;
     }
 
-    // temporarily block for the handshake
-    int fl = fcntl(fd, F_GETFL, 0);
-    bool nb = (fl >= 0) && (fl & O_NONBLOCK);
-    if (nb) fcntl(fd, F_SETFL, fl & ~O_NONBLOCK);
-
-    int r = orig_connect(fd, pxy, pxyLen);
-    if (r != 0) {
-        if (nb) fcntl(fd, F_SETFL, fl);
+    ProxyTarget target;
+    if (!buildTarget(addr, len, &target)) {
+        errno = ECONNREFUSED;
         return -1;
     }
-
-    bool ok = doHandshake(fd, addr);
-    if (nb) fcntl(fd, F_SETFL, fl);
-    if (!ok) { errno = ECONNREFUSED; return -1; }
-    return 0;   // app sees an established connection to the original destination
+    return startLoopbackRelay(fd, addr, target, proxy);
 }
 
-// Force IPv4-only DNS while a proxy is active: our upstream proxy is IPv4, so we
-// must not let the guest create IPv6 sockets we can't tunnel (they'd fail or leak).
-static int my_getaddrinfo(const char *node, const char *service, const addrinfo *hints, addrinfo **res) {
+static bool useRemoteDns(const char *node, const addrinfo *hints) {
     bool enabled;
     { std::lock_guard<std::mutex> lk(g_lock); enabled = g_enabled; }
-    if (enabled) {
-        addrinfo h;
-        if (hints) h = *hints; else memset(&h, 0, sizeof(h));
-        if (h.ai_family == AF_UNSPEC || h.ai_family == AF_INET6) h.ai_family = AF_INET;
-        return orig_getaddrinfo(node, service, &h, res);
+    if (!enabled || !node || !*node || isNumericHost(node) || isLocalHostName(node)) return false;
+    return !hints || (hints->ai_flags & AI_NUMERICHOST) == 0;
+}
+
+static addrinfo syntheticHints(const addrinfo *hints) {
+    addrinfo h{};
+    if (hints) h = *hints;
+    h.ai_family = AF_INET;
+    h.ai_flags |= AI_NUMERICHOST;
+    return h;
+}
+
+// Never ask Android/netd to resolve guest destination names. Both ordinary native callers and
+// libcore's network-aware resolver receive a synthetic IPv4 address; doHandshake later converts
+// it back to the hostname and sends it to the assigned proxy for remote DNS.
+static int my_getaddrinfo(const char *node, const char *service, const addrinfo *hints, addrinfo **res) {
+    if (useRemoteDns(node, hints)) {
+        std::string synthetic = syntheticForHost(node);
+        addrinfo h = syntheticHints(hints);
+        return orig_getaddrinfo(synthetic.c_str(), service, &h, res);
     }
     return orig_getaddrinfo(node, service, hints, res);
+}
+
+static int my_android_getaddrinfofornet(const char *node, const char *service,
+                                        const addrinfo *hints, unsigned netid,
+                                        unsigned mark, addrinfo **res) {
+    if (useRemoteDns(node, hints)) {
+        std::string synthetic = syntheticForHost(node);
+        addrinfo h = syntheticHints(hints);
+        return orig_android_getaddrinfofornet(
+                synthetic.c_str(), service, &h, netid, mark, res);
+    }
+    return orig_android_getaddrinfofornet(node, service, hints, netid, mark, res);
 }
 
 // QUIC leak guard for the DATAGRAM send path. The connect() hook only blocks *connected* UDP:443;
@@ -305,20 +643,20 @@ static int my_getaddrinfo(const char *node, const char *service, const addrinfo 
 // (batched with GSO) — those never call connect(), so they'd bypass the proxy and leak the real IP
 // (this is why IG showed "Lagos, Nigeria" while a TCP-only probe exited the proxy). Refuse UDP:443
 // to any public dest so the app falls back to TCP, which IS tunnelled through the proxy.
-static bool quic_leak(int fd, const sockaddr *dest) {
+static bool udp_leak(int fd, const sockaddr *suppliedDest) {
+    const sockaddr *dest = suppliedDest;
     if (!dest) return false;   // connected socket → connect() hook already handled :443
-    { std::lock_guard<std::mutex> lk(g_lock); if (!g_enabled || !g_blockQuic) return false; }
+    { std::lock_guard<std::mutex> lk(g_lock); if (!g_enabled) return false; }
     int stype = 0; socklen_t tl = sizeof(stype);
     if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &stype, &tl) != 0 || stype != SOCK_DGRAM) return false;
     if (dest->sa_family != AF_INET && dest->sa_family != AF_INET6) return false;
-    if (isDirect(dest) || sameAsProxy(dest)) return false;
+    if (isLoopback(dest)) return false;
     char ip[64]; int port = 0;
-    if (destToIpPort(dest, ip, sizeof(ip), &port) && port == 443) {
-        if (g_quicBlocks < 5) LOGD("blocked QUIC UDP:443 leak to %s (#%d) -> TCP fallback", ip, g_quicBlocks + 1);
-        g_quicBlocks++;
-        return true;
+    if (destToIpPort(dest, ip, sizeof(ip), &port)) {
+        if (g_udpBlocks < 5) LOGD("blocked direct UDP leak (#%d), port=%d", g_udpBlocks + 1, port);
+        g_udpBlocks++;
     }
-    return false;
+    return true;
 }
 
 // Refuse QUIC datagrams with ECONNREFUSED. This makes Chromium/cronet mark the host's QUIC as
@@ -328,27 +666,33 @@ static bool quic_leak(int fd, const sockaddr *dest) {
 // main-loop guard, so the app survives; net result: no leak, fast, no close.
 static ssize_t my_sendto(int fd, const void *buf, size_t n, int flags,
                          const sockaddr *dest, socklen_t dlen) {
-    if (quic_leak(fd, dest)) { errno = ECONNREFUSED; return -1; }
+    if (udp_leak(fd, dest)) { errno = ECONNREFUSED; return -1; }
     return orig_sendto(fd, buf, n, flags, dest, dlen);
 }
 
 static ssize_t my_sendmsg(int fd, const struct msghdr *msg, int flags) {
-    if (msg && msg->msg_name && quic_leak(fd, (const sockaddr *) msg->msg_name)) {
+    if (msg && udp_leak(fd, (const sockaddr *) msg->msg_name)) {
         errno = ECONNREFUSED; return -1;
     }
     return orig_sendmsg(fd, msg, flags);
 }
 
 static int my_sendmmsg(int fd, struct mmsghdr *msgs, unsigned int vlen, int flags) {
-    if (msgs && vlen > 0 && msgs[0].msg_hdr.msg_name &&
-        quic_leak(fd, (const sockaddr *) msgs[0].msg_hdr.msg_name)) {
-        errno = ECONNREFUSED; return -1;
+    if (msgs) {
+        for (unsigned int i = 0; i < vlen; i++) {
+            if (udp_leak(fd, (const sockaddr *) msgs[i].msg_hdr.msg_name)) {
+                errno = ECONNREFUSED; return -1;
+            }
+        }
     }
     return orig_sendmmsg(fd, msgs, vlen, flags);
 }
 
-static void install_connect_hook() {
-    if (g_installed) return;
+static bool install_connect_hook() {
+    if (g_installed) {
+        return orig_connect && orig_getaddrinfo && orig_android_getaddrinfofornet
+                && orig_sendto && orig_sendmsg && orig_sendmmsg;
+    }
     void *h = xdl_open("libc.so", XDL_DEFAULT);
     if (h) {
         void *t = xdl_dsym(h, "connect", nullptr);
@@ -358,8 +702,12 @@ static void install_connect_hook() {
         }
         void *g = xdl_dsym(h, "getaddrinfo", nullptr);
         if (g && DobbyHook(g, (void *) my_getaddrinfo, (void **) &orig_getaddrinfo) == 0) {
-            LOGD("getaddrinfo hook installed (IPv4-only)");
+            LOGD("getaddrinfo hook installed (remote DNS)");
         }
+        void *gn = xdl_dsym(h, "android_getaddrinfofornet", nullptr);
+        if (gn && DobbyHook(gn, (void *) my_android_getaddrinfofornet,
+                            (void **) &orig_android_getaddrinfofornet) == 0)
+            LOGD("android_getaddrinfofornet hook installed (remote DNS)");
         // Block unconnected-UDP QUIC (the IG leak path) by DROPPING UDP:443 datagrams.
         void *st = xdl_dsym(h, "sendto", nullptr);
         if (st && DobbyHook(st, (void *) my_sendto, (void **) &orig_sendto) == 0)
@@ -372,12 +720,18 @@ static void install_connect_hook() {
             LOGD("sendmmsg hook installed (QUIC guard)");
         xdl_close(h);
     }
+    return g_installed && orig_connect && orig_getaddrinfo && orig_android_getaddrinfofornet
+            && orig_sendto && orig_sendmsg && orig_sendmmsg;
 }
 
 // ---- configuration (called from BoxCore.cpp) -------------------------------
 
-extern "C" void pr_set_proxy(int type, const char *host, int port, const char *user, const char *pass) {
-    if (!host || port <= 0) return;
+extern "C" void pr_disable();
+
+extern "C" bool pr_set_proxy(int type, const char *host, int port, const char *user, const char *pass) {
+    // Never retain an earlier route if applying a replacement fails.
+    pr_disable();
+    if (!host || !*host || port <= 0 || port > 65535) return false;
     struct addrinfo hints{}, *res = nullptr;
     hints.ai_family = AF_INET;   // SOAX/most proxies are IPv4; guests use IPv4 sockets
     hints.ai_socktype = SOCK_STREAM;
@@ -385,8 +739,8 @@ extern "C" void pr_set_proxy(int type, const char *host, int port, const char *u
     snprintf(ports, sizeof(ports), "%d", port);
     // Resolve while the hook is idle (g_enabled=false), so DNS goes direct.
     if (getaddrinfo(host, ports, &hints, &res) != 0 || !res) {
-        LOGD("proxy host resolve failed: %s", host);
-        return;
+        LOGD("proxy host resolve failed");
+        return false;
     }
     {
         std::lock_guard<std::mutex> lk(g_lock);
@@ -406,12 +760,24 @@ extern "C" void pr_set_proxy(int type, const char *host, int port, const char *u
         g_haveProxy6 = true;
     }
     freeaddrinfo(res);
-    install_connect_hook();
+    if (!install_connect_hook()) {
+        LOGD("proxy hook installation incomplete");
+        return false;
+    }
     { std::lock_guard<std::mutex> lk(g_lock); g_enabled = true; }
-    LOGD("proxy enabled %s:%d type=%d auth=%d", host, port, type, (int) (user && *user));
+    LOGD("proxy enabled type=%d auth=%d", type, (int) (user && *user));
+    return true;
 }
 
 extern "C" void pr_disable() {
-    std::lock_guard<std::mutex> lk(g_lock);
-    g_enabled = false;
+    {
+        std::lock_guard<std::mutex> lk(g_lock);
+        g_enabled = false;
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_dnsLock);
+        g_hostToSynthetic.clear();
+        g_syntheticToHost.clear();
+        g_nextSynthetic = 1;
+    }
 }

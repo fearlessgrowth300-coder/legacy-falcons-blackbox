@@ -126,19 +126,31 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         }
     }
 
+    // Android 13 can batch component-state changes through the plural API.  A guest must never
+    // reach the real PackageManager with the host package name: doing so broadcasts
+    // PACKAGE_CHANGED for BlackBox and kills every clone process at once.
+    @ProxyMethod("setComponentEnabledSettings")
+    public static class SetComponentEnabledSettings extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            return null;
+        }
+    }
+
     @ProxyMethod("getPackageInfo")
     public static class GetPackageInfo extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String packageName = (String) args[0];
             int flags = MethodParameterUtils.toInt(args[1]);
-            
-            
-            if ("com.android.vending".equals(packageName)) {
-                return createFakeGooglePlayServicesPackageInfo();
-            }
-            
-            PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(packageName, flags, BlackBoxCore.getUserId());
+            // Gmail/Play Services validate the Play Store's signing certificate before
+            // opening Google account setup. Returning the old hand-built placeholder here
+            // made that certificate array empty, so Google reported "device not compatible"
+            // and the Google account option became a no-op. Use the virtual package record
+            // (which carries the installed APK's real signing metadata) and only fall back to
+            // the host PackageManager if this user has not installed Play Store.
+            PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(
+                    packageName, flags, BlackBoxCore.getUserId());
             if (packageInfo != null) {
                 
                 if (packageInfo.requestedPermissions != null && packageInfo.requestedPermissionsFlags != null) {
@@ -158,23 +170,6 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 return method.invoke(who, args);
             }
             return null;
-        }
-        
-        private PackageInfo createFakeGooglePlayServicesPackageInfo() {
-            PackageInfo packageInfo = new PackageInfo();
-            packageInfo.packageName = "com.android.vending";
-            packageInfo.versionName = "33.8.16-21";
-            packageInfo.versionCode = 83381621;
-            
-            ApplicationInfo appInfo = new ApplicationInfo();
-            appInfo.packageName = "com.android.vending";
-            appInfo.name = "Google Play Store";
-            appInfo.flags = ApplicationInfo.FLAG_SYSTEM;
-            appInfo.uid = 10001; 
-            packageInfo.applicationInfo = appInfo;
-            
-            Slog.d(TAG, "GetPackageInfo: Providing fake Google Play Services info");
-            return packageInfo;
         }
     }
 

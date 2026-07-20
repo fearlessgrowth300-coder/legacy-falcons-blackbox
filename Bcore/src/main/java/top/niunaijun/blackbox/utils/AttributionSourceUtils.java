@@ -1,8 +1,10 @@
 package top.niunaijun.blackbox.utils;
 
 import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.utils.Slog;
+import black.android.content.AttributionSourceStateContext;
+import black.android.content.BRAttributionSource;
+import black.android.content.BRAttributionSourceState;
 
 
 public class AttributionSourceUtils {
@@ -10,13 +12,22 @@ public class AttributionSourceUtils {
 
     
     public static void fixAttributionSourceInArgs(Object[] args) {
+        fixAttributionSourceInArgs(args, BlackBoxCore.getHostUid(), currentCallerPackage());
+    }
+
+    /**
+     * Rewrite only the outer caller identity that the destination Binder checks.
+     * Physical providers see BlackBox's host UID, while a provider hosted inside
+     * another virtual process sees the originating virtual UID through BinderHook.
+     */
+    public static void fixAttributionSourceInArgs(Object[] args, int uid, String packageName) {
         if (args == null) return;
         
         for (int i = 0; i < args.length; i++) {
             Object arg = args[i];
             if (arg != null && arg.getClass().getName().contains("AttributionSource")) {
                 try {
-                    fixAttributionSourceUid(arg);
+                    fixAttributionSourceUid(arg, uid, packageName);
                     Slog.d(TAG, "Fixed AttributionSource UID in method arguments");
                 } catch (Exception e) {
                     Slog.w(TAG, "Failed to fix AttributionSource in args: " + e.getMessage());
@@ -29,7 +40,7 @@ public class AttributionSourceUtils {
             Object arg = args[i];
             if (arg != null && arg.getClass().getName().contains("Bundle")) {
                 try {
-                    fixAttributionSourceInBundle(arg);
+                    fixAttributionSourceInBundle(arg, uid, packageName);
                 } catch (Exception e) {
                     Slog.w(TAG, "Failed to fix AttributionSource in Bundle: " + e.getMessage());
                 }
@@ -39,8 +50,18 @@ public class AttributionSourceUtils {
 
     
     public static void fixAttributionSourceUid(Object attributionSource) {
+        fixAttributionSourceUid(attributionSource, BlackBoxCore.getHostUid(), currentCallerPackage());
+    }
+
+    public static void fixAttributionSourceUid(Object attributionSource, int uid, String packageName) {
         try {
             if (attributionSource == null) return;
+
+            // Android 12+ keeps the real uid/package in AttributionSourceState.
+            // The public AttributionSource object often has no writable mUid or
+            // mPackageName fields, so update the nested state through the generated
+            // reflection bridge before attempting legacy fields.
+            fixNestedAttributionState(attributionSource, uid, packageName);
             
             Class<?> attributionSourceClass = attributionSource.getClass();
             
@@ -51,7 +72,7 @@ public class AttributionSourceUtils {
                 try {
                     java.lang.reflect.Field uidField = attributionSourceClass.getDeclaredField(fieldName);
                     uidField.setAccessible(true);
-                    uidField.set(attributionSource, BlackBoxCore.getHostUid());
+                    uidField.set(attributionSource, uid);
                     Slog.d(TAG, "Fixed AttributionSource UID via field: " + fieldName);
                     break;
                 } catch (NoSuchFieldException e) {
@@ -63,7 +84,7 @@ public class AttributionSourceUtils {
             try {
                 java.lang.reflect.Method setUidMethod = attributionSourceClass.getDeclaredMethod("setUid", int.class);
                 setUidMethod.setAccessible(true);
-                setUidMethod.invoke(attributionSource, BlackBoxCore.getHostUid());
+                setUidMethod.invoke(attributionSource, uid);
                 Slog.d(TAG, "Fixed AttributionSource UID via setter method");
             } catch (Exception e) {
                 
@@ -76,7 +97,7 @@ public class AttributionSourceUtils {
                 try {
                     java.lang.reflect.Field packageField = attributionSourceClass.getDeclaredField(fieldName);
                     packageField.setAccessible(true);
-                    packageField.set(attributionSource, BlackBoxCore.getHostPkg());
+                    packageField.set(attributionSource, packageName);
                     Slog.d(TAG, "Fixed AttributionSource package name via field: " + fieldName);
                     break;
                 } catch (NoSuchFieldException e) {
@@ -89,8 +110,32 @@ public class AttributionSourceUtils {
         }
     }
 
+    private static void fixNestedAttributionState(Object attributionSource, int uid, String packageName) {
+        try {
+            if (attributionSource == null || BRAttributionSource.getRealClass() == null) return;
+            Object state = BRAttributionSource.get(attributionSource).mAttributionSourceState();
+            if (state != null && BRAttributionSourceState.getRealClass() != null) {
+                AttributionSourceStateContext stateContext = BRAttributionSourceState.get(state);
+                // The provider process unparcels this state and verifies that its
+                // uid matches Binder.getCallingUid().  Android 16 no longer keeps
+                // a writable uid on the outer AttributionSource object, so only
+                // changing the package (or looking for a setUid method) leaves the
+                // virtual guest uid behind and every provider call is rejected.
+                stateContext._set_uid(uid);
+                stateContext._set_packageName(packageName);
+            }
+        } catch (Throwable ignored) {
+            // Some vendor builds expose a different AttributionSourceState shape;
+            // legacy field handling below remains the fallback for those builds.
+        }
+    }
+
     
     public static void fixAttributionSourceInBundle(Object bundle) {
+        fixAttributionSourceInBundle(bundle, BlackBoxCore.getHostUid(), currentCallerPackage());
+    }
+
+    public static void fixAttributionSourceInBundle(Object bundle, int uid, String packageName) {
         try {
             if (bundle == null) return;
             
@@ -104,7 +149,7 @@ public class AttributionSourceUtils {
                     Object value = getMethod.invoke(bundle, key);
                     
                     if (value != null && value.getClass().getName().contains("AttributionSource")) {
-                        fixAttributionSourceUid(value);
+                        fixAttributionSourceUid(value, uid, packageName);
                         Slog.d(TAG, "Fixed AttributionSource UID in Bundle key: " + key);
                     }
                 } catch (Exception e) {
@@ -129,7 +174,7 @@ public class AttributionSourceUtils {
                 
                 java.lang.reflect.Constructor<?> constructor = attributionSourceClass.getDeclaredConstructor(int.class, String.class);
                 constructor.setAccessible(true);
-                attributionSource = constructor.newInstance(BlackBoxCore.getHostUid(), BlackBoxCore.getHostPkg());
+                attributionSource = constructor.newInstance(BlackBoxCore.getHostUid(), currentCallerPackage());
             } catch (Exception e) {
                 try {
                     
@@ -150,6 +195,11 @@ public class AttributionSourceUtils {
             Slog.w(TAG, "Error creating safe AttributionSource: " + e.getMessage());
             return null;
         }
+    }
+
+    /** Return the real package making a provider call inside the virtual guest. */
+    private static String currentCallerPackage() {
+        return BlackBoxCore.getHostPkg();
     }
 
     

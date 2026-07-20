@@ -31,11 +31,6 @@
                 app:title="@string/disable_flag_secure"
                 app:summary="@string/disable_flag_secure_summary" />
 
-        <Preference
-                android:key="send_logs"
-                android:title="Send Logs"
-                android:summary="Upload debug logs to developer" />
-
     </PreferenceCategory>
 
 </PreferenceScreen>

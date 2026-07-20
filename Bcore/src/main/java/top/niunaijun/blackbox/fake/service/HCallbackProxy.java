@@ -149,16 +149,29 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
                 BlackBoxCore.getBActivityManager().restartProcess(activityInfo.packageName, activityInfo.processName, stubRecord.mUserId);
 
                 Intent launchIntentForPackage = BlackBoxCore.getBPackageManager().getLaunchIntentForPackage(activityInfo.packageName, stubRecord.mUserId);
+                ActivityInfo launchActivityInfo = activityInfo;
+                if (launchIntentForPackage != null && launchIntentForPackage.getComponent() != null) {
+                    ActivityInfo resolvedLaunchInfo = BlackBoxCore.getBPackageManager().getActivityInfo(
+                            launchIntentForPackage.getComponent(), 0, stubRecord.mUserId);
+                    if (resolvedLaunchInfo != null) {
+                        launchActivityInfo = resolvedLaunchInfo;
+                    }
+                }
                 intent.setExtrasClassLoader(this.getClass().getClassLoader());
-                ProxyActivityRecord.saveStub(intent, launchIntentForPackage, stubRecord.mActivityInfo, stubRecord.mActivityRecord, stubRecord.mUserId);
+                // The fallback launch intent may point at a different activity (for example,
+                // Instagram's MainTabActivity when InternalLauncher is not a safe virtual root).
+                // Keep ActivityInfo paired with the rewritten target; otherwise
+                // ActivityThread still instantiates the old class and enters a crash/restart loop.
+                ProxyActivityRecord.saveStub(intent, launchIntentForPackage, launchActivityInfo,
+                        stubRecord.mActivityRecord, stubRecord.mUserId);
                 if (BuildCompat.isPie()) {
                     LaunchActivityItemContext launchActivityItemContext = BRLaunchActivityItem.get(r);
                     launchActivityItemContext._set_mIntent(intent);
-                    launchActivityItemContext._set_mInfo(activityInfo);
+                    launchActivityItemContext._set_mInfo(launchActivityInfo);
                 } else {
                     ActivityThreadActivityClientRecordContext clientRecordContext = BRActivityThreadActivityClientRecord.get(r);
                     clientRecordContext._set_intent(intent);
-                    clientRecordContext._set_activityInfo(activityInfo);
+                    clientRecordContext._set_activityInfo(launchActivityInfo);
                 }
                 return true;
             }
@@ -174,6 +187,8 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
 
             if(BuildCompat.isTiramisu()){
                 LaunchActivityItemContext launchActivityItemContext = BRLaunchActivityItem.get(r);
+                stubRecord.mTarget.setExtrasClassLoader(
+                        BActivityThread.currentActivityThread().getApplication().getClassLoader());
                 launchActivityItemContext._set_mIntent(stubRecord.mTarget);
                 launchActivityItemContext._set_mInfo(activityInfo);
             } else if (BuildCompat.isS()) {

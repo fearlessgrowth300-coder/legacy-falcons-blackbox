@@ -115,6 +115,22 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         ActivityManagerCompat.setActivityOrientation(activity, info.screenOrientation);
     }
 
+    /**
+     * Virtual activities are unmarshalled first by the host process. Android 16 can therefore
+     * leave nested fragment/activity state using the host loader, which turns app-defined
+     * Parcelables (Instagram's fragment_props is one example) into an invalid placeholder. Set
+     * the guest loader before the app or FragmentManager reads any intent or saved-state value.
+     */
+    private void fixActivityStateClassLoader(Activity activity, Bundle state) {
+        ClassLoader guest = activity.getClassLoader();
+        if (activity.getIntent() != null) {
+            activity.getIntent().setExtrasClassLoader(guest);
+        }
+        if (state != null) {
+            state.setClassLoader(guest);
+        }
+    }
+
     @Override
     public Application newApplication(ClassLoader cl, String className, Context context) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
         ContextCompat.fix(context);
@@ -125,12 +141,14 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle, PersistableBundle persistentState) {
         checkActivity(activity);
+        fixActivityStateClassLoader(activity, icicle);
         super.callActivityOnCreate(activity, icicle, persistentState);
     }
 
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle) {
         checkActivity(activity);
+        fixActivityStateClassLoader(activity, icicle);
         super.callActivityOnCreate(activity, icicle);
     }
 
@@ -141,6 +159,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
     }
 
     public Activity newActivity(ClassLoader cl, String className, Intent intent) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
+        if (intent != null) intent.setExtrasClassLoader(cl);
         try {
             return super.newActivity(cl, className, intent);
         } catch (ClassNotFoundException e) {

@@ -24,4 +24,9 @@ class ViewPagerAdapter(appCompatActivity: AppCompatActivity) : FragmentStateAdap
         return fragmentList[position]
     }
 
+    override fun getItemId(position: Int): Long = fragmentList[position].userID.toLong()
+
+    override fun containsItem(itemId: Long): Boolean =
+        fragmentList.any { it.userID.toLong() == itemId }
+
 }

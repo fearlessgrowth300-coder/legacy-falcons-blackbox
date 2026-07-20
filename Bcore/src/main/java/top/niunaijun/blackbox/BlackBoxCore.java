@@ -38,6 +38,7 @@ import top.niunaijun.blackbox.app.LauncherActivity;
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback;
 import top.niunaijun.blackbox.app.configuration.ClientConfiguration;
 import top.niunaijun.blackbox.core.GmsCore;
+import top.niunaijun.blackbox.core.GuestProxy;
 import top.niunaijun.blackbox.core.NativeCore;
 import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.core.system.DaemonService;
@@ -1232,7 +1233,14 @@ public class BlackBoxCore extends ClientConfiguration {
     }
 
     public InstallResult installGms(int userId) {
-        return GmsCore.installGApps(userId);
+        GuestProxy.GmsRouteStatus route = GuestProxy.syncGmsRouteForUser(userId);
+        if (route == GuestProxy.GmsRouteStatus.CONFLICT || route == GuestProxy.GmsRouteStatus.INVALID) {
+            return new InstallResult().installError(
+                    "Google services require one proxy per BlackBox user. Move differently routed apps to separate users.");
+        }
+        InstallResult result = GmsCore.installGApps(userId);
+        if (result.success) GuestProxy.syncGmsRouteForUser(userId);
+        return result;
     }
 
     public boolean uninstallGms(int userId) {

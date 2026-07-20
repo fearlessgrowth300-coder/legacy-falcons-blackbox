@@ -1,15 +1,18 @@
 package top.niunaijun.blackbox.fake.service;
 
 import android.accounts.Account;
+import android.accounts.AccountManager;
 import android.accounts.IAccountManagerResponse;
 import android.content.Context;
 import android.os.Bundle;
+import android.os.Process;
 
 import java.lang.reflect.Method;
 import java.util.Map;
 
 import black.android.accounts.BRIAccountManagerStub;
 import black.android.os.BRServiceManager;
+import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.fake.frameworks.BAccountManager;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
@@ -19,6 +22,25 @@ import top.niunaijun.blackbox.utils.Slog;
 
 public class IAccountManagerProxy extends BinderInvocationStub {
     public static final String TAG = "IAccountManagerProxy";
+
+    /**
+     * Android's real AccountManagerService stamps authenticator options with the verified caller
+     * UID/PID.  BlackBox's account service lives in another app process, so Binder would otherwise
+     * expose the shared host UID and Google would reject Gmail as a non-Google caller.  Replace any
+     * app-supplied identity with the current virtual process identity before crossing that boundary.
+     */
+    private static Bundle prepareAuthenticatorOptions(Bundle source) {
+        Bundle options = source == null ? new Bundle() : new Bundle(source);
+        String packageName = BActivityThread.getAppPackageName();
+        if (packageName != null) {
+            options.putString(AccountManager.KEY_ANDROID_PACKAGE_NAME, packageName);
+        }
+        options.putInt(AccountManager.KEY_CALLER_UID, BActivityThread.getBUid());
+        options.putInt(AccountManager.KEY_CALLER_PID, Process.myPid());
+        Slog.d(TAG, "Prepared isolated account caller package=" + packageName
+                + ", virtualUid=" + BActivityThread.getBUid());
+        return options;
+    }
 
     public IAccountManagerProxy() {
         super(BRServiceManager.get().getService(Context.ACCOUNT_SERVICE));
@@ -241,7 +263,7 @@ public class IAccountManagerProxy extends BinderInvocationStub {
                     (String) args[2],
                     (boolean) args[3],
                     (boolean) args[4],
-                    (Bundle) args[5]);
+                    prepareAuthenticatorOptions((Bundle) args[5]));
             return 0;
         }
     }
@@ -256,7 +278,7 @@ public class IAccountManagerProxy extends BinderInvocationStub {
                     (String) args[2],
                     (String[]) args[3],
                     (boolean) args[4],
-                    (Bundle) args[5]);
+                    prepareAuthenticatorOptions((Bundle) args[5]));
             return 0;
         }
     }
@@ -271,7 +293,7 @@ public class IAccountManagerProxy extends BinderInvocationStub {
                     (String) args[2],
                     (String[]) args[3],
                     (boolean) args[4],
-                    (Bundle) args[5]);
+                    prepareAuthenticatorOptions((Bundle) args[5]));
             return 0;
         }
     }
@@ -285,7 +307,7 @@ public class IAccountManagerProxy extends BinderInvocationStub {
                     (Account) args[1],
                     (String) args[2],
                     (boolean) args[3],
-                    (Bundle) args[4]);
+                    prepareAuthenticatorOptions((Bundle) args[4]));
             return 0;
         }
     }
@@ -309,7 +331,7 @@ public class IAccountManagerProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             BAccountManager.get().confirmCredentialsAsUser((IAccountManagerResponse) args[0],
                     (Account) args[1],
-                    (Bundle) args[2],
+                    prepareAuthenticatorOptions((Bundle) args[2]),
                     (boolean) args[3]);
             return 0;
         }

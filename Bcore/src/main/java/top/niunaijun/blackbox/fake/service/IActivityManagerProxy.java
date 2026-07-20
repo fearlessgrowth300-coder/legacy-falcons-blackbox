@@ -413,7 +413,11 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             return method.invoke(who, args);
         } catch (Exception e) {
             Slog.e(TAG, "BindServiceCommon: Unexpected error", e);
-            return method.invoke(who, args);
+            // Do not repeat the same rejected binder call. On Android 14+ an invalid
+            // bindServiceInstance request throws from system_server; invoking it again here
+            // turns a recoverable service failure into an uncaught Chromium/Instagram crash.
+            // Returning "not bound" lets the caller retry or use its in-process fallback.
+            return 0;
         }
     }
 
@@ -446,6 +450,14 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class bindServiceInstance extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            // BlackBox redirects the guest service to ProxyService, which is intentionally a
+            // normal (non-isolated) manifest service. Android 14+ rejects a non-null instance
+            // name for such a service. The guest component remains in ProxyServiceRecord, so
+            // clearing only the system-facing instance name preserves clone dispatch while
+            // avoiding "Can't use instance name ... with non-isolated service".
+            if (args != null && args.length > 6) {
+                args[6] = null;
+            }
             return BindServiceCommon(who,method,args,7);
         }
 
@@ -526,11 +538,31 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             for (int i = 0; i < intents.length; i++) {
                 Intent intent = intents[i];
                 switch (type) {
+                    case ActivityManagerCompat.INTENT_SENDER_BROADCAST:
+                        Intent broadcastShadow = new Intent();
+                        broadcastShadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(),
+                                "top.niunaijun.blackbox.proxy.ProxyBroadcastReceiver"));
+                        ProxyBroadcastRecord.saveStub(broadcastShadow, intent, BActivityThread.getUserId());
+                        ProxyPendingRecord.saveStub(broadcastShadow, intent, BActivityThread.getUserId(),
+                                BActivityThread.getAppPackageName());
+                        intents[i] = broadcastShadow;
+                        break;
                     case ActivityManagerCompat.INTENT_SENDER_ACTIVITY:
                         Intent shadow = new Intent();
                         shadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(), ProxyManifest.getProxyPendingActivity(BActivityThread.getAppPid())));
-                        ProxyPendingRecord.saveStub(shadow, intent, BActivityThread.getUserId());
+                        ProxyPendingRecord.saveStub(shadow, intent, BActivityThread.getUserId(),
+                                BActivityThread.getAppPackageName());
                         intents[i] = shadow;
+                        break;
+                    case ActivityManagerCompat.INTENT_SENDER_SERVICE:
+                    case ActivityManagerCompat.INTENT_SENDER_FOREGROUND_SERVICE:
+                        Intent serviceShadow = new Intent();
+                        serviceShadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(),
+                                "top.niunaijun.blackbox.proxy.ProxyPendingService"));
+                        ProxyPendingRecord.saveStub(serviceShadow, intent, BActivityThread.getUserId(),
+                                BActivityThread.getAppPackageName(),
+                                type == ActivityManagerCompat.INTENT_SENDER_FOREGROUND_SERVICE);
+                        intents[i] = serviceShadow;
                         break;
                 }
             }

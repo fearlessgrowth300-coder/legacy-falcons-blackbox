@@ -1,0 +1,111 @@
+--------- beginning of main
+07-19 20:04:22.765 18234 18234 D CrashMonitor: Performing periodic health check...
+07-19 20:04:22.766 18234 18234 D CrashMonitor: Health check completed - Memory: 2.6%, Threads: 26
+07-19 20:04:52.768 18234 18234 D CrashMonitor: Performing periodic health check...
+07-19 20:04:52.768 18234 18234 D CrashMonitor: Health check completed - Memory: 2.6%, Threads: 26
+07-19 20:05:22.800 18234 18234 D CrashMonitor: Performing periodic health check...
+07-19 20:05:22.800 18234 18234 D CrashMonitor: Health check completed - Memory: 2.6%, Threads: 27
+07-19 20:05:52.802 18234 18234 D CrashMonitor: Performing periodic health check...
+07-19 20:05:52.803 18234 18234 D CrashMonitor: Health check completed - Memory: 2.6%, Threads: 27
+07-19 20:06:22.808 18234 18234 D CrashMonitor: Performing periodic health check...
+07-19 20:06:22.808 18234 18234 D CrashMonitor: Health check completed - Memory: 2.6%, Threads: 27
+07-19 20:06:22.986 18234 18234 E HCallbackStub: mActivityCallbacks is null for clientTransaction: ClientTransaction{
+07-19 20:06:22.986 18234 18234 E HCallbackStub:   transactionItems=[
+07-19 20:06:22.986 18234 18234 E HCallbackStub:     PauseActivityItem{mActivityToken=android.os.BinderProxy@2de8ecc,finished=false,userLeaving=true,dontReport=true,autoEnteringPip=false}
+07-19 20:06:22.986 18234 18234 E HCallbackStub:   ]
+07-19 20:06:22.986 18234 18234 E HCallbackStub: }
+--------- beginning of system
+07-19 20:06:22.992 18234 18234 D ActivityThread: com.google.android.gms will use render engine as GL
+07-19 20:06:23.027 18234 18234 D AppInstrumentation: callActivityOnCreate: com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity
+07-19 20:06:23.077 18234 18234 I ZZZOnboardingGraph: KnkI59CK+OmwxOyJARIcQWNjb3VudEludHJvQWN0aXZpdHlDb250cmFjdBoqCihjb20uZ29vZ2xlLmFuZHJvaWQuYWNjb3VudHMuQWNjb3VudEludHJvIOTvlt73MyobY29tLmdvb2dsZS5hbmRyb2lkLmdtcy9hdXRo
+07-19 20:06:23.079 18234 18234 I ZZZOnboardingGraph: Mk0I59CK+OmwxOyJARIcQWNjb3VudEludHJvQWN0aXZpdHlDb250cmFjdBjm75be9zMiG2NvbS5nb29nbGUuYW5kcm9pZC5nbXMvYXV0aA==
+07-19 20:06:23.080 18234 18234 E TransactionExecutor: Failed to execute the transaction: tId:-1732235216 ClientTransaction{
+07-19 20:06:23.080 18234 18234 E TransactionExecutor: tId:-1732235216   transactionItems=[
+07-19 20:06:23.080 18234 18234 E TransactionExecutor: tId:-1732235216     PauseActivityItem{mActivityToken=android.os.BinderProxy@2de8ecc,finished=false,userLeaving=true,dontReport=true,autoEnteringPip=false}
+07-19 20:06:23.080 18234 18234 E TransactionExecutor: tId:-1732235216     Target activity: com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity
+07-19 20:06:23.080 18234 18234 E TransactionExecutor: tId:-1732235216   ]
+07-19 20:06:23.080 18234 18234 E TransactionExecutor: tId:-1732235216 }
+07-19 20:06:23.081 18234 18234 W SimpleCrashFix: main-loop guard caught (swallow=true): java.lang.RuntimeException: Unable to start activity ComponentInfo{com.google.android.gms/com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity}
+07-19 20:06:23.081 18234 18234 W Looper  : Loop again would have the queued messages be executed before this one completed.
+07-19 20:06:23.081 18234 18234 E HCallbackStub: mActivityCallbacks is null for clientTransaction: ClientTransaction{
+07-19 20:06:23.081 18234 18234 E HCallbackStub:   transactionItems=[
+07-19 20:06:23.081 18234 18234 E HCallbackStub:     StopActivityItem{mActivityToken=android.os.BinderProxy@2de8ecc}
+07-19 20:06:23.081 18234 18234 E HCallbackStub:   ]
+07-19 20:06:23.081 18234 18234 E HCallbackStub: }
+07-19 20:06:23.083 18234 18234 D ActivityThread: Too many transaction errors, throttling freezer binder callback.
+07-19 20:06:23.083 18234 18234 D ActivityThread: com.google.android.gms will use render engine as GL
+07-19 20:06:23.095 18234 18234 D AppInstrumentation: callActivityOnCreate: com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity
+07-19 20:06:23.113 18234 18234 I ZZZOnboardingGraph: KnkI59CK+OmwxOyJARIcQWNjb3VudEludHJvQWN0aXZpdHlDb250cmFjdBoqCihjb20uZ29vZ2xlLmFuZHJvaWQuYWNjb3VudHMuQWNjb3VudEludHJvIIjwlt73MyobY29tLmdvb2dsZS5hbmRyb2lkLmdtcy9hdXRo
+07-19 20:06:23.115 18234 18234 I ZZZOnboardingGraph: Mk0I59CK+OmwxOyJARIcQWNjb3VudEludHJvQWN0aXZpdHlDb250cmFjdBiK8Jbe9zMiG2NvbS5nb29nbGUuYW5kcm9pZC5nbXMvYXV0aA==
+07-19 20:06:23.121 18234 18234 E TransactionExecutor: Failed to execute the transaction: tId:657333906 ClientTransaction{
+07-19 20:06:23.121 18234 18234 E TransactionExecutor: tId:657333906   transactionItems=[
+07-19 20:06:23.121 18234 18234 E TransactionExecutor: tId:657333906     StopActivityItem{mActivityToken=android.os.BinderProxy@2de8ecc}
+07-19 20:06:23.121 18234 18234 E TransactionExecutor: tId:657333906     Target activity: com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity
+07-19 20:06:23.121 18234 18234 E TransactionExecutor: tId:657333906   ]
+07-19 20:06:23.121 18234 18234 E TransactionExecutor: tId:657333906 }
+07-19 20:06:23.122 18234 18234 W SimpleCrashFix: main-loop guard caught (swallow=true): java.lang.RuntimeException: Unable to start activity ComponentInfo{com.google.android.gms/com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity}
+07-19 20:06:23.122 18234 18234 W Looper  : Loop again would have the queued messages be executed before this one completed.
+07-19 20:06:23.125 18234 18307 D HWUI    : CacheManager::trimMemory(20)
+07-19 20:06:23.132 18234 18234 E HCallbackStub: mActivityCallbacks is null for clientTransaction: ClientTransaction{
+07-19 20:06:23.132 18234 18234 E HCallbackStub:   transactionItems=[
+07-19 20:06:23.132 18234 18234 E HCallbackStub:     StopActivityItem{mActivityToken=android.os.BinderProxy@a98d560}
+07-19 20:06:23.132 18234 18234 E HCallbackStub:   ]
+07-19 20:06:23.132 18234 18234 E HCallbackStub: }
+07-19 20:06:23.133 18234 18234 D ActivityThread: Too many transaction errors, throttling freezer binder callback.
+07-19 20:06:23.133 18234 18234 D ActivityThread: com.google.android.gms will use render engine as GL
+07-19 20:06:23.148 18234 18234 D AppInstrumentation: callActivityOnCreate: com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity
+07-19 20:06:23.173 18234 18234 I ZZZOnboardingGraph: KnkIqo/tqfT52uiyARIcQWNjb3VudEludHJvQWN0aXZpdHlDb250cmFjdBoqCihjb20uZ29vZ2xlLmFuZHJvaWQuYWNjb3VudHMuQWNjb3VudEludHJvIMTwlt73MyobY29tLmdvb2dsZS5hbmRyb2lkLmdtcy9hdXRo
+07-19 20:06:23.176 18234 18234 I ZZZOnboardingGraph: Mk0Iqo/tqfT52uiyARIcQWNjb3VudEludHJvQWN0aXZpdHlDb250cmFjdBjH8Jbe9zMiG2NvbS5nb29nbGUuYW5kcm9pZC5nbXMvYXV0aA==
+07-19 20:06:23.177 18234 18234 E TransactionExecutor: Failed to execute the transaction: tId:-1367854258 ClientTransaction{
+07-19 20:06:23.177 18234 18234 E TransactionExecutor: tId:-1367854258   transactionItems=[
+07-19 20:06:23.177 18234 18234 E TransactionExecutor: tId:-1367854258     StopActivityItem{mActivityToken=android.os.BinderProxy@a98d560}
+07-19 20:06:23.177 18234 18234 E TransactionExecutor: tId:-1367854258     Target activity: com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity
+07-19 20:06:23.177 18234 18234 E TransactionExecutor: tId:-1367854258   ]
+07-19 20:06:23.177 18234 18234 E TransactionExecutor: tId:-1367854258 }
+07-19 20:06:23.177 18234 18234 W SimpleCrashFix: main-loop guard caught (swallow=true): java.lang.RuntimeException: Unable to start activity ComponentInfo{com.google.android.gms/com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity}
+07-19 20:06:23.177 18234 18234 W Looper  : Loop again would have the queued messages be executed before this one completed.
+07-19 20:06:23.434 18234 18234 E HCallbackStub: mActivityCallbacks is null for clientTransaction: ClientTransaction{
+07-19 20:06:23.434 18234 18234 E HCallbackStub:   transactionItems=[
+07-19 20:06:23.434 18234 18234 E HCallbackStub:     DestroyActivityItem{mActivityToken=android.os.BinderProxy@2de8ecc,finished=true}
+07-19 20:06:23.434 18234 18234 E HCallbackStub:   ]
+07-19 20:06:23.434 18234 18234 E HCallbackStub: }
+07-19 20:06:23.435 18234 18234 D ActivityThread: Too many transaction errors, throttling freezer binder callback.
+07-19 20:06:23.435 18234 18234 D ActivityThread: com.google.android.gms will use render engine as GL
+07-19 20:06:23.446 18234 18234 D AppInstrumentation: callActivityOnCreate: com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity
+07-19 20:06:23.465 18234 18234 I ZZZOnboardingGraph: KnkI59CK+OmwxOyJARIcQWNjb3VudEludHJvQWN0aXZpdHlDb250cmFjdBoqCihjb20uZ29vZ2xlLmFuZHJvaWQuYWNjb3VudHMuQWNjb3VudEludHJvIOfylt73MyobY29tLmdvb2dsZS5hbmRyb2lkLmdtcy9hdXRo
+07-19 20:06:23.466 18234 18234 I ZZZOnboardingGraph: Mk0I59CK+OmwxOyJARIcQWNjb3VudEludHJvQWN0aXZpdHlDb250cmFjdBjp8pbe9zMiG2NvbS5nb29nbGUuYW5kcm9pZC5nbXMvYXV0aA==
+07-19 20:06:23.467 18234 18234 E TransactionExecutor: Failed to execute the transaction: tId:1397727878 ClientTransaction{
+07-19 20:06:23.467 18234 18234 E TransactionExecutor: tId:1397727878   transactionItems=[
+07-19 20:06:23.467 18234 18234 E TransactionExecutor: tId:1397727878     DestroyActivityItem{mActivityToken=android.os.BinderProxy@2de8ecc,finished=true}
+07-19 20:06:23.467 18234 18234 E TransactionExecutor: tId:1397727878     Target activity: com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity
+07-19 20:06:23.467 18234 18234 E TransactionExecutor: tId:1397727878   ]
+07-19 20:06:23.467 18234 18234 E TransactionExecutor: tId:1397727878 }
+07-19 20:06:23.467 18234 18234 W SimpleCrashFix: main-loop guard caught (swallow=true): java.lang.RuntimeException: Unable to start activity ComponentInfo{com.google.android.gms/com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity}
+07-19 20:06:23.467 18234 18234 W Looper  : Loop again would have the queued messages be executed before this one completed.
+07-19 20:06:23.599 18234 18234 D ActivityThread: Too many transaction errors, throttling freezer binder callback.
+07-19 20:06:23.599 18234 18234 D ActivityThread: com.google.android.gms will use render engine as GL
+07-19 20:06:23.612 18234 18234 D AppInstrumentation: callActivityOnCreate: com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity
+07-19 20:06:23.624 18234 18234 I ZZZOnboardingGraph: KnkIqo/tqfT52uiyARIcQWNjb3VudEludHJvQWN0aXZpdHlDb250cmFjdBoqCihjb20uZ29vZ2xlLmFuZHJvaWQuYWNjb3VudHMuQWNjb3VudEludHJvIIj0lt73MyobY29tLmdvb2dsZS5hbmRyb2lkLmdtcy9hdXRo
+07-19 20:06:23.625 18234 18234 I ZZZOnboardingGraph: Mk0Iqo/tqfT52uiyARIcQWNjb3VudEludHJvQWN0aXZpdHlDb250cmFjdBiJ9Jbe9zMiG2NvbS5nb29nbGUuYW5kcm9pZC5nbXMvYXV0aA==
+07-19 20:06:23.625 18234 18234 E TransactionExecutor: Failed to execute the transaction: tId:-657343695 ClientTransaction{
+07-19 20:06:23.625 18234 18234 E TransactionExecutor: tId:-657343695   transactionItems=[
+07-19 20:06:23.625 18234 18234 E TransactionExecutor: tId:-657343695     ResumeActivityItem{mActivityToken=android.os.BinderProxy@a98d560,procState=2,isForward=true,shouldSendCompatFakeFocus=false}
+07-19 20:06:23.625 18234 18234 E TransactionExecutor: tId:-657343695     Target activity: com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity
+07-19 20:06:23.625 18234 18234 E TransactionExecutor: tId:-657343695     TopResumedActivityChangeItem{mActivityToken=android.os.BinderProxy@a98d560,onTop=true}
+07-19 20:06:23.625 18234 18234 E TransactionExecutor: tId:-657343695     Target activity: com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity
+07-19 20:06:23.625 18234 18234 E TransactionExecutor: tId:-657343695   ]
+07-19 20:06:23.625 18234 18234 E TransactionExecutor: tId:-657343695 }
+07-19 20:06:23.625 18234 18234 W SimpleCrashFix: main-loop guard caught (swallow=true): java.lang.RuntimeException: Unable to start activity ComponentInfo{com.google.android.gms/com.google.android.gms.auth.uiflows.addaccount.AccountIntroActivity}
+07-19 20:06:23.625 18234 18234 W Looper  : Loop again would have the queued messages be executed before this one completed.
+07-19 20:06:29.015 18234 18234 I DecorView: setWindowBackground: isPopOver=false color=ff010102 d=null
+07-19 20:06:36.784 18234 18236 I jun.blackbox:p4: Thread[2,tid=18236,WaitingInMainSignalCatcherLoop,Thread*=0x74cd800000,peer=0x2000f48,"Signal Catcher"]: reacting to signal 3
+07-19 20:06:36.784 18234 18236 I jun.blackbox:p4: 
+07-19 20:06:36.910 18234 18236 I jun.blackbox:p4: Wrote stack traces to tombstoned
+07-19 20:06:40.924 18234 18234 D AttributionSourceUtils: Fixed AttributionSource UID in method arguments
+07-19 20:06:40.924 18234 18234 W ContentProviderStub: Could not fix AttributionSource UID: android.content.AttributionSource.setUid [int]
+07-19 20:06:40.931 18234 18234 D AttributionSourceUtils: Fixed AttributionSource UID in method arguments
+07-19 20:06:40.931 18234 18234 W ContentProviderStub: Could not fix AttributionSource UID: android.content.AttributionSource.setUid [int]
+07-19 20:06:52.809 18234 18234 D CrashMonitor: Performing periodic health check...
+07-19 20:06:52.809 18234 18234 D CrashMonitor: Health check completed - Memory: 2.9%, Threads: 27
+07-19 20:07:22.841 18234 18234 D CrashMonitor: Performing periodic health check...
+07-19 20:07:22.842 18234 18234 D CrashMonitor: Health check completed - Memory: 2.9%, Threads: 27

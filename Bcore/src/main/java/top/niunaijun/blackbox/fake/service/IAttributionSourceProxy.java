@@ -6,11 +6,11 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Slog;
+import top.niunaijun.blackbox.utils.AttributionSourceUtils;
 
 
 public class IAttributionSourceProxy extends ClassInvocationStub {
@@ -45,7 +45,7 @@ public class IAttributionSourceProxy extends ClassInvocationStub {
             try {
                 
                 int uid = BlackBoxCore.getHostUid();
-                String packageName = BlackBoxCore.getHostPkg();
+                String packageName = callerPackage();
                 
                 Slog.d(TAG, "Creating AttributionSource with UID: " + uid + ", package: " + packageName);
                 
@@ -59,8 +59,12 @@ public class IAttributionSourceProxy extends ClassInvocationStub {
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "Error creating AttributionSource, using fallback: " + e.getMessage());
-                return createSafeAttributionSource(BlackBoxCore.getHostUid(), BlackBoxCore.getHostPkg());
+                return createSafeAttributionSource(BlackBoxCore.getHostUid(), callerPackage());
             }
+        }
+
+        private String callerPackage() {
+            return BlackBoxCore.getHostPkg();
         }
         
         private Object createSafeAttributionSource(int uid, String packageName) {
@@ -144,30 +148,15 @@ public class IAttributionSourceProxy extends ClassInvocationStub {
                 
                 Object result = method.invoke(who, args);
                 if (result != null) {
-                    
-                    fixAttributionSourceUid(result);
+                    AttributionSourceUtils.fixAttributionSourceUid(result);
                     return result;
                 }
                 
                 
-                return createSafeAttributionSource(BlackBoxCore.getHostUid(), BlackBoxCore.getHostPkg());
+                return createSafeAttributionSource(BlackBoxCore.getHostUid(), callerPackage());
             } catch (Exception e) {
                 Slog.w(TAG, "Error in fromParcel, using fallback: " + e.getMessage());
-                return createSafeAttributionSource(BlackBoxCore.getHostUid(), BlackBoxCore.getHostPkg());
-            }
-        }
-        
-        private void fixAttributionSourceUid(Object attributionSource) {
-            try {
-                
-                Class<?> attributionSourceClass = attributionSource.getClass();
-                Method setUidMethod = attributionSourceClass.getDeclaredMethod("setUid", int.class);
-                setUidMethod.setAccessible(true);
-                setUidMethod.invoke(attributionSource, BlackBoxCore.getHostUid());
-                
-                Slog.d(TAG, "Fixed AttributionSource UID to: " + BlackBoxCore.getHostUid());
-            } catch (Exception e) {
-                Slog.w(TAG, "Could not fix AttributionSource UID: " + e.getMessage());
+                return createSafeAttributionSource(BlackBoxCore.getHostUid(), callerPackage());
             }
         }
         
@@ -181,6 +170,10 @@ public class IAttributionSourceProxy extends ClassInvocationStub {
                 Slog.e(TAG, "Failed to create safe AttributionSource fallback: " + e.getMessage());
                 return null;
             }
+        }
+
+        private String callerPackage() {
+            return BlackBoxCore.getHostPkg();
         }
     }
 }

@@ -228,6 +228,21 @@ public class CrashMonitor {
             
             
             CrashInfo crashInfo = createCrashInfo(crashType, thread, throwable);
+
+            // Privacy-safe local diagnosis: class and top frame identify compatibility failures
+            // without recording exception messages, URLs, account tokens or proxy credentials.
+            if (throwable != null) {
+                StackTraceElement[] frames = throwable.getStackTrace();
+                StringBuilder signature = new StringBuilder(throwable.getClass().getName());
+                if (frames != null) {
+                    for (int i = 0; i < Math.min(frames.length, 10); i++) {
+                        signature.append(i == 0 ? " at " : " <- ")
+                                .append(frames[i].getClassName()).append('.')
+                                .append(frames[i].getMethodName());
+                    }
+                }
+                Slog.e(TAG, "Crash signature: " + signature);
+            }
             
             
             Slog.w(TAG, "Crash detected: " + crashInfo);
@@ -341,6 +356,11 @@ public class CrashMonitor {
             if (!logDir.exists()) {
                 logDir.mkdirs();
             }
+            File[] oldLogs = logDir.listFiles((dir, name) -> name.startsWith("crash_") && name.endsWith(".log"));
+            if (oldLogs != null && oldLogs.length >= 10) {
+                java.util.Arrays.sort(oldLogs, java.util.Comparator.comparingLong(File::lastModified));
+                for (int i = 0; i <= oldLogs.length - 10; i++) oldLogs[i].delete();
+            }
             
             String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date(crashInfo.timestamp));
             File logFile = new File(logDir, "crash_" + timestamp + ".log");
@@ -350,10 +370,9 @@ public class CrashMonitor {
                 writer.println("Timestamp: " + new Date(crashInfo.timestamp));
                 writer.println("Crash Type: " + crashInfo.crashType);
                 writer.println("Package: " + crashInfo.packageName);
-                writer.println("Error: " + crashInfo.errorMessage);
                 writer.println("Recovered: " + crashInfo.wasRecovered);
-                writer.println("=== STACK TRACE ===");
-                writer.println(crashInfo.stackTrace);
+                // Exception messages and stack traces may contain account tokens, URLs or proxy
+                // details. Keep only non-secret local counters/labels; remote upload is disabled.
                 writer.println("=== END ===");
             }
             

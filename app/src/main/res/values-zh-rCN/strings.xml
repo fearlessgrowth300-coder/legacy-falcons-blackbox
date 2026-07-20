@@ -63,4 +63,8 @@
     <string name="disable_gms">关闭服务</string>
     <string name="disable_gms_hint">是否清除当前Google服务环境？Google服务数据将被清空。</string>
     <string name="no_gms">当前手机没有Google服务环境。</string>
+    <string name="use_vpn_network">使用 VPN 网络</string>
+    <string name="use_vpn_network_summary">通过 VPN 路由沙盒应用流量（可能改善网络访问）</string>
+    <string name="disable_flag_secure">禁用安全窗口标志</string>
+    <string name="disable_flag_secure_summary">允许应用截图和录屏</string>
 </resources>

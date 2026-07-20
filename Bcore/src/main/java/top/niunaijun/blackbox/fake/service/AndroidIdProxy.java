@@ -50,7 +50,7 @@ public class AndroidIdProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String cid = cloneAndroidId();
-            if (cid != null) { Slog.d(TAG, "serve android_id=" + cid); return cid; }
+            if (cid != null) { return cid; }
             try {
                 Object result = method.invoke(who, args);
                 if (result == null || "0".equals(result.toString()) || "".equals(result.toString())) {
@@ -68,7 +68,7 @@ public class AndroidIdProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String cid = cloneAndroidId();
-            if (cid != null && isAndroidIdKey(args)) { Slog.d(TAG, "serve android_id=" + cid); return cid; }
+            if (cid != null && isAndroidIdKey(args)) { return cid; }
             try {
                 Object result = method.invoke(who, args);
                 if (isAndroidIdKey(args) && (result == null || "0".equals(result.toString()) || "".equals(result.toString()))) {
@@ -113,7 +113,7 @@ public class AndroidIdProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String cid = cloneAndroidId();
-            if (cid != null && isAndroidIdKey(args)) { Slog.d(TAG, "serve android_id=" + cid); return cid; }
+            if (cid != null && isAndroidIdKey(args)) { return cid; }
             try {
                 Object result = method.invoke(who, args);
                 if (isAndroidIdKey(args) && (result == null || "0".equals(result.toString()) || "".equals(result.toString()))) {
@@ -131,7 +131,7 @@ public class AndroidIdProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String cid = cloneAndroidId();
-            if (cid != null && isAndroidIdKey(args)) { Slog.d(TAG, "serve android_id=" + cid); return cid; }
+            if (cid != null && isAndroidIdKey(args)) { return cid; }
             try {
                 Object result = method.invoke(who, args);
                 if (isAndroidIdKey(args) && (result == null || "0".equals(result.toString()) || "".equals(result.toString()))) {

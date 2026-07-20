@@ -9,7 +9,6 @@ import androidx.annotation.Nullable;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.proxy.record.ProxyPendingRecord;
-import top.niunaijun.blackbox.utils.Slog;
 
 
 public class ProxyPendingActivity extends Activity {
@@ -20,7 +19,6 @@ public class ProxyPendingActivity extends Activity {
         super.onCreate(savedInstanceState);
         finish();
         ProxyPendingRecord pendingActivityRecord = ProxyPendingRecord.create(getIntent());
-        Slog.d(TAG, "ProxyPendingActivity: " + pendingActivityRecord);
         if (pendingActivityRecord.mTarget == null)
             return;
         pendingActivityRecord.mTarget.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);

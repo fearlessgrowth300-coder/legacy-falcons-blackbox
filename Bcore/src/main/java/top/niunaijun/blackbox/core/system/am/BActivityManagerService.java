@@ -47,6 +47,37 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
     }
 
     @Override
+    public boolean isAppProcessRunning(String packageName, int userId) {
+        return BProcessManagerService.get().findProcessRecord(packageName, packageName, userId) != null;
+    }
+
+    @Override
+    public Bundle verifyProxyRoute(String packageName, int userId, String expectedRouteId, String expectedExitIp) {
+        Bundle result = new Bundle();
+        ProcessRecord process = BProcessManagerService.get()
+                .findProcessRecord(packageName, packageName, userId);
+        if (process == null && "com.google.android.gms".equals(packageName)) {
+            process = BProcessManagerService.get().findProcessRecord(packageName,
+                    packageName + ".persistent", userId);
+        }
+        if (process == null || process.bActivityThread == null) {
+            result.putBoolean("ok", false);
+            result.putString("state", "NOT_RUNNING");
+            result.putString("err", "The routed guest process is not running");
+            return result;
+        }
+        try {
+            return process.bActivityThread.verifyProxyRoute(expectedRouteId, expectedExitIp);
+        } catch (Throwable throwable) {
+            Slog.e(TAG, "Unable to verify proxy route for " + packageName + " user " + userId, throwable);
+            result.putBoolean("ok", false);
+            result.putString("state", "SERVICE_ERROR");
+            result.putString("err", throwable.getClass().getSimpleName());
+            return result;
+        }
+    }
+
+    @Override
     public ComponentName startService(Intent intent, String resolvedType, boolean requireForeground, int userId) {
         UserSpace userSpace = getOrCreateSpaceLocked(userId);
         synchronized (userSpace.mActiveServices) {
@@ -195,15 +226,29 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
             return;
         }
         mBroadcastManager.sendBroadcast(pendingResultData);
+        int scheduledReceivers = 0;
         for (ResolveInfo resolve : resolves) {
             ProcessRecord processRecord = BProcessManagerService.get().findProcessRecord(resolve.activityInfo.packageName, resolve.activityInfo.processName, userId);
-            if (processRecord != null) {
+            if (processRecord != null && processRecord.bActivityThread != null) {
                 ReceiverData data = new ReceiverData();
                 data.intent = intent;
                 data.activityInfo = resolve.activityInfo;
                 data.data = pendingResultData;
-                processRecord.bActivityThread.scheduleReceiver(data);
+                try {
+                    processRecord.bActivityThread.scheduleReceiver(data);
+                    scheduledReceivers++;
+                } catch (Throwable throwable) {
+                    // The guest can die between the process lookup and Binder dispatch. A host
+                    // broadcast must never crash the BlackBox system process in that race.
+                    Slog.w(TAG, "Guest process disappeared while scheduling receiver: "
+                            + resolve.activityInfo.packageName + "/" + resolve.activityInfo.processName);
+                }
             }
+        }
+        if (scheduledReceivers == 0) {
+            mBroadcastManager.finishBroadcast(pendingResultData);
+            pendingResultData.build().finish();
+            Slog.d(TAG, "scheduleBroadcastReceiver no live guest process");
         }
     }
 

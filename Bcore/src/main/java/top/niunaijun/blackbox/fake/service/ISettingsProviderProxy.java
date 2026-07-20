@@ -33,7 +33,6 @@ public class ISettingsProviderProxy extends ClassInvocationStub {
         if (!isAndroidId) return null;
         DeviceProfile p = DeviceProfile.CURRENT;
         if (p != null && p.androidId != null) {
-            Slog.d(TAG, "serve android_id=" + p.androidId);
             return p.androidId;
         }
         return null;

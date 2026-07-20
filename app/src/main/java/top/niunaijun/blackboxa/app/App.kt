@@ -5,6 +5,8 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import top.niunaijun.blackbox.BlackBoxCore
+import top.niunaijun.blackboxa.cloud.CloudSync
+import top.niunaijun.blackboxa.cloud.Supabase
 
 
 class App : Application() {
@@ -24,6 +26,7 @@ class App : Application() {
     override fun attachBaseContext(base: Context?) {
         try {
             super.attachBaseContext(base)
+            if (base != null) CloudSync.recoverInterruptedRestore(base)
 
             // Tell the engine which build variant this is — must be the FIRST thing, before any
             // hooks or process allocation, so variant-specific behavior (hook order, stub pool
@@ -75,6 +78,7 @@ class App : Application() {
     override fun onCreate() {
         try {
             super.onCreate()
+            Supabase.retryPendingLogoutAsync(this)
             AppManager.doOnCreate(mContext)
         } catch (e: Exception) {
             Log.e("App", "Error in onCreate: ${e.message}")

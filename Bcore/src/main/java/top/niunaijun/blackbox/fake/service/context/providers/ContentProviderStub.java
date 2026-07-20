@@ -5,13 +5,20 @@ import android.os.IInterface;
 import java.lang.reflect.Method;
 
 import black.android.content.BRAttributionSource;
-import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.fake.frameworks.BPackageManager;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 import top.niunaijun.blackbox.utils.Slog;
 import android.os.Bundle;
 import top.niunaijun.blackbox.utils.AttributionSourceUtils;
+
+import java.lang.reflect.Array;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Set;
 
 
 public class ContentProviderStub extends ClassInvocationStub implements BContentProvider {
@@ -53,8 +60,10 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
         
         
         if ("call".equals(methodName)) {
-            
-            AttributionSourceUtils.fixAttributionSourceInArgs(args);
+            fixProviderAttribution(args);
+            // Keep package identity consistent across direct, nested and attribution
+            // arguments. Android requires that package to belong to the real host UID.
+            fixGuestPackageIdentity(args);
         } else {
             
             if (args != null && args.length > 0) {
@@ -70,7 +79,7 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                     }
                 }
                 
-                AttributionSourceUtils.fixAttributionSourceInArgs(args);
+                fixProviderAttribution(args);
             }
         }
         
@@ -99,6 +108,14 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                 
                 
                 if (methodName.equals("call")) {
+                    // The real GMS account provider rejects the host UID used by a
+                    // virtual guest before it can return the account list.  Return
+                    // the protocol's explicit empty-account result instead of a
+                    // null Bundle; Gmail then proceeds to the Google sign-in flow.
+                    if (isGoogleAccountsRequest(args)) {
+                        Slog.w(TAG, "GMS account lookup rejected for guest; returning empty account list");
+                        return createEmptyGoogleAccountsResult();
+                    }
                     Slog.w(TAG, "Error in call method, returning safe default: " + e.getMessage());
                     return getSafeDefaultValue(methodName, method.getReturnType());
                 }
@@ -119,6 +136,114 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
             }
             throw e.getCause();
         }
+    }
+
+    private boolean isGoogleAccountsRequest(Object[] args) {
+        if (args == null || args.length < 3) return false;
+        return "com.google.android.gms.auth.accounts".equals(args[1])
+                && "get_accounts".equals(args[2]);
+    }
+
+    private Bundle createEmptyGoogleAccountsResult() {
+        Bundle result = new Bundle();
+        result.putParcelableArray("accounts", new android.accounts.Account[0]);
+        return result;
+    }
+
+    private void fixGuestPackageIdentity(Object[] args) {
+        if (args == null) return;
+        String hostPkg = BlackBoxCore.getHostPkg();
+        String guestPkg = effectiveGuestPackage();
+        Set<Object> visited = Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>());
+        for (int i = 0; i < args.length; i++) {
+            args[i] = rewriteGuestIdentity(args[i], hostPkg, guestPkg, visited);
+        }
+    }
+
+    /**
+     * Google auth/certificate calls carry the caller package in several shapes on
+     * Android 14/15/16: a direct String, an AttributionSource, or a nested Bundle.
+     * Rewriting only the top-level argument leaves the host package in the nested
+     * form and Google rejects the guest as BlackBox.
+     */
+    private Object rewriteGuestIdentity(Object value, String hostPkg, String guestPkg,
+                                        Set<Object> visited) {
+        if (value == null || value == this || visited.contains(value)) return value;
+        if (value instanceof String) {
+            return hostPkg.equals(value) ? guestPkg : value;
+        }
+        Class<?> valueClass = value.getClass();
+        if (valueClass.isPrimitive() || value instanceof Number || value instanceof Boolean
+                || value instanceof Character || value instanceof Enum) {
+            return value;
+        }
+        visited.add(value);
+
+        if (valueClass.getName().contains("AttributionSource")) {
+            fixAttributionSourceUid(value);
+            return value;
+        }
+        if (value instanceof Bundle) {
+            Bundle bundle = (Bundle) value;
+            for (String key : bundle.keySet()) {
+                Object child = bundle.get(key);
+                Object rewritten = rewriteGuestIdentity(child, hostPkg, guestPkg, visited);
+                if (rewritten instanceof String && !rewritten.equals(child)) {
+                    bundle.putString(key, (String) rewritten);
+                } else if (rewritten != child && rewritten != null
+                        && rewritten.getClass().isArray()) {
+                    bundle.putParcelableArray(key, (android.os.Parcelable[]) rewritten);
+                }
+            }
+            return bundle;
+        }
+        if (valueClass.isArray() && !valueClass.getComponentType().isPrimitive()) {
+            int length = Array.getLength(value);
+            for (int i = 0; i < length; i++) {
+                Object child = Array.get(value, i);
+                Object rewritten = rewriteGuestIdentity(child, hostPkg, guestPkg, visited);
+                if (rewritten != child) Array.set(value, i, rewritten);
+            }
+            return value;
+        }
+        if (value instanceof List) {
+            List list = (List) value;
+            for (int i = 0; i < list.size(); i++) {
+                Object child = list.get(i);
+                Object rewritten = rewriteGuestIdentity(child, hostPkg, guestPkg, visited);
+                if (rewritten != child) list.set(i, rewritten);
+            }
+        }
+        return value;
+    }
+
+    private String effectiveGuestPackage() {
+        return mAppPkg != null ? mAppPkg : BlackBoxCore.getHostPkg();
+    }
+
+    private void fixProviderAttribution(Object[] args) {
+        int uid = BlackBoxCore.getHostUid();
+        String packageName = BlackBoxCore.getHostPkg();
+        if (isVirtualProvider()) {
+            int virtualCallerUid = BActivityThread.getCallingBUid();
+            if (virtualCallerUid > 0) {
+                uid = virtualCallerUid;
+                try {
+                    String[] packages = BPackageManager.get().getPackagesForUid(virtualCallerUid);
+                    if (packages != null && packages.length > 0 && packages[0] != null) {
+                        packageName = packages[0];
+                    }
+                } catch (Throwable e) {
+                    String currentPackage = BlackBoxCore.getAppPackageName();
+                    if (currentPackage != null) packageName = currentPackage;
+                }
+            }
+        }
+        AttributionSourceUtils.fixAttributionSourceInArgs(args, uid, packageName);
+    }
+
+    private boolean isVirtualProvider() {
+        return mAppPkg != null && !BlackBoxCore.getHostPkg().equals(mAppPkg);
     }
     
     private Object getSafeDefaultValue(String methodName) {
@@ -203,45 +328,20 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
     private void fixAttributionSourceUid(Object attributionSource) {
         try {
             if (attributionSource == null) return;
-            
-            Class<?> attributionSourceClass = attributionSource.getClass();
-            
-            
-            try {
-                java.lang.reflect.Field uidField = attributionSourceClass.getDeclaredField("mUid");
-                uidField.setAccessible(true);
-                uidField.set(attributionSource, BlackBoxCore.getHostUid());
-                Slog.d(TAG, "Fixed AttributionSource UID via field access");
-            } catch (NoSuchFieldException e) {
-                
+            int uid = isVirtualProvider()
+                    ? BActivityThread.getCallingBUid()
+                    : BlackBoxCore.getHostUid();
+            String packageName = BlackBoxCore.getHostPkg();
+            if (isVirtualProvider()) {
                 try {
-                    java.lang.reflect.Field uidField = attributionSourceClass.getDeclaredField("uid");
-                    uidField.setAccessible(true);
-                    uidField.set(attributionSource, BlackBoxCore.getHostUid());
-                    Slog.d(TAG, "Fixed AttributionSource UID via alternative field");
-                } catch (NoSuchFieldException e2) {
-                    
-                    try {
-                        java.lang.reflect.Method setUidMethod = attributionSourceClass.getDeclaredMethod("setUid", int.class);
-                        setUidMethod.setAccessible(true);
-                        setUidMethod.invoke(attributionSource, BlackBoxCore.getHostUid());
-                        Slog.d(TAG, "Fixed AttributionSource UID via setter method");
-                    } catch (Exception e3) {
-                        Slog.w(TAG, "Could not fix AttributionSource UID: " + e3.getMessage());
+                    String[] packages = BPackageManager.get().getPackagesForUid(uid);
+                    if (packages != null && packages.length > 0 && packages[0] != null) {
+                        packageName = packages[0];
                     }
+                } catch (Throwable ignored) {
                 }
             }
-            
-            
-            try {
-                java.lang.reflect.Field packageField = attributionSourceClass.getDeclaredField("mPackageName");
-                packageField.setAccessible(true);
-                packageField.set(attributionSource, mAppPkg);
-                Slog.d(TAG, "Fixed AttributionSource package name");
-            } catch (Exception e) {
-                
-            }
-            
+            AttributionSourceUtils.fixAttributionSourceUid(attributionSource, uid, packageName);
         } catch (Exception e) {
             Slog.w(TAG, "Error fixing AttributionSource UID: " + e.getMessage());
         }

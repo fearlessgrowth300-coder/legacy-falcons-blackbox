@@ -5,7 +5,6 @@ import android.app.Activity
 import android.os.Bundle
 import android.view.inputmethod.InputMethodManager
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import androidx.preference.PreferenceManager
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
@@ -22,8 +21,6 @@ import top.niunaijun.blackboxa.util.toast
 
 class FollowMyLocationOverlay : AppCompatActivity() {
     val TAG: String = "FollowMyLocationOverlay"
-
-    private val REQUEST_PERMISSIONS_REQUEST_CODE = 1
 
     private val binding: ActivityOsmdroidBinding by inflate()
 
@@ -85,6 +82,7 @@ class FollowMyLocationOverlay : AppCompatActivity() {
 
     override fun onBackPressed() {
         finishWithResult(startPoint)
+        super.onBackPressed()
     }
 
     override fun onResume() {
@@ -110,19 +108,7 @@ class FollowMyLocationOverlay : AppCompatActivity() {
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
-        val permissionsToRequest = ArrayList<String>()
-        var i = 0
-        while (i < grantResults.size) {
-            permissionsToRequest.add(permissions[i])
-            i++
-        }
-        if (permissionsToRequest.size > 0) {
-            ActivityCompat.requestPermissions(
-                this,
-                permissionsToRequest.toTypedArray(),
-                REQUEST_PERMISSIONS_REQUEST_CODE
-            )
-        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     private fun finishWithResult(geoPoint: GeoPoint) {

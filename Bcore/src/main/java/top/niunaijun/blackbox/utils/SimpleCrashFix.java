@@ -60,7 +60,10 @@ public class SimpleCrashFix {
                             return; // loop only returns on quit() — let the thread end normally
                         } catch (Throwable e) {
                             boolean sw = isSwallowable(e);
-                            Slog.w(TAG, "main-loop guard caught (swallow=" + sw + "): " + e);
+                            // Always retain the complete local stack trace. Logging only the outer
+                            // RuntimeException hid the real guest startup failure and left a
+                            // windowless proxy activity behind, which later surfaced as an ANR.
+                            Slog.w(TAG, "main-loop guard caught (swallow=" + sw + ")", e);
                             if (sw) {
                                 // drop the bad message, resume the loop → app survives
                             } else {
@@ -82,6 +85,19 @@ public class SimpleCrashFix {
      *  app-init crashes (e.g. Instagram's androidx-startup "INSTANCE_FIELD must not be null") are
      *  recognized even when the stack trace no longer carries the com.instagram frames. */
     private static boolean isSwallowable(Throwable t) {
+        // Swallowing a failed Activity launch leaves Android's proxy Activity resumed without a
+        // window.  The user sees the previous screen, input stops working, and the host later ANRs.
+        // A launch failure must surface normally unless its concrete inner cause is fixed.
+        for (Throwable c = t; c != null; c = c.getCause()) {
+            String message = c.getMessage();
+            if (message != null && (message.startsWith("Unable to start activity")
+                    || message.startsWith("Unable to resume activity")
+                    || message.startsWith("Unable to pause activity")
+                    || message.startsWith("Unable to stop activity")
+                    || message.startsWith("Unable to destroy activity"))) {
+                return false;
+            }
+        }
         for (Throwable c = t; c != null; c = c.getCause()) {
             if (isNullContextCrash(c) || isGooglePlayServicesCrash(c) || isWebViewCrash(c)
                     || isAttributionSourceCrash(c) || isSocialMediaAppCrash(c)) {

@@ -51,7 +51,10 @@ android {
     tasks.withType(JavaCompile) {
         options.compilerArgs << "-Xlint:-deprecation" << "-Xlint:-unchecked" << "-Xlint:-rawtypes"
         options.fork = true
-        options.forkOptions.jvmArgs << "-Xmx2048m"
+        // A 2 GiB compiler worker can exhaust the Windows page file before
+        // javac starts on ordinary 8 GiB development machines.  Bcore compiles
+        // reliably within this bounded worker and lower thread overhead.
+        options.forkOptions.jvmArgs << "-Xmx256m" << "-Xss256k" << "-XX:+UseSerialGC" << "-XX:ActiveProcessorCount=2"
     }
     testOptions {
         unitTests.returnDefaultValues = true

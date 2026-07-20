@@ -1,8 +1,10 @@
 package top.niunaijun.blackbox.core.system;
 
 import android.app.ActivityManager;
+import android.content.ContentProviderClient;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
+import android.net.Uri;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -26,6 +28,8 @@ import top.niunaijun.blackbox.core.system.notification.BNotificationManagerServi
 import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
 import top.niunaijun.blackbox.core.system.user.BUserHandle;
 import top.niunaijun.blackbox.entity.AppConfig;
+import top.niunaijun.blackbox.core.GmsCore;
+import top.niunaijun.blackbox.core.GuestProxy;
 import top.niunaijun.blackbox.proxy.ProxyManifest;
 import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.Slog;
@@ -77,7 +81,9 @@ public class BProcessManagerService implements ISystemService {
             app = new ProcessRecord(info, processName);
             app.uid = Process.myUid();
             app.bpid = bpid;
-            app.buid = BPackageManagerService.get().getAppId(packageName);
+            // Keep the complete virtual UID. Storing only appId here makes process-death cleanup
+            // address the wrong mProcessMap entry and can leave a stale record from another user.
+            app.buid = buid;
             app.callingBUid = getBUidByPidOrPackageName(callingPid, packageName);
             app.userId = userId;
 
@@ -159,7 +165,46 @@ public class BProcessManagerService implements ISystemService {
         attachClientL(record, appThread);
 
         createProc(record);
+        holdProxyConfiguredMainProvider(record);
         return true;
+    }
+
+    private void holdProxyConfiguredMainProvider(ProcessRecord record) {
+        if (record == null || record.info == null
+                || GuestProxy.routeIdFor(record.userId, record.info.packageName) == null) {
+            return;
+        }
+        boolean mainProcess = record.info.packageName.equals(record.processName);
+        boolean routedGmsPersistent = GmsCore.GMS_PKG.equals(record.info.packageName)
+                && (GmsCore.GMS_PKG + ".persistent").equals(record.processName);
+        if (!mainProcess && !routedGmsPersistent) return;
+        try {
+            Uri uri = Uri.parse("content://" + record.getProviderAuthority());
+            // The main app uses an unstable hold so an intentional stop remains independent.
+            // Routed GMS is the explicitly enabled push daemon, so use a stable hold to prevent
+            // Android reclaiming its empty runtime before GcmService is delivered.
+            ContentProviderClient client = routedGmsPersistent
+                    ? BlackBoxCore.getContext().getContentResolver()
+                            .acquireContentProviderClient(uri)
+                    : BlackBoxCore.getContext().getContentResolver()
+                            .acquireUnstableContentProviderClient(uri);
+            if (client != null) {
+                record.keepAliveProviderClient = client;
+                Slog.d(TAG, "Holding stable provider connection for proxy main process: user="
+                        + record.userId + " pkg=" + record.info.packageName + " slot=" + record.bpid);
+            }
+        } catch (Throwable e) {
+            Slog.w(TAG, "Unable to hold proxy process provider: " + e.getMessage());
+        }
+    }
+
+    private void releaseProviderHold(ProcessRecord record) {
+        ContentProviderClient client = record == null ? null : record.keepAliveProviderClient;
+        if (client == null) return;
+        record.keepAliveProviderClient = null;
+        try {
+            client.release();
+        } catch (Throwable ignored) { }
     }
 
     private void attachClientL(final ProcessRecord app, final IBinder appThread) {
@@ -191,6 +236,7 @@ public class BProcessManagerService implements ISystemService {
 
     public void onProcessDie(ProcessRecord record) {
         synchronized (mProcessLock) {
+            releaseProviderHold(record);
             record.kill();
             Map<String, ProcessRecord> process = mProcessMap.get(record.buid);
             if (process != null) {
@@ -227,6 +273,7 @@ public class BProcessManagerService implements ISystemService {
                     if (appId == appId1) {
                         mProcessMap.remove(processRecord.buid);
                         tmp.remove(processRecord);
+                        releaseProviderHold(processRecord);
                         processRecord.kill();
                     }
                 }
@@ -243,6 +290,7 @@ public class BProcessManagerService implements ISystemService {
             if (process == null)
                 return;
             for (ProcessRecord value : process.values()) {
+                releaseProviderHold(value);
                 value.kill();
                 mPidsSelfLocked.remove(value);
             }

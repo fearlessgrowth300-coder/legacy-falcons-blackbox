@@ -33,6 +33,25 @@ public class IDevicePolicyManagerProxy extends BinderInvocationStub {
         return false;
     }
 
+    @ProxyMethod("getAccountTypesWithManagementDisabledAsUser")
+    public static class GetAccountTypesWithManagementDisabledAsUser extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            // Device-owner policy belongs to the physical Android user.  A virtual BlackBox user
+            // has no device/profile owner, so an empty policy set is both correct and prevents
+            // real-phone policy state from bleeding into a clone.
+            return new String[0];
+        }
+    }
+
+    @ProxyMethod("getAccountTypesWithManagementDisabled")
+    public static class GetAccountTypesWithManagementDisabled extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            return new String[0];
+        }
+    }
+
     @ProxyMethod("getStorageEncryptionStatus")
     public static class GetStorageEncryptionStatus extends MethodHook {
 

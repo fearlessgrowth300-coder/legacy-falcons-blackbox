@@ -11,7 +11,6 @@ import black.android.content.BRAttributionSource;
 import black.android.content.BRAttributionSourceState;
 import black.android.content.BRContentResolver;
 import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.utils.Slog;
 
 
@@ -60,11 +59,12 @@ public class ContextCompat {
                 e.printStackTrace();
             }
 
-            BRContextImpl.get(context)._set_mBasePackageName(BlackBoxCore.getHostPkg());
-            BRContextImplKitkat.get(context)._set_mOpPackageName(BlackBoxCore.getHostPkg());
+            String callerPackage = BlackBoxCore.getHostPkg();
+            BRContextImpl.get(context)._set_mBasePackageName(callerPackage);
+            BRContextImplKitkat.get(context)._set_mOpPackageName(callerPackage);
             
             try {
-                BRContentResolver.get(context.getContentResolver())._set_mPackageName(BlackBoxCore.getHostPkg());
+                BRContentResolver.get(context.getContentResolver())._set_mPackageName(callerPackage);
             } catch (Exception e) {
                 Slog.w(TAG, "Failed to fix content resolver: " + e.getMessage());
             }

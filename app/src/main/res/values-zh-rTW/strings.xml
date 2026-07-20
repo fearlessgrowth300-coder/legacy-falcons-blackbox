@@ -62,4 +62,8 @@
     <string name="disable_gms">禁用服務</string>
     <string name="disable_gms_hint">清除當前的穀歌服務環境？ 穀歌服務數據將被清除。</string>
     <string name="no_gms">現時，手機上沒有穀歌服務環境。</string>
+    <string name="use_vpn_network">使用 VPN 網路</string>
+    <string name="use_vpn_network_summary">透過 VPN 路由沙盒應用程式流量（可能改善網路存取）</string>
+    <string name="disable_flag_secure">停用安全視窗旗標</string>
+    <string name="disable_flag_secure_summary">允許應用程式截圖和螢幕錄影</string>
 </resources>

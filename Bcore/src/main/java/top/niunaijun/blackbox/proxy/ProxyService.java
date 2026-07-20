@@ -4,28 +4,74 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.os.IBinder;
+import android.util.Log;
 
 import androidx.annotation.Nullable;
-import androidx.core.app.NotificationCompat;
-
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.app.dispatcher.AppServiceDispatcher;
-import top.niunaijun.blackbox.utils.compat.BuildCompat;
+import top.niunaijun.blackbox.proxy.record.ProxyServiceRecord;
 
 
 public class ProxyService extends Service {
     public static final String TAG = "StubService";
 
+    @Override
+    public void onCreate() {
+        super.onCreate();
+    }
+
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
-        return AppServiceDispatcher.get().onBind(intent);
+        // Android may deliver a null intent when a virtual service is being
+        // recreated after its guest process was reclaimed. There is no target
+        // service to dispatch in that case; returning null keeps the host
+        // process alive and lets the guest be started normally on the next
+        // explicit request.
+        if (intent == null) {
+            Log.w(TAG, "onBind received a null proxy intent");
+            return null;
+        }
+        Log.d(TAG, "onBind entering; guest initialized="
+                + BActivityThread.currentActivityThread().isInit());
+        if (!restoreGuestProcess(intent)) {
+            Log.w(TAG, "onBind could not restore the guest process");
+            return null;
+        }
+        IBinder binder = AppServiceDispatcher.get().onBind(intent);
+        Log.d(TAG, "onBind completed; binder="
+                + (binder == null ? "null" : binder.getClass().getName()));
+        return binder;
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        AppServiceDispatcher.get().onStartCommand(intent, flags, startId);
-        return START_NOT_STICKY;
+        // A sticky service restart can arrive without the original stub
+        // intent. Never pass that through ProxyServiceRecord.create(), which
+        // expects a real intent and would crash the guest process.
+        if (intent == null) return START_NOT_STICKY;
+        if (!restoreGuestProcess(intent)) return START_NOT_STICKY;
+        return AppServiceDispatcher.get().onStartCommand(intent, flags, startId);
+    }
+
+    /** Android may recreate a sticky proxy service after its BlackBox process record died. The
+     * stub intent carries the original virtual user and component, so rebuild that record before
+     * touching guest classes. This also prevents a stale restart from falling back to user 0. */
+    private boolean restoreGuestProcess(Intent intent) {
+        if (BActivityThread.currentActivityThread().isInit()) return true;
+        if (intent == null) return false;
+        ProxyServiceRecord record = ProxyServiceRecord.create(intent);
+        if (record.mServiceInfo == null) return false;
+        try {
+            BlackBoxCore.getBActivityManager().restartProcess(
+                    record.mServiceInfo.packageName,
+                    record.mServiceInfo.processName,
+                    record.mUserId);
+        } catch (Throwable ignored) {
+            return false;
+        }
+        return BActivityThread.currentActivityThread().isInit();
     }
 
     @Override
@@ -54,16 +100,9 @@ public class ProxyService extends Service {
 
     @Override
     public boolean onUnbind(Intent intent) {
+        if (intent == null) return false;
         AppServiceDispatcher.get().onUnbind(intent);
         return false;
-    }
-
-    private void showNotification() {
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(getApplicationContext(), getPackageName() + ".blackbox_proxy")
-                .setPriority(NotificationCompat.PRIORITY_MAX);
-        if (BuildCompat.isOreo()) {
-            startForeground(BlackBoxCore.getHostPkg().hashCode(), builder.build());
-        }
     }
 
     public static class P0 extends ProxyService {

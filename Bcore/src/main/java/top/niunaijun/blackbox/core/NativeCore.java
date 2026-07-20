@@ -52,7 +52,13 @@ public class NativeCore {
      * Route all outbound TCP from THIS guest process through a proxy
      * (type 0=http CONNECT, 1=socks5). Pass host=null to disable.
      */
-    public static native void setProxy(int type, String host, int port, String user, String pass);
+    /**
+     * Enables the transparent proxy for this guest process.
+     *
+     * @return true only when the proxy endpoint resolved and every required native hook was
+     * installed. A false result must be treated as fail-closed by the caller.
+     */
+    public static native boolean setProxy(int type, String host, int port, String user, String pass);
 
     public static native void disableProxy();
 
@@ -81,7 +87,15 @@ public class NativeCore {
                 
                 String appPackageName = BlackBoxCore.getAppPackageName();
                 if (appPackageName != null && appPackageName.equals("com.google.android.gms")){
-                    
+                    // Android's real AccountManager invokes an authenticator as a trusted system
+                    // caller.  BlackBox's per-user AccountManager must stay outside system_server
+                    // so accounts remain isolated, but that makes the shared host UID look like an
+                    // untrusted third-party caller to modern GMS.  Normalize only calls currently
+                    // executing through Android's account-authenticator Transport.  Do not treat
+                    // arbitrary guest-to-GMS Binder calls as GMS itself.
+                    if (isAccountAuthenticatorTransportCall()) {
+                        return Process.myUid();
+                    }
                 }
                 
                 
@@ -130,6 +144,21 @@ public class NativeCore {
             
             return Process.myUid();
         }
+    }
+
+    private static boolean isAccountAuthenticatorTransportCall() {
+        try {
+            for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
+                String className = element.getClassName();
+                if ("android.accounts.AbstractAccountAuthenticator$Transport".equals(className)
+                        || className.startsWith("android.accounts.IAccountAuthenticator$Stub")) {
+                    return true;
+                }
+            }
+        } catch (Throwable e) {
+            Log.w(TAG, "Unable to identify account-authenticator caller", e);
+        }
+        return false;
     }
 
     @Keep

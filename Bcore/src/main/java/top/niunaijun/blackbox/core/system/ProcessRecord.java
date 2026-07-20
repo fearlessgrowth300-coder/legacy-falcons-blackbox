@@ -1,5 +1,6 @@
 package top.niunaijun.blackbox.core.system;
 
+import android.content.ContentProviderClient;
 import android.content.pm.ApplicationInfo;
 import android.os.Binder;
 import android.os.ConditionVariable;
@@ -23,6 +24,9 @@ public class ProcessRecord extends Binder {
     public int bpid;
     public int callingBUid;
     public int userId;
+    // Stable host-side connection that keeps a proxy-configured clone main process from being
+    // classified as an empty process by Samsung Chimera/LMKD.
+    public ContentProviderClient keepAliveProviderClient;
 
     public ConditionVariable initLock = new ConditionVariable();
 

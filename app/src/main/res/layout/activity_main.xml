@@ -1,60 +1,83 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-        xmlns:app="http://schemas.android.com/apk/res-auto"
-        xmlns:tools="http://schemas.android.com/tools"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        tools:context=".view.main.MainActivity">
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@color/blackbox_background" tools:context=".view.main.MainActivity">
 
-    <include
-            android:id="@+id/toolbar_layout"
-            layout="@layout/view_toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:layout_constraintTop_toTopOf="parent" />
+    <include android:id="@+id/toolbar_layout" layout="@layout/view_toolbar"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        app:layout_constraintTop_toTopOf="parent" />
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/accountBackup" style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="0dp" android:layout_height="58dp"
+        android:layout_marginStart="18dp" android:layout_marginTop="12dp" android:layout_marginEnd="18dp"
+        android:gravity="center_vertical|start" android:paddingHorizontal="16dp"
+        android:text="Account &amp; encrypted backup" android:textAllCaps="false"
+        android:textColor="@color/blackbox_text" android:textSize="14sp"
+        app:cornerRadius="18dp" app:icon="@drawable/ic_security"
+        app:iconPadding="12dp" app:iconTint="@color/blackbox_accent"
+        app:strokeColor="@color/blackbox_border"
+        app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/toolbar_layout" />
 
-    <com.github.nukc.stateview.StateView
-            android:id="@+id/stateView"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/toolbar_layout" />
+    <LinearLayout android:id="@+id/workspaceHeader" android:layout_width="0dp"
+        android:layout_height="wrap_content" android:layout_marginStart="20dp"
+        android:layout_marginTop="20dp" android:layout_marginEnd="20dp"
+        android:gravity="center_vertical" android:orientation="horizontal"
+        app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/accountBackup">
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Isolated workspace" android:textColor="@color/blackbox_text"
+                android:textSize="19sp" android:textStyle="bold" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="2dp" android:text="Swipe to switch users · tap an app to launch"
+                android:textColor="@color/blackbox_muted" android:textSize="12sp" />
+        </LinearLayout>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="ENCRYPTED" android:textColor="@color/blackbox_accent"
+            android:textSize="9sp" android:textStyle="bold" />
+    </LinearLayout>
 
-    <androidx.viewpager2.widget.ViewPager2
-            android:id="@+id/viewPager"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            app:layout_constraintBottom_toTopOf="@id/dots_indicator"
-            app:layout_constraintLeft_toLeftOf="parent"
-            app:layout_constraintRight_toRightOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/toolbar_layout" />
+    <com.github.nukc.stateview.StateView android:id="@+id/stateView"
+        android:layout_width="0dp" android:layout_height="0dp"
+        app:layout_constraintBottom_toTopOf="@id/dots_indicator"
+        app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/workspaceHeader" />
 
-    <com.tbuonomo.viewpagerdotsindicator.WormDotsIndicator
-            android:id="@+id/dots_indicator"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="24dp"
-            android:paddingBottom="12dp"
-            app:dotsCornerRadius="8dp"
-            app:dotsSize="8dp"
-            app:dotsSpacing="4dp"
-            app:dotsWidthFactor="2.5"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintLeft_toLeftOf="parent"
-            app:layout_constraintRight_toRightOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/viewPager"
-            app:progressMode="true" />
+    <androidx.viewpager2.widget.ViewPager2 android:id="@+id/viewPager"
+        android:layout_width="0dp" android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        app:layout_constraintBottom_toTopOf="@id/dots_indicator"
+        app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/workspaceHeader" />
 
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-            android:id="@+id/fab"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="24dp"
-            android:layout_marginBottom="24dp"
-            android:contentDescription="TODO"
-            android:src="@drawable/ic_add"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintRight_toRightOf="parent" />
+    <com.tbuonomo.viewpagerdotsindicator.WormDotsIndicator android:id="@+id/dots_indicator"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp" android:padding="8dp"
+        app:dotsColor="@color/blackbox_border" app:dotsCornerRadius="8dp"
+        app:dotsSize="8dp" app:dotsSpacing="4dp" app:dotsWidthFactor="2.5"
+        app:progressMode="true" app:selectedDotColor="@color/blackbox_accent"
+        app:layout_constraintBottom_toTopOf="@id/manageUsers"
+        app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" />
 
+    <com.google.android.material.button.MaterialButton android:id="@+id/manageUsers"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="0dp" android:layout_height="56dp"
+        android:layout_marginStart="18dp" android:layout_marginEnd="92dp" android:layout_marginBottom="18dp"
+        android:text="Manage users" android:textAllCaps="false" android:textColor="@color/blackbox_text"
+        android:textStyle="bold" app:cornerRadius="18dp" app:icon="@drawable/ic_person_add"
+        app:iconTint="@color/blackbox_accent" app:strokeColor="@color/blackbox_border"
+        app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton android:id="@+id/fab"
+        android:layout_width="56dp" android:layout_height="56dp"
+        android:layout_marginEnd="18dp" android:layout_marginBottom="18dp"
+        android:contentDescription="Add app to this user" android:src="@drawable/ic_add"
+        app:backgroundTint="@color/blackbox_accent" app:tint="@color/blackbox_ink"
+        app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" />
 </androidx.constraintlayout.widget.ConstraintLayout>

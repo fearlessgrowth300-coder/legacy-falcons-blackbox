@@ -24,7 +24,6 @@ public class IWifiManagerProxy extends BinderInvocationStub {
     static String cloneMac() {
         DeviceProfile p = DeviceProfile.CURRENT;
         String v = (p != null && p.macWifi != null) ? p.macWifi : "02:00:00:00:00:00";
-        Log.d(TAG, "serve wifiMac=" + v);
         return v;
     }
 

@@ -50,4 +50,30 @@ public class IPhoneSubInfoProxy extends ClassInvocationStub {
             return null;
         }
     }
+
+    @ProxyMethod("getIccSerialNumberForSubscriber")
+    public static class GetIccSerialNumberForSubscriber extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            // Never expose the physical SIM's ICCID to a guest.  Null is the normal Android
+            // result when an app has no carrier privilege and Google check-in accepts it.
+            return null;
+        }
+    }
+
+    @ProxyMethod("getIccSerialNumber")
+    public static class GetIccSerialNumber extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            return null;
+        }
+    }
+
+    @ProxyMethod("getSubscriberIdForSubscriber")
+    public static class GetSubscriberIdForSubscriber extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            return ITelephonyManagerProxy.cloneImsi();
+        }
+    }
 }

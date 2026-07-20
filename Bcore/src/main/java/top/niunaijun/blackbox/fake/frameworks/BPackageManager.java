@@ -28,6 +28,10 @@ import top.niunaijun.blackbox.utils.TransactionThrottler;
 
 
 public class BPackageManager extends BlackManager<IBPackageManagerService> {
+    private static final String INSTAGRAM_PACKAGE = "com.instagram.android";
+    private static final String INSTAGRAM_MISSING_LAUNCHER = "com.instagram.android.InternalLauncher";
+    private static final String INSTAGRAM_MAIN_ACTIVITY = "com.instagram.android.activity.MainTabActivity";
+    private static final String INSTAGRAM_COLD_START_ACTIVITY = "com.instagram.modal.ModalActivity";
     private static final BPackageManager sPackageManager = new BPackageManager();
     private final TransactionThrottler transactionThrottler = new TransactionThrottler();
     private static volatile boolean sIsFindingApkPath = false; 
@@ -113,8 +117,32 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
         }
         Intent intent = new Intent(intentToResolve);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.setClassName(ris.get(0).activityInfo.packageName,
-                ris.get(0).activityInfo.name);
+        ActivityInfo launchActivity = ris.get(0).activityInfo;
+        String launchActivityName = launchActivity.name;
+
+        // Some Instagram packages advertise InternalLauncher first even though it is not a safe
+        // cold virtual root. Prefer the real MainTabActivity from the resolved launcher set. The
+        // old ModalActivity fallback now finishes immediately in current Instagram builds.
+        if (INSTAGRAM_PACKAGE.equals(packageName)
+                && INSTAGRAM_MISSING_LAUNCHER.equals(launchActivityName)) {
+            ResolveInfo main = null;
+            for (ResolveInfo candidate : ris) {
+                if (candidate.activityInfo != null
+                        && INSTAGRAM_MAIN_ACTIVITY.equals(candidate.activityInfo.name)) {
+                    main = candidate;
+                    break;
+                }
+            }
+            if (main != null) {
+                launchActivity = main.activityInfo;
+                launchActivityName = launchActivity.name;
+                Log.w(TAG, "Replacing Instagram InternalLauncher with MainTabActivity");
+            } else {
+                Log.w(TAG, "MainTabActivity unavailable; using legacy Instagram cold-start activity");
+                launchActivityName = INSTAGRAM_COLD_START_ACTIVITY;
+            }
+        }
+        intent.setClassName(launchActivity.packageName, launchActivityName);
         return intent;
     }
     

@@ -1,14 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-
 <com.google.android.material.appbar.MaterialToolbar xmlns:android="http://schemas.android.com/apk/res/android"
-        xmlns:app="http://schemas.android.com/apk/res-auto"
-        android:id="@+id/toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:theme="@style/ToolBarColorStyle"
-        android:background="@color/primary"
-        app:title="@string/app_name"
-        app:subtitleTextColor="@color/white"
-        app:titleTextColor="@color/white">
-
-</com.google.android.material.appbar.MaterialToolbar>
+    xmlns:app="http://schemas.android.com/apk/res-auto" android:id="@+id/toolbar"
+    android:layout_width="match_parent" android:layout_height="76dp"
+    android:background="@color/blackbox_background" android:paddingStart="8dp" android:paddingEnd="8dp"
+    android:theme="@style/ToolBarColorStyle" app:subtitle="Isolated app spaces"
+    app:subtitleTextColor="@color/blackbox_muted" app:title="@string/app_name"
+    app:titleTextColor="@color/blackbox_text" />

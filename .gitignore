@@ -19,3 +19,7 @@
 .cxx
 local.properties
 /app/release/
+
+# Large GMS bundle blobs (>100MB, exceed GitHub limit; kept locally for builds)
+/GmsCore.apk
+/GmsDex/

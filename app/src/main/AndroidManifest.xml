@@ -2,6 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <permission
+        android:name="${applicationId}.permission.BRIDGE"
+        android:protectionLevel="signature" />
+
+    <permission
+        android:name="${applicationId}.permission.INTERNAL"
+        android:protectionLevel="signature" />
+
+    <uses-permission android:name="com.privacyshield.proxy.permission.BRIDGE" />
+
     
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
@@ -14,20 +24,45 @@
     <!-- Keep cloned apps' push/notification services alive in the background. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- In-app updater: install a downloaded APK (sideload updates, no Play Store). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
 
     <application
         android:name=".app.App"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="${appLabel}"
-        tools:replace="android:label"
+        tools:replace="android:label,android:allowBackup"
         android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.BlackBox"
+        android:permission="${applicationId}.permission.INTERNAL"
         android:enableOnBackInvokedCallback="true"
         tools:targetApi="n">
+        <service
+            android:name=".cloud.BackupService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <receiver
+            android:name=".app.KeepAliveBootReceiver"
+            android:exported="true"
+            android:permission="">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <activity
+            android:name=".view.auth.AuthActivity"
+            android:exported="false" />
+        <activity
+            android:name=".view.auth.AccountSettingsActivity"
+            android:exported="false" />
         <activity
             android:name=".view.fake.FollowMyLocationOverlay"
             android:exported="false" />
@@ -36,6 +71,7 @@
         <activity
             android:name=".view.main.WelcomeActivity"
             android:exported="true"
+            android:permission=""
             android:launchMode="singleTop"
             android:theme="@style/WelcomeTheme">
             <intent-filter>
@@ -50,7 +86,8 @@
         <activity
             android:name=".view.main.ShortcutActivity"
             android:excludeFromRecents="true"
-            android:exported="true" />
+            android:exported="true"
+            android:permission="${applicationId}.permission.BRIDGE" />
         <activity android:name=".view.main.MainActivity"
             android:exported="true">
             <intent-filter>
@@ -58,10 +95,35 @@
             </intent-filter>
         </activity>
 
+        <!-- Serves the downloaded update APK to the system installer. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- Lets ShieldProxy list this container's clones and assign per-clone proxies. -->
         <provider
             android:name="top.niunaijun.blackboxa.bridge.BlackBoxBridgeProvider"
             android:authorities="${applicationId}.bridge"
-            android:exported="true" />
+            android:exported="true"
+            android:permission="${applicationId}.permission.BRIDGE" />
+
+        <!-- The host does not enqueue WorkManager jobs.  Auto-starting WorkManager in the
+             container host toggles its real RescheduleReceiver and Android responds with a
+             PACKAGE_CHANGED broadcast that kills every virtual guest process.  Remove only the
+             host initializer; cloned apps keep their own virtual WorkManager providers. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                tools:node="remove" />
+        </provider>
     </application>
 </manifest>

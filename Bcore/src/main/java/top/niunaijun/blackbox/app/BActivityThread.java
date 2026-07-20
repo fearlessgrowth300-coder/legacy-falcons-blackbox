@@ -27,6 +27,8 @@ import android.os.IBinder;
 import android.os.IInterface;
 import android.os.Looper;
 import android.os.RemoteException;
+import android.os.Bundle;
+import android.os.SystemClock;
 import android.os.StrictMode;
 import android.text.TextUtils;
 import android.util.Log;
@@ -40,6 +42,9 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 import black.android.app.ActivityThreadAppBindDataContext;
 import black.android.app.BRActivity;
@@ -184,12 +189,19 @@ public class BActivityThread extends IBActivityThread.Stub {
                 top.niunaijun.blackbox.core.DeviceProfile.forUser(appConfig.userId).apply();
             } catch (Throwable t) {
                 top.niunaijun.blackbox.utils.Slog.w("DeviceProfile", "apply failed: " + t.getMessage());
+                throw new RuntimeException("Refusing to start guest without complete identity isolation", t);
             }
             // Route this guest's traffic through the proxy assigned to its User.
             try {
-                top.niunaijun.blackbox.core.GuestProxy.apply(appConfig.userId, appConfig.packageName);
+                top.niunaijun.blackbox.core.GuestProxy.ApplyStatus proxyStatus =
+                        top.niunaijun.blackbox.core.GuestProxy.apply(appConfig.userId, appConfig.packageName);
+                if (proxyStatus != top.niunaijun.blackbox.core.GuestProxy.ApplyStatus.READY
+                        && proxyStatus != top.niunaijun.blackbox.core.GuestProxy.ApplyStatus.NOT_CONFIGURED) {
+                    throw new SecurityException("Assigned proxy is not ready: " + proxyStatus);
+                }
             } catch (Throwable t) {
                 top.niunaijun.blackbox.utils.Slog.w("GuestProxy", "apply failed: " + t.getMessage());
+                throw new RuntimeException("Refusing to start guest with a broken proxy assignment", t);
             }
             IBinder iBinder = asBinder();
             try {
@@ -1172,6 +1184,98 @@ public class BActivityThread extends IBActivityThread.Stub {
                                 + " in " + mReceiver);
             }
         });
+    }
+
+    @Override
+    public Bundle verifyProxyRoute(String expectedRouteId, String expectedExitIp) {
+        Bundle out = new Bundle();
+        String applied = top.niunaijun.blackbox.core.GuestProxy.CURRENT_ROUTE_ID;
+        out.putString("routeId", applied);
+        out.putInt("pid", android.os.Process.myPid());
+        out.putString("processName", getAppProcessName());
+        if (applied == null || expectedRouteId == null || !applied.equals(expectedRouteId)) {
+            out.putBoolean("ok", false);
+            out.putString("state", "ROUTE_MISMATCH");
+            out.putString("err", "The running guest does not have the expected route");
+            return out;
+        }
+
+        HttpURLConnection connection = null;
+        long started = SystemClock.elapsedRealtime();
+        try {
+            connection = (HttpURLConnection) new URL("https://api.ipify.org/?format=text").openConnection();
+            connection.setConnectTimeout(8000);
+            connection.setReadTimeout(8000);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("Connection", "close");
+            connection.setRequestProperty("User-Agent", "BlackBoxRouteProbe/1");
+            int code = connection.getResponseCode();
+            if (code < 200 || code >= 300) throw new java.io.IOException("HTTP " + code);
+            String ip;
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                ip = reader.readLine();
+            }
+            ip = ip == null ? "" : ip.trim();
+            if (!ip.matches("^[0-9a-fA-F:.]{3,64}$")) throw new java.io.IOException("Invalid exit IP response");
+            out.putString("exitIp", ip);
+            boolean exitChanged = expectedExitIp != null && !expectedExitIp.trim().isEmpty()
+                    && !ip.equalsIgnoreCase(expectedExitIp.trim());
+            out.putBoolean("exitChanged", exitChanged);
+            if (!verifyLeakGuards(out)) {
+                out.putBoolean("ok", false);
+                out.putString("state", "LEAK_GUARD_FAILED");
+                out.putString("err", "DNS or UDP fail-closed guard did not verify");
+            } else {
+                // Mobile/residential pools may rotate the public exit while retaining the exact
+                // authenticated proxy session. Route identity + in-guest exit + leak guards are
+                // the security proof; a changed public IP is telemetry, not a direct-leak signal.
+                out.putBoolean("ok", true);
+                out.putString("state", "EXIT_VERIFIED");
+            }
+        } catch (Throwable error) {
+            out.putBoolean("ok", false);
+            out.putString("state", "EXIT_CHECK_FAILED");
+            out.putString("err", error.getClass().getSimpleName() + ": " + error.getMessage());
+        } finally {
+            if (connection != null) connection.disconnect();
+            out.putLong("latencyMs", SystemClock.elapsedRealtime() - started);
+        }
+        return out;
+    }
+
+    private boolean verifyLeakGuards(Bundle out) {
+        boolean dnsGuard = false;
+        boolean udpGuard = false;
+        try {
+            String probe = "route-" + android.os.Process.myPid() + "-"
+                    + SystemClock.elapsedRealtime() + ".invalid";
+            java.net.InetAddress[] addresses = java.net.InetAddress.getAllByName(probe);
+            if (addresses != null && addresses.length > 0) {
+                byte[] raw = addresses[0].getAddress();
+                dnsGuard = raw.length == 4 && (raw[0] & 0xff) == 198
+                        && ((raw[1] & 0xff) == 18 || (raw[1] & 0xff) == 19);
+                if (dnsGuard) out.putString("dnsMode", "PROXY_REMOTE");
+            }
+        } catch (Throwable ignored) {
+        }
+
+        java.net.DatagramSocket socket = null;
+        try {
+            socket = new java.net.DatagramSocket();
+            byte[] one = new byte[]{0};
+            java.net.DatagramPacket packet = new java.net.DatagramPacket(
+                    one, one.length,
+                    java.net.InetAddress.getByAddress(new byte[]{1, 1, 1, 1}), 3478);
+            socket.send(packet);
+        } catch (Throwable expectedBlock) {
+            udpGuard = true;
+        } finally {
+            if (socket != null) socket.close();
+        }
+        out.putBoolean("dnsGuard", dnsGuard);
+        out.putBoolean("udpGuard", udpGuard);
+        return dnsGuard && udpGuard;
     }
 
     public static Activity getActivityByToken(IBinder token) {

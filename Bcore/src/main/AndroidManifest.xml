@@ -513,6 +513,9 @@
                 <action android:name="${applicationId}.stub_receiver" />
             </intent-filter>
         </receiver>
+        <service
+            android:name=".proxy.ProxyPendingService"
+            android:exported="false" />
 
         <service
             android:name="top.niunaijun.blackbox.core.system.DaemonService"

@@ -1,0 +1,904 @@
+﻿--------- beginning of main
+07-19 23:19:24.881  3244  4227 I FlashNotifController: mIsCameraFlashNotificationRunning false in thread run
+07-19 23:19:24.881  3244  4227 D FlashNotifController: FlashNotificationThread run finished: android
+07-19 23:19:24.957  7849  7878 I naijun.blackbox: Thread[2,tid=7878,WaitingInMainSignalCatcherLoop,Thread*=0x74cd800000,peer=0x2000e68,"Signal Catcher"]: reacting to signal 3
+07-19 23:19:24.957  7849  7878 I naijun.blackbox: 
+--------- beginning of system
+07-19 23:19:24.983  3244  4190 D VibrationThread: Playing vibration id 5137 on vibrator 0 CompleteEffectVibratorStep
+07-19 23:19:24.983  3244  4190 D VibrationThread: Running complete vibration step on vibrator 0
+07-19 23:19:24.983  3244  4190 D VibrationThread: Playing vibration id 5137 on vibrator 0 TurnOffVibratorStep
+07-19 23:19:24.983  3244  4190 D VibrationThread: Turning off vibrator 0
+07-19 23:19:24.984  1891  1891 E SecVibrator-HAL-AIDL-CORE: V_2_0: Vibrator off
+07-19 23:19:24.984  1891  1891 E SecVibrator-HAL-AIDL-CORE: HW_API: do_off
+07-19 23:19:24.984  1891  1891 E SecVibrator-HAL-AIDL-CORE: HW_API: [triggerForceFeedbackVibration]on: 0
+07-19 23:19:24.984  3244  4190 D VibrationThread: Vibration 5137 finished with EndInfo{status=FINISHED, endedBy=null}
+07-19 23:19:24.984  3244  4190 D VibrationThread: Playing vibration id 5137 FinishSequentialEffectStep (cleanup)
+07-19 23:19:24.984  3244  4190 D VibrationThread: FinishSequentialEffectStep for effect #0
+07-19 23:19:24.985  3244  4190 D VibratorManagerService: VibrationThread released vibration 5137
+07-19 23:19:24.985  3244  4190 D VibratorManagerService: Finish AppOp mode VIBRATE for uid 1000 and package android
+07-19 23:19:24.985  3244  4190 D VibratorManagerService: Vibration for uid=1000 and with attrs=VibrationAttributes{mUsage=NOTIFICATION, mAudioUsage= USAGE_UNKNOWN, mFlags=0, tags=} ended with status FINISHED
+07-19 23:19:25.030  3244  4548 D NetdEventListenerService: DNS Requested by 236, 10464(org.telegram.messenger), SUCCESS, 2017ms
+07-19 23:19:25.036  3244  4476 D SemWifiTrafficPoller: getSoftApTotalTrafficInBytes:1549946345
+07-19 23:19:25.094  8005  8007 I .blackbox:black: Thread[2,tid=8007,WaitingInMainSignalCatcherLoop,Thread*=0x74cd800000,peer=0x2000f48,"Signal Catcher"]: reacting to signal 3
+07-19 23:19:25.094  8005  8007 I .blackbox:black: 
+07-19 23:19:25.162  1438  1438 I tombstoned: received crash request for pid 7849
+07-19 23:19:25.164  1438  1438 I tombstoned: received crash request for pid 8005
+07-19 23:19:25.179  7849  7878 I naijun.blackbox: Wrote stack traces to tombstoned
+07-19 23:19:25.179  1438  1438 E tombstoned: Traces for pid 7849 written to: trace_00
+07-19 23:19:25.183  8005  8007 I .blackbox:black: Wrote stack traces to tombstoned
+07-19 23:19:25.183  1438  1438 E tombstoned: Traces for pid 8005 written to: trace_01
+07-19 23:19:25.268 21715 21769 D SemNativeCarrierFeature_vendor: getInstance
+07-19 23:19:25.269 21715 21769 D SemNativeCarrierFeature_vendor: getInstance
+07-19 23:19:25.517  1844 18409 I HYPER-HAL: [RequestManager.cpp]releaseLocked(): Released ID : 4377361
+07-19 23:19:25.530  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66ac went down
+07-19 23:19:25.530  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66ac went down
+07-19 23:19:25.531  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66ad went down
+07-19 23:19:25.532  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66ad went down
+07-19 23:19:25.533  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66ae went down
+07-19 23:19:25.533  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66ae went down
+07-19 23:19:25.535  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66af went down
+07-19 23:19:25.535  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66af went down
+07-19 23:19:25.660 21715 21769 D SemNativeCarrierFeature_vendor: getInstance
+07-19 23:19:25.736  3244  6169 D MotionRecognitionService: inject vibrator info = 0.0
+07-19 23:19:25.741  1819  1819 I sensors-hal: inject_sensor_data:433, handle:11, type:33 not supported
+07-19 23:19:25.742  1819  1819 I sensors-hal: inject_sensor_data:433, handle:11, type:33 not supported
+07-19 23:19:25.742  1819  1819 I sensors-hal: inject_sensor_data:433, handle:11, type:33 not supported
+07-19 23:19:26.047  3244  4476 D SemWifiTrafficPoller: getSoftApTotalTrafficInBytes:1549954143
+07-19 23:19:26.072  3244  5387 I SemWifiApDataUsage: handleMessage: 14
+07-19 23:19:26.072  3244  5387 I SemWifiApEbpf: DATA_USAGE_STATS_START_POLL,mhs= true,upstream= 2,client size 2
+07-19 23:19:26.073  3244  5387 D SemWifiApEbpf: getWifiApDataUsageForOverAllMhs():  overall data is1549954143
+07-19 23:19:26.074  3244  5387 I SemWifiApEbpf: updating the overall dataUsage , overall =1549954143 , global = {mTotalDataBytes=1549333310,mTotalDataIngressBytes=0,mTotalDataEgressBytes=0,mCellularBytes=1549333310,mCurrentDayAndSimCellularBytes=1549333310}
+07-19 23:19:26.075  3244  5387 I SemWifiApTrafficPriority: handleDataUsageStats : 60:f2:62:0f:f8:f7 : alive=true,mBitratePerSecond=85.492 kbps,mBitrateIngressPerSecond=4.999 kbps,mBitrateEgressPerSecond=80.493 kbps,mCellularBytes=779026655,mWifiDataBytes=0,mTotalDataBytes=779026655,mTotalDataIngressBytes=516601798,mTotalDataEgressBytes=262424857,mRtBytes=0,mnRtBytes=779026655,ip=Not available.,mRtBitratePerSecond=0 bps,mNrtBitrateperSecond=85.492 kbps,
+07-19 23:19:26.075  3244  5387 I SemWifiApTrafficPriority: handleDataUsageStats : 3e:dd:fb:2f:b6:a8 : alive=true,mBitratePerSecond=906.055 kbps,mBitrateIngressPerSecond=30.955 kbps,mBitrateEgressPerSecond=875.1 kbps,mCellularBytes=770927488,mWifiDataBytes=0,mTotalDataBytes=770927488,mTotalDataIngressBytes=82658782,mTotalDataEgressBytes=688268706,mRtBytes=0,mnRtBytes=770927488,ip=10.186.226.163,mRtBitratePerSecond=0 bps,mNrtBitrateperSecond=906.055 kbps,
+07-19 23:19:26.076  3244  5387 D SemWifiApTrafficPriority: activeNetworkSpeed: 15 MbpswifiInfoSpeed: -1 Mbps
+07-19 23:19:26.076  3244  5387 D SemWifiApTrafficPriority: Log----> Interface Name: rmnet_data0 totalStatsRxMegaBitRate: 3.6446192,ebpfDatarate: 0.955593 ,mCurrSpeedEstimation: 15 mGapiValue: 15.859 mEnablePriorityeBpfAPICalled false
+07-19 23:19:26.076  3244  5387 D SemWifiApTrafficPriority: mCurrentNonGBRAllocated:0
+07-19 23:19:26.076  3244  5387 I SemWifiApTrafficPriority: calculateRecalRestrictTimer,ebpfrate:0,currentNonGBRAllocated:0
+07-19 23:19:26.263  1175  1175 D io_stats: !@   8,0 r 17668142 517599893 w 5115248 146840624 d 640791 145073484 f 173942 612269 iot 9885348 0 th 0 0 0 pt 0 inp 0 0 198817.334
+07-19 23:19:26.263  1175  1175 D io_stats: !@ Read_top(KB): egram.messenger(30903) 12952 naijun.blackbox(7849) 5960 kworker/u16:5(15174) 1212
+07-19 23:19:26.264  1175  1175 D io_stats: !@ Write_top(KB): egram.messenger(30903) 376 system_server(3244) 128 naijun.blackbox(7849) 100
+07-19 23:19:26.632  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b0 went down
+07-19 23:19:26.632  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b0 went down
+07-19 23:19:26.633  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b1 went down
+07-19 23:19:26.633  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b1 went down
+07-19 23:19:26.634  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b2 went down
+07-19 23:19:26.634  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b2 went down
+07-19 23:19:26.636  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b3 went down
+07-19 23:19:26.637  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b3 went down
+07-19 23:19:26.719  6071  6071 I SDHMS:LOAD: type: LoadsFreqs, value: 1:0:0:940799:1248000:864000:929664:2803200:614400:296:475:220
+07-19 23:19:26.905  2807  2906 W Settings: Setting airplane_mode_on has moved from android.provider.Settings.System to android.provider.Settings.Global, returning read-only value.
+07-19 23:19:26.906  2807  2906 W Settings: Setting airplane_mode_on has moved from android.provider.Settings.System to android.provider.Settings.Global, returning read-only value.
+07-19 23:19:26.913  3244  5714 E AppOps  : Bad call made by uid 1001. Package "com.android.phone" does not belong to uid 10274.
+07-19 23:19:26.913  3244  5714 E AppOps  : Cannot noteOperation
+07-19 23:19:26.913  3244  5714 E AppOps  : java.lang.SecurityException: Specified package "com.android.phone" under uid 10274 but it is not
+07-19 23:19:26.913  3244  5714 E AppOps  : 	at com.android.server.appop.AppOpsService.verifyAndGetBypass(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:63)
+07-19 23:19:26.913  3244  5714 E AppOps  : 	at com.android.server.appop.AppOpsService.noteOperationUnchecked(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:68)
+07-19 23:19:26.913  3244  5714 E AppOps  : 	at com.android.server.appop.AppOpsService.-$$Nest$mnoteOperationImpl(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:89)
+07-19 23:19:26.913  3244  5714 E AppOps  : 	at com.android.server.appop.AppOpsService$CheckOpsDelegateDispatcher$$ExternalSyntheticLambda4.apply(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:65)
+07-19 23:19:26.913  3244  5714 E AppOps  : 	at com.android.server.policy.AppOpsPolicy.noteOperation(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:35)
+07-19 23:19:26.913  3244  5714 E AppOps  : 	at com.android.server.appop.AppOpsService$CheckOpsDelegateDispatcher.noteOperation(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:66)
+07-19 23:19:26.913  3244  5714 E AppOps  : 	at com.android.server.appop.AppOpsService.noteOperation(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:20)
+07-19 23:19:26.913  3244  5714 E AppOps  : 	at com.android.internal.app.IAppOpsService$Stub.onTransact(IAppOpsService.java:592)
+07-19 23:19:26.913  3244  5714 E AppOps  : 	at android.os.Binder.execTransactInternal(Binder.java:1514)
+07-19 23:19:26.913  3244  5714 E AppOps  : 	at android.os.Binder.execTransact(Binder.java:1454)
+07-19 23:19:26.916  1819  1819 I sensors-hal: set_config:61, sample_period_ns is adjusted to 100000000 based on min/max delay_ns
+07-19 23:19:26.916  1819  1819 I sensors-hal: batch:369, android.sensor.pressure/61, period=100000000, max_latency=0 request completed
+07-19 23:19:26.916  1819  1819 I sensors-hal: activate:285, android.sensor.pressure/61 en=1
+07-19 23:19:26.916  1819  1819 I sensors-hal: acquire_ssc_interface:114, acquire_ssc_interface with sensor_id 20 , conn_type 3 
+07-19 23:19:26.918  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b4 went down
+07-19 23:19:26.918  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b4 went down
+07-19 23:19:26.920  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b5 went down
+07-19 23:19:26.920  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b5 went down
+07-19 23:19:26.921  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b6 went down
+07-19 23:19:26.921  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b6 went down
+07-19 23:19:26.921  1819  1819 I sensors-hal: ssc_qmi:36, ssc_qmi
+07-19 23:19:26.921  1819  1819 I sensors-hal: register_cb:305, register_cb start this=0xb40000730244aa00x
+07-19 23:19:26.921  1819  1819 I sensors-hal: register_cb:321, register_cb End with succes
+07-19 23:19:26.921  1819  1819 I sensors-hal: send_sensor_config_request:590, resampler is used, set resampler config
+07-19 23:19:26.921  1819  1819 I sensors-hal: send_sync_sensor_request:521, send sync request
+07-19 23:19:26.921  1819  1819 I sensors-hal: send_sync_sensor_request:531, send_sync_sensor_request before send_request for pressure with SUID low=3477918057453434663 high=6695488185567971209
+07-19 23:19:26.921  1819  1819 I sensors-hal: send_request:330, send_request start this=0xb40000730244aa00x 
+07-19 23:19:26.922  1819  1819 I sensors-hal: send_request:415, send_request completed, this=0xb40000730244aa00x
+07-19 23:19:26.922  1819  1819 I sensors-hal: send_sync_sensor_request:552, wait for notification of response
+07-19 23:19:26.922  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b7 went down
+07-19 23:19:26.922  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b7 went down
+07-19 23:19:26.924  1819 18433 I sensors-hal: ssc_conn_resp_cb:947, resp_value = 0 for pressure 
+07-19 23:19:26.924  1819  1819 I sensors-hal: send_sync_sensor_request:558, takes 2 ms to receive the response with 0
+07-19 23:19:26.924  1819  1819 I sensors-hal: activate:62, activate pressure
+07-19 23:19:26.924  1819  1819 I sensors-hal: activate:303, android.sensor.pressure/61 en=1 completed
+07-19 23:19:26.924  1819 18433 I sensors-hal: handle_resp_cb:517, handle_resp_cb Ended this=0xb40000730244aa00x
+07-19 23:19:26.925  2807  2898 D SensorManager: registerListener :: 61, lps22hh Pressure Sensor Non-wakeup, 100000, 0, 
+07-19 23:19:26.926 32168 32168 I hostapd : nl80211: Ignored event 33 (NL80211_CMD_TRIGGER_SCAN) for foreign interface (ifindex 61 wdev 0x0)
+07-19 23:19:26.926  1819 18433 I sensors-hal: ssc_conn_event_cb:875, SCHED_FIFO(10) for qmi_cbk
+07-19 23:19:26.929  3244  4476 D SemCellularStateManager: onCellInfoChanged: cellInfoList Number of cell: 4
+07-19 23:19:26.929  3244  4476 D SemCellularStateManager: onCellInfoChanged: Registered = true, mCellularCellId = 105760264
+07-19 23:19:26.930  5042  5042 I TelephonyCallbackForPdnController<0>: onCellInfoChanged: xxxxx
+07-19 23:19:26.931  5042  5042 I ImsCallSessionManager: onCellInfoChanged, phoneId: 0
+07-19 23:19:26.931  5042  5404 I RegiMgr-Handler: handleMessage: EVENT_CELL_INFO_CHANGED
+07-19 23:19:26.931  5042  5404 I RegiMgr<0>: tryRegister:
+07-19 23:19:26.931  5042  5404 I RegiMgr<0>: RegisterTask(s): Nigeria MTN VoLTE (IDLE), Global GC RCS (IDLE)
+07-19 23:19:26.931  5042  5404 I RcsPolicyMgr<0>: pendingRcsRegister: mActiveDataPhoneId = 0
+07-19 23:19:26.931  5042  5404 I RegisterTask: isSuspended: mSuspended(false) mSuspendByIrat(false)
+07-19 23:19:26.931  5042  5404 I RegiMgr<0>: [Nigeria MTN VoLTE|IDLE] checkForTryRegister id: 851
+07-19 23:19:26.934  5042  5404 I PdnController: getDefaultNetworkBearer: CELLULAR
+07-19 23:19:26.934  5042  5404 I RegistrationRatDecider<0>: getAvailableMobileNetwork: network=13 mobileDataType=13 => rat=13
+07-19 23:19:26.934  5042  5404 I PdnController<0>: isNetworkAvailable: isEpdgConnected=false getDataNetworkType()=13
+07-19 23:19:26.940  5042  5404 I RegistrationRatDecider<0>: findBestNetwork: LTE
+07-19 23:19:26.940  5042  5404 I RegiGvnBase<0>: isReadyToDualRegister: slot 1's call state: 0
+07-19 23:19:26.940  5042  5404 I RegiGvnBase<0>: isReadyToDualRegister : true
+07-19 23:19:26.942  5042  5404 I RegiMgr<0>: [Nigeria MTN VoLTE|IDLE] checkInitialRegistrationIsReady: APM ON [false], Roamimg [false]
+07-19 23:19:26.943  5042  5404 I RcsPolicyMgr<0>: pendingRcsRegister: mActiveDataPhoneId = 0
+07-19 23:19:26.943  5042  5404 I ImsProfile: isRttSupportByCallApp : true
+07-19 23:19:26.943  5042  5404 I ImsProfile: ttyType : 1
+07-19 23:19:26.943  5042  5404 I RegiMgr-Utils<0>: getPriorityRegiedTask : isPriority  High? true
+07-19 23:19:26.943  5042  5404 I RegiMgr<0>: getTelephonyCallStatus:
+07-19 23:19:26.945  5042  5404 I RegiGvnBase: checkRegiStatus: getState()=IDLE mIsUpdateRegistering=false
+07-19 23:19:26.945  5042  5404 E GlobalSettingsRepoBase: globalgcsettings No matched key : dual_rcs_policy
+07-19 23:19:26.946  5042  5404 I RcsUtils<0>: getDualRcsPolicy: 0
+07-19 23:19:26.947  3244  5708 D SecContentProvider2: query(), uri = 18 selection = isRCSEnabled
+07-19 23:19:26.949  3244  5708 I PhoneRestrictionPolicy: isRCSEnabledInternal(), showMsg: false, columnName: enableRCS
+07-19 23:19:26.949  3244  5708 E PhoneRestrictionPolicy: getEmergencyCall >>false
+07-19 23:19:26.949  3244  5708 I PhoneRestrictionPolicy: isRCSEnabledInternal(), showMsg: false, columnName: enableRCSForSimSlot0
+07-19 23:19:26.950  3244  5708 E PhoneRestrictionPolicy: getEmergencyCall >>false
+07-19 23:19:26.951  5042  5404 I ImsServiceSwitchEur[0]:  isRcsEnabled: true mDefaultSms false mUpsmEnabled false mEmergencyEnabled false
+07-19 23:19:26.953  5042  5404 I ConfigTrigger<0>: isWaitAutoConfig:
+07-19 23:19:26.953  5042  5404 E GlobalSettingsRepoBase: globalgcsettings No matched key : dual_rcs_policy
+07-19 23:19:26.953  5042  5404 I RcsUtils<0>: getDualRcsPolicy: 0
+07-19 23:19:26.954  3244  5708 D SecContentProvider2: query(), uri = 18 selection = isRCSEnabled
+07-19 23:19:26.954  3244  5708 I PhoneRestrictionPolicy: isRCSEnabledInternal(), showMsg: false, columnName: enableRCS
+07-19 23:19:26.954  3244  5708 E PhoneRestrictionPolicy: getEmergencyCall >>false
+07-19 23:19:26.954  3244  5708 I PhoneRestrictionPolicy: isRCSEnabledInternal(), showMsg: false, columnName: enableRCSForSimSlot0
+07-19 23:19:26.954  3244  5708 E PhoneRestrictionPolicy: getEmergencyCall >>false
+07-19 23:19:26.956  5042  5404 I ImsServiceSwitchEur[0]:  isRcsEnabled: true mDefaultSms false mUpsmEnabled false mEmergencyEnabled false
+07-19 23:19:26.956  5042  5404 I RegiMgr-Utils: selectPdnType: rat=13 pdn=11
+07-19 23:19:26.956  5042  5404 I RegiMgr<0>: getServiceForNetwork: network 13
+07-19 23:19:26.956  5042  5404 I RegiMgr<0>: getServiceForNetwork: service {mmtel}
+07-19 23:19:26.956  5042  5404 I SimManager<0>: isLabSimCard: state [LOADED] isLabSim [false]
+07-19 23:19:26.956  5042  5404 I ConfigTrigger<0>: isValidAcsVersion:
+07-19 23:19:26.956  5042  5404 E GlobalSettingsRepoBase: globalgcsettings No matched key : dual_rcs_policy
+07-19 23:19:26.956  5042  5404 I RcsUtils<0>: getDualRcsPolicy: 0
+07-19 23:19:26.957  5042  5404 I ConfigProvider: query uri:xxxxx
+07-19 23:19:26.960  5042  5404 I ConfigProvider: queryStorage path content://com.samsung.rcs.autoconfigurationprovider/parameter/version#simslot0
+07-19 23:19:26.961  5042  5404 I ConfigProvider: can not find readData from mStorage
+07-19 23:19:26.961  3244  5708 D SecContentProvider2: query(), uri = 18 selection = isRCSEnabled
+07-19 23:19:26.961  3244  5708 I PhoneRestrictionPolicy: isRCSEnabledInternal(), showMsg: false, columnName: enableRCS
+07-19 23:19:26.962  3244  5708 E PhoneRestrictionPolicy: getEmergencyCall >>false
+07-19 23:19:26.962  3244  5708 I PhoneRestrictionPolicy: isRCSEnabledInternal(), showMsg: false, columnName: enableRCSForSimSlot0
+07-19 23:19:26.962  3244  5708 E PhoneRestrictionPolicy: getEmergencyCall >>false
+07-19 23:19:26.963  5042  5404 I ConfigTrigger<0>: RCS switch: false, version: null, isRcsAcsCompleted: false
+07-19 23:19:26.963  5042  5404 I ConfigTrigger<0>: RCS switch is on & config version: null. This shouldn't happen!
+07-19 23:19:26.963  5042  5404 I RegiGvnBase<0>: by VoPS policy: remove all service
+07-19 23:19:26.963  5042  5404 I RegiMgr<0>: getServiceForNetwork: filtered service []
+07-19 23:19:26.963  5042  5404 I RegiMgr<0>: Nigeria MTN VoLTE: no ims service for current rat13
+07-19 23:19:26.964  5042  5404 I PdnController: slot[0]: stopPdnConnectivity: network 11, callback is null
+07-19 23:19:26.964  5042  5404 E PdnController<0>: requestStopNetwork: callback not found
+07-19 23:19:26.964  5042  5404 E #IMSCR  : 07-19 23:19:26 0x1101000B:0,FILTERED ALL:11
+07-19 23:19:26.964  5042  5404 E #IMSREGI: (0, Nigeria MTN VoLTE) NOT_TRIGGERED : reason - VOPS_OFF
+07-19 23:19:26.964  5042  5404 I RcsPolicyMgr<0>: pendingRcsRegister: mActiveDataPhoneId = 0
+07-19 23:19:26.964  5042  5404 I RegisterTask: isSuspended: mSuspended(false) mSuspendByIrat(false)
+07-19 23:19:26.964  5042  5404 I RegiMgr<0>: [Global GC RCS|IDLE] checkForTryRegister id: 1279
+07-19 23:19:26.964  5042  5404 I PdnController: getDefaultNetworkBearer: CELLULAR
+07-19 23:19:26.965  5042  5404 I RegistrationRatDecider<0>: getAvailableMobileNetwork: network=13 mobileDataType=13 => rat=13
+07-19 23:19:26.965  5042  5404 I RegistrationRatDecider<0>: findBestNetwork: LTE
+07-19 23:19:26.965  5042  5404 I RegiGvnBase<0>: isReadyToDualRegister: slot 1's call state: 0
+07-19 23:19:26.965  5042  5404 I RegiGvnBase<0>: isReadyToDualRegister : true
+07-19 23:19:26.965  5042  5404 I RegiMgr<0>: [Global GC RCS|IDLE] checkInitialRegistrationIsReady: APM ON [false], Roamimg [false]
+07-19 23:19:26.966  5042  5404 I RcsPolicyMgr<0>: pendingRcsRegister: mActiveDataPhoneId = 0
+07-19 23:19:26.966  5042  5404 I ImsProfile: isRttSupportByCallApp : true
+07-19 23:19:26.966  5042  5404 I ImsProfile: ttyType : 1
+07-19 23:19:26.966  5042  5404 I RegiMgr-Utils<0>: getPriorityRegiedTask : isPriority  High? true
+07-19 23:19:26.966  5042  5404 I RegiGvnBase: checkRegiStatus: getState()=IDLE mIsUpdateRegistering=false
+07-19 23:19:26.966  5042  5404 I RegiMgr<0>: getTelephonyCallStatus:
+07-19 23:19:26.966  5042  5404 I ConfigProvider: query uri:xxxxx
+07-19 23:19:26.967  5042  5404 I ConfigProvider: queryStorage path content://com.samsung.rcs.autoconfigurationprovider/parameter/version#simslot0
+07-19 23:19:26.968  5042  5404 I ConfigProvider: can not find readData from mStorage
+07-19 23:19:26.968  5042  5404 I RegiGvnRcs: isReadyToRegister: User don't try RCS service yet
+07-19 23:19:26.968  5042  5404 I RegiMgr<0>: [Global GC RCS|IDLE] checkForTryRegister: isReadyToRegister = false
+07-19 23:19:26.968  5042  5404 I PdnController: handleMessage: what 107
+07-19 23:19:26.968  5042  5404 I PdnController: slot[0]: requestStopNetwork: network 11, callback is null
+07-19 23:19:27.040  3244  4476 D SemWifiTrafficPoller: getSoftApTotalTrafficInBytes:1549986356
+07-19 23:19:27.119 30903  4314 V AndroidForwardingOs: Recovering failed rename /storage/emulated/0/Android/data/org.telegram.messenger/cache/-5465618464715696907_121.temp to /storage/emulated/0/Android/data/org.telegram.messenger/files/Telegram/Telegram Images/-5465618464715696907_121.jpg
+07-19 23:19:27.228  1819 18433 I sensors-hal: handle_sns_std_sensor_event:139, [0] Pressure 1004.877, cal 0.286, sw_offset 0.000
+07-19 23:19:27.446  1819  8814 I sensors-hal: handle_sns_client_event:190, auto_rotation_debug_2 mode,255, type,1,0 acc,0.163,0.225,9.935, ar,0, ver,15, pedo,1,e,1,i,3
+07-19 23:19:27.451  3244  4548 D NetdEventListenerService: DNS Requested by 236, 10464(org.telegram.messenger), SUCCESS, 292ms
+07-19 23:19:27.454  8847  8847 I EdgeLightNotiEffectView:  hide : false
+07-19 23:19:27.455  8847  8847 D NotificationLightingScheduler: expiredNotiLighting: remove=0|org.telegram.messenger|1|null|10464
+07-19 23:19:27.455  8847  8847 D EdgeLightingScheduler: stopNotification
+07-19 23:19:27.455  8847  8847 I EdgeLightNotiEffectView:  hide : false
+07-19 23:19:27.458  8847  8847 I EdgeLightingDialog: send broadcast : com.android.systemui.edgelighting.stop
+07-19 23:19:27.459  3244  3244 D PocketModeEvent: INTENT_EDGE_LIGHTING_REMOVE
+07-19 23:19:27.459  3244  3244 D PocketModeEvent: EL_STATE is NONE
+07-19 23:19:27.459  3244  4381 D PocketModeEvent: MSG_TYPE_STOP_EDGE_LIGHTING
+07-19 23:19:27.459  3244  4381 D PocketModeEvent: inject Data : 100.0
+07-19 23:19:27.459  3244  4381 I SensorManager: Get Sensor type = 65605
+07-19 23:19:27.460  1819  1819 I sensors-hal: inject_sensor_data:122, pocket_mode inject type:0
+07-19 23:19:27.461  1819  1819 I sensors-hal: inject_sensor_data:122, pocket_mode inject type:268435459
+07-19 23:19:27.461  1819  1819 I sensors-hal: inject_sensor_data:125, pocket_mode inject:100
+07-19 23:19:27.461  1819  1819 I sensors-hal: set_pocket_inject:107, set_pocket_inject : 100
+07-19 23:19:27.461  1922  1922 I SSC_DAEMON: physical_sensor_test_req_msg Sensor type :13, Msg type:15
+07-19 23:19:27.461  1922  1922 I SSC_DAEMON: 0.algo_id:5, num:1
+07-19 23:19:27.462  1819  1819 I sensors-hal: inject_sensor_data:122, pocket_mode inject type:1
+07-19 23:19:27.463  1819  4556 I sensors-hal: ssc_conn_event_cb:907, event[0] sensor:Pocket mode  Wakeup, msg_id=715, ts=6326547332783
+07-19 23:19:27.463  1922  3730 I SSC_DAEMON: OD event:12,0,0,0,0
+07-19 23:19:27.463  1819  4556 E libprotobuf-native: [libprotobuf ERROR external/protobuf/src/google/protobuf/message_lite.cc:123] Can't parse message of type "sns_std_sensor_event" because it is missing required fields: (cannot determine missing fields for lite message)
+07-19 23:19:27.482  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.483  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.483  8847  8892 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 112, 1028, 207], alpha=0.996, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.494  1877  1877 E ANDR-PERF-MPCTL: ANDR-PERF-MPCTL: internal_perf_lock_acq_verification() 385: Perflock Submit request limit reached.
+07-19 23:19:27.494  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.496  8847  8891 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.497  8847  8891 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 111, 1028, 206], alpha=0.984, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.498  1958  1958 D SurfaceFlinger: GPIS:: requestGpisForBlur
+07-19 23:19:27.498  1958  4290 D NativeSemDvfsManager: acquire:: timeout = 2000 mIsAcquired = 1  mTagName : SurfaceFlinger 
+07-19 23:19:27.498  1958  2152 I SurfaceFlinger: Current= 120, Period= 120, Distance= 0
+07-19 23:19:27.499  1958  4290 E NativeCustomFrequencyManager: [NativeCFMS] BpCustomFrequencyManager::acquire()
+07-19 23:19:27.500  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.500  1844  1882 I HYPER-HAL: [RequestManager.cpp]acquire(): Acquired ID : 4377361  [1958 / 1000]    HINT : SF_GPU_MINLOCK    list : [TIMEOUT / 2000] 
+07-19 23:19:27.502  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.502  8847  8892 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 109, 1028, 204], alpha=0.973, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.504  1958  2152 I SurfaceFlinger: Current= 120, Period= 120, Distance= 120
+07-19 23:19:27.505  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.505  8847  8891 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.505  8847  8891 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 107, 1028, 202], alpha=0.949, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.512  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.513  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.514  8847  8892 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 104, 1028, 199], alpha=0.925, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.521  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.522  8847  8891 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.522  8847  8891 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 101, 1028, 196], alpha=0.894, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.530  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.530  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.530  8847  8892 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 98, 1028, 193], alpha=0.863, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.538  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.539  8847  8891 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.539  8847  8891 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 94, 1028, 189], alpha=0.824, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.547  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.547  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.547  8847  8892 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 90, 1028, 185], alpha=0.784, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.555  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.555  8847  8891 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.555  8847  8891 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 85, 1028, 181], alpha=0.745, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.563  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.563  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.564  8847  8892 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 80, 1028, 176], alpha=0.698, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.571  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.572  8847  8891 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.572  8847  8891 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 76, 1028, 171], alpha=0.655, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.580  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.580  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.580  8847  8892 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 71, 1028, 166], alpha=0.608, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.588  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.589  8847  8891 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.589  8847  8891 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 66, 1028, 161], alpha=0.557, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.596  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.597  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.597  8847  8892 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 61, 1028, 156], alpha=0.510, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.600 32168 32168 I hostapd : nl80211: Ignored event 34 (NL80211_CMD_NEW_SCAN_RESULTS) for foreign interface (ifindex 61 wdev 0x0)
+07-19 23:19:27.601  3244  3924 D WifiNl80211Manager: Scan result ready event
+07-19 23:19:27.601  2527 32173 I LOWI-9.0.1.64: [LOWI-Scan] lowi_close_record:Scan done in 329482140ms, 2 APs in scan results
+07-19 23:19:27.602  2527  2582 I LOWI-9.0.1.64: [LOWIUtils] responseToOutPostcard - TO: FreeWifiScanObserver, FROM:   LOWI-SERVER, RESP:  LOWI_ASYNC_DISCOVERY_SCAN_RESULTS
+07-19 23:19:27.603  3244  3924 D WifiNative: Scan result ready event
+07-19 23:19:27.603  3244  4390 W IE_Capabilities: Unknown RSN cipher suite: 6ac0f00
+07-19 23:19:27.604  3244  4390 W IE_Capabilities: Unknown RSN cipher suite: 6ac0f00
+07-19 23:19:27.605  3244  4390 I WifiScanner: onFullResults
+07-19 23:19:27.605  3244  4390 I WifiScanner: onFullResults
+07-19 23:19:27.605  3244  4390 I WifiScanner: onFullResults
+07-19 23:19:27.605  2807  7945 I WifiScanner: onFullResults
+07-19 23:19:27.606  1791  1825 W IzatSvc_Wiper: wifiScanNotificationMsg:507] Associated AP found 0, num of elements 2
+07-19 23:19:27.606  2807  9814 I WifiScanner: onFullResults
+07-19 23:19:27.607  1791  1849 I LocSvc_api_v02: ---> locClientSendReq line 2442 QMI_LOC_INJECT_WIFI_AP_DATA_REQ_V02
+07-19 23:19:27.608  3244  4487 E SilentRoamingManager: ifaceName is null
+07-19 23:19:27.608  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.609  8847  8891 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.609  8847  8891 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 56, 1028, 151], alpha=0.463, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.609  3244  4511 W IE_Capabilities: Unknown RSN cipher suite: 6ac0f00
+07-19 23:19:27.609  3244  4511 W IE_Capabilities: Unknown RSN cipher suite: 6ac0f00
+07-19 23:19:27.610  3244  4386 D WakeupController: Attempted to handleScanResults while not enabled
+07-19 23:19:27.610  1791 28579 I LocSvc_ApiV02: <--- globalRespCb line 354 QMI_LOC_INJECT_WIFI_AP_DATA_REQ_V02
+07-19 23:19:27.611  3244  4476 D SemWifiScanPool: countryCode: NG, count: 2, totalSamples: 2, rate: 100.0%
+07-19 23:19:27.611  3244  4476 V SemWifiScanPool: updateScanResult, full scan:2 configKeys: 1 notifyconfigKeys: 1 pool_bssid:3 pool_configKeys:2
+07-19 23:19:27.611  3244  4476 D WifiConnectivityMonitor: onScanResultUpdated
+07-19 23:19:27.611  3244  4476 D WifiConnectivityMonitor: mMaxScannedCountryCode : 
+07-19 23:19:27.611  3244 19167 D RssiThresholdNetSelector: determineDefaultEntryRssi: total=2 / 2.4GHz=1, avgCu=0, currentEntryRssi=-78
+07-19 23:19:27.613  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.614  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.614  8847  8892 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 50, 1028, 145], alpha=0.408, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.621  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.622  8847  8891 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.622  8847  8891 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 45, 1028, 140], alpha=0.357, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.625  2807 18226 I FrewleTileCacheManagerV: (REDACTED) Fetched %d AP models from cache
+07-19 23:19:27.628  2807 18226 I FrewleTileCacheManagerV: (REDACTED) Fetched %d AP models from cache
+07-19 23:19:27.628  2807 18226 I FrewleTileCacheManagerV: (REDACTED) Fetched %d AP models from cache
+07-19 23:19:27.628  2807 18226 I FrewleTileCacheManagerV: (REDACTED) Fetched %d AP models from cache
+07-19 23:19:27.629  2807 18226 I FrewleTileCacheManagerV: (REDACTED) Fetched %d AP models from cache
+07-19 23:19:27.629  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.630  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.630  8847  8892 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 40, 1028, 135], alpha=0.310, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.638  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.639  3244  5714 D ActivityManager: Received SERVICE intent 0xe7c5a25 Key{startService pkg=com.google.android.gms/fused_location_provider intent=act=com.google.android.location.internal.action.FLP_FULL_POWER_LOCATION_RESULT xflg=0x4 pkg=com.google.android.gms cmp=com.google.android.gms/com.google.android.location.internal.PendingIntentCallbackService flags=0x2000000 u=0} requestCode=0 from uid 10274
+07-19 23:19:27.640  8847  8891 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.640  8847  8891 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 34, 1028, 129], alpha=0.255, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.644  3244  5714 D ActivityManager: Received SERVICE intent 0xc9f8cfc Key{startService pkg=com.google.android.gms/network_location_provider intent=act=com.google.android.gms.location.util.nlp.RESULT cat=[targeted_intent_op_prefix:.location.util.nlp.NlpInternalApi$NlpReceiverIntentOperation] xflg=0x4 cmp=com.google.android.gms/.chimera.PersistentIntentOperationService flags=0x2000000 u=0} requestCode=2 from uid 10274
+07-19 23:19:27.646  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.647  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.647  8847  8892 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 29, 1028, 124], alpha=0.208, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.647  3244  5714 D ActivityManager: Received SERVICE intent 0x8156c52 Key{startService pkg=com.google.android.gms/fused_location_provider intent=act=com.google.android.location.internal.action.FLP_LOW_POWER_LOCATION_RESULT xflg=0x4 pkg=com.google.android.gms cmp=com.google.android.gms/com.google.android.location.internal.PendingIntentCallbackService flags=0x2000000 u=0} requestCode=0 from uid 10274
+07-19 23:19:27.654  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.655  8847  8891 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.655  8847  8891 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 24, 1028, 119], alpha=0.157, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.662  3244  5708 D ActivityManager: Received SERVICE intent 0xc24f906 Key{startService pkg=com.google.android.gms/current_semantic_location intent=act=com.google.android.gms.semanticlocation.ACTION_LOCATION xflg=0x4 cmp=com.google.android.gms/.semanticlocation.service.SemanticLocationService flags=0x2000000 u=0} requestCode=0 from uid 10274
+07-19 23:19:27.663  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.664  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too fast
+07-19 23:19:27.664  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too fast
+07-19 23:19:27.664  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too fast
+07-19 23:19:27.664  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too fast
+07-19 23:19:27.665  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.666  3244  5714 D ActivityManager: Received BROADCAST intent 0xc116f8b Key{broadcastIntent pkg=com.samsung.android.mcfds intent=act=com.samsung.android.ce.sensor.location.PASSIVE_INTENT xflg=0x4 pkg=com.samsung.android.mcfds flags=0x2000000 u=0} requestCode=20247613 sent=0 from uid 1000
+07-19 23:19:27.666  8847  8892 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 18, 1028, 113], alpha=0.106, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.666  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too close
+07-19 23:19:27.669  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too close
+07-19 23:19:27.669  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too close
+07-19 23:19:27.669  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too close
+07-19 23:19:27.669  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too close
+07-19 23:19:27.669  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too close
+07-19 23:19:27.669  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too close
+07-19 23:19:27.669  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too close
+07-19 23:19:27.669  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too close
+07-19 23:19:27.669  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too close
+07-19 23:19:27.669  2807  2898 I FusedLocation: (REDACTED) location delivery to %s blocked - too close
+07-19 23:19:27.669  5536  5669 I NlpMonitor_FLP: monitorNlp, package=com.google.android.as/ interval=21600000
+07-19 23:19:27.671  2807  2898 I FusedLocation: (REDACTED) stationary throttling engaged @%s
+07-19 23:19:27.673 14156 14168 I [CE]_ContextEngineReceiver: onReceive - action: com.samsung.android.ce.sensor.location.PASSIVE_INTENT
+07-19 23:19:27.674  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.674  8847  8891 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.674  8847  8891 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 13, 1028, 108], alpha=0.059, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.675  1819  1819 I sensors-hal: activate:285, android.sensor.pressure/61 en=0
+07-19 23:19:27.676 14156 14168 I [CE]_SLocationManager: onReceive - [Passive Location] 20247613
+07-19 23:19:27.676  1819  1819 I sensors-hal: ~ssc_qmi:63, ~ssc_qmi
+07-19 23:19:27.676  1819  1819 I sensors-hal: deactivate:82, deactivate pressure
+07-19 23:19:27.676  1819  1819 I sensors-hal: activate:303, android.sensor.pressure/61 en=0 completed
+07-19 23:19:27.677  2807  2898 D SensorManager: unregisterListener
+07-19 23:19:27.678  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b8 went down
+07-19 23:19:27.678  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b8 went down
+07-19 23:19:27.679  5536  5669 I GmsPassiveListener_FLP: onGmsLocationChanged, provider=fused / speed=0.0 / time=1784499567010 / elapsed=329502692000000
+07-19 23:19:27.683  3244  5714 D ActivityManager: Received SERVICE intent 0xc24f906 Key{startService pkg=com.google.android.gms/current_semantic_location intent=act=com.google.android.gms.semanticlocation.ACTION_LOCATION xflg=0x4 cmp=com.google.android.gms/.semanticlocation.service.SemanticLocationService flags=0x2000000 u=0} requestCode=0 from uid 10274
+07-19 23:19:27.684  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 1
+07-19 23:19:27.685  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 1
+07-19 23:19:27.685  8847  8892 D SurfaceComposerClient: [SEC_SF_EFFECTS] setBlurRegions EdgeLightingWindow$_8847#47395 ## {radius=300, rect=[52, 8, 1028, 104], alpha=0.012, cornerRadius=[47.000, 47.000, 47.000, 47.000], clipRect=[0, 0, 2147483647, 2147483647], colorCurve=[5.000, 21.600, 250.000, 141.500, (-23.000, 0.400)], bgColorAdjustment=[0.000, (0.000, 1.000)], gradient=[(0.000, 1.000), 0.000], pathData=0
+07-19 23:19:27.685  4634  4898 D AppOpsPrivacyItemMonitor: showLocationSystemApps  AppOpItem(Op code=1, UID=10101, AttributionTag=null, Package name=com.samsung.android.mcfds, Paused=false)
+07-19 23:19:27.685  1791  1824 I GnssAidl: ===> injectLocation line 287 
+07-19 23:19:27.686  4634  4898 D AppOpsPrivacyItemMonitor: showLocationSystemApps  AppOpItem(Op code=1, UID=1000, AttributionTag=SLocationService, Package name=android, Paused=false)
+07-19 23:19:27.686  4634  4898 D AppOpsPrivacyItemMonitor: showLocationSystemApps  AppOpItem(Op code=1, UID=5013, AttributionTag=null, Package name=com.sec.location.nsflp2, Paused=false)
+07-19 23:19:27.687  4634  4898 D AppOpsPrivacyItemMonitor: showLocationSystemApps  AppOpItem(Op code=1, UID=10101, AttributionTag=null, Package name=com.samsung.android.mcfds, Paused=false)false)
+07-19 23:19:27.688  4634  4898 D AppOpsPrivacyItemMonitor: showLocationSystemApps  AppOpItem(Op code=1, UID=1000, AttributionTag=SLocationService, Package name=android, Paused=false)false)
+07-19 23:19:27.689 14156 14168 I [CE]_PrimaryLocationManager: checkInStayDurationNow - In CSD now? N / In ASD now? Y
+07-19 23:19:27.689 14156 14168 I [CE]_PrimaryLocationManager: onNewLocation - State: -1 / -1
+07-19 23:19:27.690  8847  8847 I BackgroundBlurDrawable: getBlurRegionsCopyForRT, size : 0
+07-19 23:19:27.690  1791  1824 I GnssAidl: ===> injectLocation line 287 
+07-19 23:19:27.690  4634  4898 D AppOpsPrivacyItemMonitor: showLocationSystemApps  AppOpItem(Op code=1, UID=5013, AttributionTag=null, Package name=com.sec.location.nsflp2, Paused=false)false)
+07-19 23:19:27.690  8847  8891 I VRI[EdgeLightingWindow]@cbd5829: dispatchBlurRegionsEx 0
+07-19 23:19:27.690  8847  8891 D SurfaceComposerClient: [SEC_SF_EFFECTS] skip setBlurRegions EdgeLightingWindow$_8847#47395 ## regionSize=0
+07-19 23:19:27.691  1791  1824 I GnssAidl: ===> injectLocation line 287 
+07-19 23:19:27.691  4634  4898 D AppOpsPrivacyItemMonitor: showLocationSystemApps  AppOpItem(Op code=1, UID=10101, AttributionTag=null, Package name=com.samsung.android.mcfds, Paused=false)false)false)
+07-19 23:19:27.691  4634  4898 D AppOpsPrivacyItemMonitor: showLocationSystemApps  AppOpItem(Op code=1, UID=1000, AttributionTag=SLocationService, Package name=android, Paused=false)false)false)
+07-19 23:19:27.691  4634  4634 W View    : requestLayout() improperly called by android.widget.FrameLayout{f246984 V.E...... ......I. 0,0-1080,2316 #14} during layout: running second layout pass
+07-19 23:19:27.692  4634  4898 D AppOpsPrivacyItemMonitor: showLocationSystemApps  AppOpItem(Op code=1, UID=5013, AttributionTag=null, Package name=com.sec.location.nsflp2, Paused=false)false)false)
+07-19 23:19:27.692  1791  1824 I GnssAidl: ===> injectLocation line 287 
+07-19 23:19:27.692  1791  1849 I LocSvc_api_v02: ---> locClientSendReq line 2442 QMI_LOC_INJECT_POSITION_REQ_V02
+07-19 23:19:27.692  4634  4634 W View    : requestLayout() improperly called by com.android.systemui.qs.QSTouchAwareFrameLayout{abf556d V.E...... ......ID 0,157-1080,2316 #7e0a0a4c com.android.systemui:id/qs_frame} during layout: running second layout pass
+07-19 23:19:27.692  1791  1824 I GnssAidl: ===> injectLocation line 287 
+07-19 23:19:27.692  4634  4634 W RefactorFlag: New code path expects SceneContainerFlag to be enabled.
+07-19 23:19:27.694  1791 28579 I LocSvc_ApiV02: <--- globalRespCb line 354 QMI_LOC_INJECT_POSITION_REQ_V02
+07-19 23:19:27.694  3244  4980 D SLocation: PositionManager - Passive handleLocationChanged [F, A : 24.90, T : 1784499083908, ET : 329019589, h : 22/8]
+07-19 23:19:27.694  3244  4980 D SLocation: PositionManager - Passive handleLocationChanged [F, A : 25.33, T : 1784499204726, ET : 329140408, h : 22/8]
+07-19 23:19:27.694  3244  4980 D SLocation: PositionManager - Passive handleLocationChanged [F, A : 22.13, T : 1784499325547, ET : 329261228, h : 22/8]
+07-19 23:19:27.694  3244  4980 D SLocation: PositionManager - Passive handleLocationChanged [F, A : 23.73, T : 1784499446279, ET : 329381960, h : 22/8]
+07-19 23:19:27.694  3244  4980 D SLocation: PositionManager - receive fused location
+07-19 23:19:27.694  3244  4980 D SLocation: PositionManager - Passive handleLocationChanged [F, A : 22.13, T : 1784499567010, ET : 329502692, h : 22/8]
+07-19 23:19:27.694  3244  4980 D SLocation: PositionManager - receive fused location
+07-19 23:19:27.695  3244  4980 D SLocation: PositionManager - Passive handleLocationChanged [N, A : 22.13, T : 1784499567029, ET : 329502692, h : 22/8]
+07-19 23:19:27.695  3244  4980 W SLocation: GeopointGeofenceManger - refresh wifi to receive loc
+07-19 23:19:27.695  1791  1849 I LocSvc_api_v02: ---> locClientSendReq line 2442 QMI_LOC_INJECT_POSITION_REQ_V02
+07-19 23:19:27.695  4634  4634 D AiAgentEffect: onPrivacyItemsChanged privacyItems.size = 3
+07-19 23:19:27.695  4634  4634 D AiAgentEffect: onPrivacyItemsChanged privacyItems isEmpty or found item is null
+07-19 23:19:27.696  1791 28579 I LocSvc_ApiV02: <--- globalRespCb line 354 QMI_LOC_INJECT_POSITION_REQ_V02
+07-19 23:19:27.696  1791  1849 I LocSvc_api_v02: ---> locClientSendReq line 2442 QMI_LOC_INJECT_POSITION_REQ_V02
+07-19 23:19:27.696  3244  4980 D SLocation: LocationBuffer - receivedLocation - op[interval(min 60000, max 300000), waitTime 36000000, numOfUpdates 20, minDistance 200.0]dist : 4.1696415 diffTime : 602500 accept time condition
+07-19 23:19:27.696  3244  4980 D SLocation: LocationBuffer - input buffer, size : 4
+07-19 23:19:27.696  3244  4980 D SLocation: BatchManager - received batch location buffered = true
+07-19 23:19:27.697  1791 28579 I LocSvc_ApiV02: <--- globalRespCb line 354 QMI_LOC_INJECT_POSITION_REQ_V02
+07-19 23:19:27.698  1791  1849 I LocSvc_api_v02: ---> locClientSendReq line 2442 QMI_LOC_INJECT_POSITION_REQ_V02
+07-19 23:19:27.698  3244  4980 D SLocation: SLocationCoreSem - send to coreSem, packet length : 23 / [2, 3, 253, 24, 178, 1, 235, 162, 200, 0, 0, 0, 23, 2, 0, 0, 1, 159, 124, 116, 162, 7, 0]
+07-19 23:19:27.698  3244  4980 D SemContextLocationCoreAttribute: setAttribute() mode : 0 action : 23
+07-19 23:19:27.698  3244  4980 D SemContextService: lock : changeParameters
+07-19 23:19:27.698  3244  4980 D SemContext.CaeProvider.LocationCoreImpl: setAttribute() mode : 0 action : 23
+07-19 23:19:27.698  4634  4634 D AiAgentEffect: onPrivacyItemsChanged privacyItems.size = 3
+07-19 23:19:27.699  4634  4634 D AiAgentEffect: onPrivacyItemsChanged privacyItems isEmpty or found item is null
+07-19 23:19:27.699  5244  5322 I HoneySpace.StatusIconTracker: invokeEvent() called with: event = PrivacyInfo(visible=false)
+07-19 23:19:27.699  3244  4980 W CAE     : setCAProperty(ContextAwareService.java:509) - [setProperty 01] Mutex is locked for SLOCATION_RUNNER
+07-19 23:19:27.699  3244  4980 I CAE     : setPropertyValue(SLocationRunner.java:116) - SLocationRunner setProperty header : 2, len : 23
+07-19 23:19:27.699  4634  4634 D AiAgentEffect: onPrivacyItemsChanged privacyItems.size = 3
+07-19 23:19:27.699  4634  4634 D AiAgentEffect: onPrivacyItemsChanged privacyItems isEmpty or found item is null
+07-19 23:19:27.700  5244  5322 I HoneySpace.StatusIconTracker: invokeEvent() called with: event = PrivacyInfo(visible=false)
+07-19 23:19:27.700 14156 14168 I [CE]_PrimaryAreaManager: onNewlocation - State: -1 / -1
+07-19 23:19:27.700  3244  4377 D SensorService: setSContextDataLocked ints length 8 , byte length 26
+07-19 23:19:27.700  3244  4377 D SensorService: setSContextDataLocked 23717c1
+07-19 23:19:27.700  1819  1819 I sensors-hal: inject_sensor_data:413, handle 1501 send inject
+07-19 23:19:27.700  1819  1819 I sensors-hal: sendContextData:286, sensor hal 26, (0xc1, 0x17, 0x37, 0x2)
+07-19 23:19:27.700  5244  5322 I HoneySpace.StatusIconTracker: invokeEvent() called with: event = PrivacyInfo(visible=false)
+07-19 23:19:27.700  1819  1819 E sensors-hal: sendContextData:133, slocationcore h 193 m 23 s 55
+07-19 23:19:27.700  1819  1819 I sensors-hal: sendUserData:119, slocationcore sendUserData
+07-19 23:19:27.700  1791 28579 I LocSvc_ApiV02: <--- globalRespCb line 354 QMI_LOC_INJECT_POSITION_REQ_V02
+07-19 23:19:27.701  1791  1849 I LocSvc_api_v02: ---> locClientSendReq line 2442 QMI_LOC_INJECT_POSITION_REQ_V02
+07-19 23:19:27.701  1819  1819 E sensors-hal: create_send_context_data:64, slocationcore create_send_context_data
+07-19 23:19:27.701  1819  1819 I sensors-hal: send_context_data:707, slocationcore, 4986366670857974562, 1320970896291267344, msgid:700, 1
+07-19 23:19:27.701  1819  1819 I sensors-hal: send_sync_sensor_request:521, send sync request
+07-19 23:19:27.701  1819  1819 I sensors-hal: send_sync_sensor_request:531, send_sync_sensor_request before send_request for slocationcore with SUID low=4986366670857974562 high=1320970896291267344
+07-19 23:19:27.701  1819  1819 I sensors-hal: send_request:330, send_request start this=0xb40000730245ba00x 
+07-19 23:19:27.701  1819  1819 I sensors-hal: send_request:415, send_request completed, this=0xb40000730245ba00x
+07-19 23:19:27.701  1819  1819 I sensors-hal: send_sync_sensor_request:552, wait for notification of response
+07-19 23:19:27.701  4634  4634 W View    : requestLayout() improperly called by android.widget.FrameLayout{f246984 V.E...... ......I. 0,0-1080,2316 #14} during layout: running second layout pass
+07-19 23:19:27.701  4634  4634 W View    : requestLayout() improperly called by com.android.systemui.qs.QSTouchAwareFrameLayout{abf556d V.E...... ......ID 0,157-1080,2316 #7e0a0a4c com.android.systemui:id/qs_frame} during layout: running second layout pass
+07-19 23:19:27.702  4634  4634 W RefactorFlag: New code path expects SceneContainerFlag to be enabled.
+07-19 23:19:27.702  1819  4373 I sensors-hal: ssc_conn_resp_cb:947, resp_value = 0 for slocationcore 
+07-19 23:19:27.702  1819  4373 I sensors-hal: handle_resp_cb:517, handle_resp_cb Ended this=0xb40000730245ba00x
+07-19 23:19:27.702  1819  1819 I sensors-hal: send_sync_sensor_request:558, takes 0 ms to receive the response with 0
+07-19 23:19:27.702  1819  4373 I sensors-hal: ssc_conn_event_cb:907, event[0] sensor:slocationcore  Wakeup, msg_id=1025, ts=6326551923681
+07-19 23:19:27.702  1819  4373 E sensors-hal: handle_sns_client_event:78, slocationcore_event: msgid:1025
+07-19 23:19:27.702  3244  4980 W CAE     : setCAProperty(ContextAwareService.java:515) - [setProperty 02] Mutex is unlocked for SLOCATION_RUNNER
+07-19 23:19:27.702  3244  4980 D SemContextService: unlock : changeParameters
+07-19 23:19:27.702  3244  4980 D SemContextManager:   .changeParameters : listener = X.k@19f3c46, service=SLocation Core
+07-19 23:19:27.702  3244  4980 D SLocation: GeofenceLocationFilter - location sent before 7, need to filter / provider : fused, accuracy : 22.128
+07-19 23:19:27.702  3244  4980 I SLocation: GeofenceLocationFilter - alarm set, next time to send location : 329509377, C.V@d43463f
+07-19 23:19:27.703  3244  4980 D SLocation: LocationBuffer - receivedLocation - op[interval(min 60000, max 300000), waitTime 36000000, numOfUpdates 20, minDistance 200.0]dist : 1.3203684 diffTime : 120732 accept time condition
+07-19 23:19:27.703  1819  4373 I sensors-hal: ssc_conn_event_cb:907, event[0] sensor:slocationcore  Wakeup, msg_id=1025, ts=6326551924116
+07-19 23:19:27.703  3244  4980 D SLocation: LocationBuffer - input buffer, size : 5
+07-19 23:19:27.703  1819  4373 E sensors-hal: handle_sns_client_event:78, slocationcore_event: msgid:1025
+07-19 23:19:27.703  3244  4980 D SLocation: BatchManager - received batch location buffered = true
+07-19 23:19:27.703  3244  4980 D SLocation: DuplicateLocationChecker_GeofenceLocationFilter - network is duplicated last fused location
+07-19 23:19:27.703  3244  4371 D CAE     : onGetSensorHubData(SensorHubParserProvider.java:92) - onGetSensorHubData Event [event buffer len :56], AP_WAKEUP
+07-19 23:19:27.703  3244  4980 D SLocation: LocationBuffer - receivedLocation - op[interval(min 60000, max 300000), waitTime 36000000, numOfUpdates 20, minDistance 200.0]dist : 1.3203684 diffTime : 120732 accept time condition
+07-19 23:19:27.703  3244  4980 D SLocation: LocationBuffer - receivedLocation - op[interval(min 60000, max 300000), waitTime 36000000, numOfUpdates 20, minDistance 200.0]dist : 0.0 diffTime : 0 filtered Location
+07-19 23:19:27.703  3244  4980 D SLocation: BatchManager - received batch location buffered = false
+07-19 23:19:27.703  3244  4371 I CAE     : parse(SensorHubParserProvider.java:188) - buffer size = 56
+07-19 23:19:27.703  3244  4371 I CAE     : parse(SensorHubParserProvider.java:199) - 1, 1, 55, 0, 51, 5, 1, 3, 0, 0, 0, 0, 4, -56, 120, -40, 1, 15, 0, 0, 0, 0, 4, -56, 120, -40, 15, 5, 0, 0, 0, -56, 4, -56, 120, -40, 13, 2, 0, 0, 0, 100, 4, -56, 120, -40, 1, 16, 0, 0, 0, 0, 4, -56, 120, -40,
+07-19 23:19:27.703  3244  4371 I CAE     : parse(SLocationRunner.java:88) - SLocationRunner parse start : 3
+07-19 23:19:27.703  3244  4371 D CAE     : display(ContextProvider.java:375) - ================= SLOCATION_RUNNER =================
+07-19 23:19:27.703  3244  4371 I CAE     : display(ContextProvider.java:391) - ExtraDataArray=[1, 1, 55, 0, 51, 5, 1, 3, 0, 0, 0, 0, 4, -56, 120, -40, 1, 15, 0, 0, 0, 0, 4, -56, 120, -40, 15, 5, 0, 0, 0, -56, 4, -56, 120, -40, 13, 2, 0, 0, 0, 100, 4, -56, 120, -40, 1, 16, 0, 0, 0, 0, 4, -56, 120, -40]
+07-19 23:19:27.703  3244  4371 I CAE     : parse(SLocationRunner.java:96) - SLocationRunner parse end:56
+07-19 23:19:27.703  3244  4371 D CAE     : onGetSensorHubData(SensorHubParserProvider.java:92) - onGetSensorHubData Event [event buffer len :10], AP_WAKEUP
+07-19 23:19:27.703  3244  4368 D SemContextService: Service.updateContext() : service = SLocation Core
+07-19 23:19:27.703 14156 14168 I [CE]_ActivityDataManagerImpl: loadState - StayInfo loaded
+07-19 23:19:27.703  3244  4371 I CAE     : parse(SensorHubParserProvider.java:188) - buffer size = 10
+07-19 23:19:27.703  3244  4371 I CAE     : parse(SensorHubParserProvider.java:199) - 1, 1, 55, 0, 5, 2, 2, 0, 0, 0,
+07-19 23:19:27.704  3244  4371 I CAE     : parse(SLocationRunner.java:88) - SLocationRunner parse start : 3
+07-19 23:19:27.704  3244  3244 D SemContextManager: onSemContextChanged() : event = SLocation Core
+07-19 23:19:27.704  3244  3244 D SLocation: SensorHubWrapper - SemContextChanged type = 47, packet received
+07-19 23:19:27.704  3244  4371 D CAE     : display(ContextProvider.java:375) - ================= SLOCATION_RUNNER =================
+07-19 23:19:27.704  3244  4371 I CAE     : display(ContextProvider.java:391) - ExtraDataArray=[1, 1, 55, 0, 5, 2, 2, 0, 0, 0]
+07-19 23:19:27.704  3244  4980 D SLocation: CommonCoreManager - received Extra Data from core, len : 51
+07-19 23:19:27.704  3244  4371 I CAE     : parse(SLocationRunner.java:96) - SLocationRunner parse end:10
+07-19 23:19:27.704  3244  4368 D SemContextService: Service.updateContext() : service = SLocation Core
+07-19 23:19:27.704  3244  3244 D SemContextManager: onSemContextChanged() : event = SLocation Core
+07-19 23:19:27.704  3244  3244 D SLocation: SensorHubWrapper - SemContextChanged type = 47, packet received
+07-19 23:19:27.705  3244  4980 D SLocation: CommonCoreManager - received Extra Data from core, len : 5
+07-19 23:19:27.705  3244  4980 D SLocation: CommonCoreManager - handleCommandCallback - FUNC_TYPE : SET_LOCATION  ERROR_CODE : ERROR_NONE
+07-19 23:19:27.705  1791 28579 I LocSvc_ApiV02: <--- globalRespCb line 354 QMI_LOC_INJECT_POSITION_REQ_V02
+07-19 23:19:27.707  3244  3924 E AppOps  : Bad call made by uid 1001. Package "com.android.phone" does not belong to uid 10101.
+07-19 23:19:27.707  3244  3924 E AppOps  : Cannot getAppOpMode
+07-19 23:19:27.707  3244  3924 E AppOps  : java.lang.SecurityException: Specified package "com.android.phone" under uid 10101 but it is not
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.appop.AppOpsService.verifyAndGetBypass(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:63)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.appop.AppOpsService.verifyAndGetBypass(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:1)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.appop.AppOpsService.-$$Nest$mcheckOperationImpl(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:52)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.appop.AppOpsService$CheckOpsDelegateDispatcher$$ExternalSyntheticLambda9.apply(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:73)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.policy.AppOpsPolicy.checkOperation(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:23)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.appop.AppOpsService$CheckOpsDelegateDispatcher.checkOperation(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:53)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.appop.AppOpsService.checkOperationRawForDevice(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:15)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.internal.app.IAppOpsService$Stub.onTransact(IAppOpsService.java:1331)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at android.os.Binder.execTransactInternal(Binder.java:1514)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at android.os.Binder.execTransact(Binder.java:1454)
+07-19 23:19:27.707  3244  3924 E AppOps  : Bad call made by uid 1001. Package "com.android.phone" does not belong to uid 10101.
+07-19 23:19:27.707  3244  3924 E AppOps  : Cannot noteOperation
+07-19 23:19:27.707  3244  3924 E AppOps  : java.lang.SecurityException: Specified package "com.android.phone" under uid 10101 but it is not
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.appop.AppOpsService.verifyAndGetBypass(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:63)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.appop.AppOpsService.noteOperationUnchecked(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:68)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.appop.AppOpsService.-$$Nest$mnoteOperationImpl(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:89)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.appop.AppOpsService$CheckOpsDelegateDispatcher$$ExternalSyntheticLambda4.apply(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:65)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.policy.AppOpsPolicy.noteOperation(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:35)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.appop.AppOpsService$CheckOpsDelegateDispatcher.noteOperation(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:66)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.server.appop.AppOpsService.noteOperation(qb/110842744 dd5cbdf62120b6b22f0d65ddbeb6268f3e039baa5d24047f68eea34e1a8ea8ac:20)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at com.android.internal.app.IAppOpsService$Stub.onTransact(IAppOpsService.java:592)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at android.os.Binder.execTransactInternal(Binder.java:1514)
+07-19 23:19:27.707  3244  3924 E AppOps  : 	at android.os.Binder.execTransact(Binder.java:1454)
+07-19 23:19:27.708 14156 14168 I [CE]_ActivityDataManagerImpl: Scan receiver - Stay detected - start time : 1784497776753, end time : 1784499567704, timestamp : 1784499567704
+07-19 23:19:27.711 14156 14168 I [CE]_RealtimeMovingContextProvider: onReceive - Not started
+07-19 23:19:27.729 21715 21769 D SemNativeCarrierFeature_vendor: getInstance
+07-19 23:19:27.730  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b9 went down
+07-19 23:19:27.730  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66b9 went down
+07-19 23:19:27.730  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66ba went down
+07-19 23:19:27.730  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66ba went down
+07-19 23:19:27.731  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66bb went down
+07-19 23:19:27.731  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66bb went down
+07-19 23:19:27.732  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66bc went down
+07-19 23:19:27.732  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66bc went down
+07-19 23:19:27.758  2807 18386 I TFLite-in-PlayServices: Created interpreter.
+07-19 23:19:27.783  2807 18386 I TFLite-in-PlayServices: Created interpreter.
+07-19 23:19:27.787  2807 18386 I SemanticLocation: (REDACTED) [Inferrer] %s%s
+07-19 23:19:27.956  8847  8847 I EdgeLightingService:  onDismissEdgeWindow
+07-19 23:19:27.956  8847  8847 D EdgeLightingScheduler: notifyEdgeLightingPackageList :[], empty = true
+07-19 23:19:27.959  3244  3924 D PowerManagerService: [api] release WakeLock DRAW_WAKE_LOCK                    'Window:EdgeLightingWindow' ACQ=-4s506ms (uid=10050 isFrozen=false pid=8847 displayId=0 lock=f4e1207)
+07-19 23:19:27.963  8847  8847 I BLASTBufferQueue_Java: update, w= 1080 h= 2316 mName = VRI[EdgeLightingWindow]@cbd5829 mNativeObject= 0xb4000074bf0e8c00 sc.mNativeObject= 0xb40000745f5885c0 format= -3 caller= android.view.ViewRootImpl.updateBlastSurfaceIfNeeded:3592 android.view.ViewRootImpl.relayoutWindow:11813 android.view.ViewRootImpl.performTraversals:4840 android.view.ViewRootImpl.doTraversal:3959 android.view.ViewRootImpl$TraversalRunnable.run:13034 android.view.Choreographer$CallbackRecord.run:1961 
+07-19 23:19:27.963  8847  8847 I VRI[EdgeLightingWindow]@cbd5829: Relayout returned: old=(0,0,1080,2316) new=(0,0,1080,2316) relayoutAsync=true req=(1080,2316)0 dur=0 res=0x0 s={true 0xb4000074c5216b00} ch=false seqId=0
+07-19 23:19:27.964  8847  8847 I VRI[EdgeLightingWindow]@cbd5829: registerCallbackForPendingTransactions
+07-19 23:19:27.965  8847  8892 I VRI[EdgeLightingWindow]@cbd5829: mWNT: t=0xb40000745f55ae00 mBlastBufferQueue=0xb4000074bf0e8c00 fn= 82 HdrRenderState mRenderHdrSdrRatio=1.0 caller= android.view.ViewRootImpl$10.onFrameDraw:6615 android.view.ViewRootImpl$4.onFrameDraw:2485 android.view.ThreadedRenderer$1.onFrameDraw:751 
+07-19 23:19:27.965  3244  3924 I WindowManager: Relayout Window{e1686d4 u0 EdgeLightingWindow}: viewVisibility=0 req=1080x2316 ty=2227 d0
+07-19 23:19:27.967  3244  3924 I WindowManager: Relayout hash=e1686d4, pid=0, syncId=-1: mAttrs={(0,0)(fillxfill) gr=CENTER sim={adjust=pan} layoutInDisplayCutoutMode=always ty=2227 fmt=TRANSLUCENT
+07-19 23:19:27.967  3244  3924 I WindowManager:   fl=1800508
+07-19 23:19:27.967  3244  3924 I WindowManager:   pfl=10008850
+07-19 23:19:27.967  3244  3924 I WindowManager:   vsysui=600
+07-19 23:19:27.967  3244  3924 I WindowManager:   bhv=2
+07-19 23:19:27.967  3244  3924 I WindowManager:   fitSides=0
+07-19 23:19:27.967  3244  3924 I WindowManager:   frameRateBoostOnTouch=true
+07-19 23:19:27.967  3244  3924 I WindowManager:   dvrrWindowFrameRateHint=true naviIconColor=0
+07-19 23:19:27.967  3244  3924 I WindowManager:   sfl=60000}
+07-19 23:19:28.041  3244  4476 D SemWifiTrafficPoller: getSoftApTotalTrafficInBytes:1550120714
+07-19 23:19:28.197  3244  4980 D SLocation: WifiBssidMonitor - requestRefresh
+07-19 23:19:28.266  1175  1175 D io_stats: !@   8,0 r 17668485 517609441 w 5115290 146841396 d 640799 145074048 f 173942 612269 iot 9885612 0 th 0 0 0 pt 0 inp 0 0 198819.337
+07-19 23:19:28.457  8847  8847 I EdgeLightingService: stopService by onDismissEdgeWindow
+07-19 23:19:28.457  8847  8847 D EdgeLightingScheduler: notifyEdgeLightingPackageList :[], empty = true
+07-19 23:19:28.463  8847  8847 I EdgeLightingDialog: dismissInternal 
+07-19 23:19:28.464  8847  8847 D View    : semSetBlurInfo, blurInfo : null, android.widget.LinearLayout{b330d12 V.E...... ......ID 0,0-976,95 #7e0a0e62 com.android.systemui:id/toast_blur_root}
+07-19 23:19:28.466  8847  8847 I NotificationEffect:  onDetachedFromWindow Window remove Touch Insector : true, screen_on=true, aod_state=0
+07-19 23:19:28.467  8847  8847 I WindowManager: WindowManagerGlobal#removeView, ty=2227, view=com.android.internal.policy.DecorView{6ba11b0 V.E...... R.....ID 0,0-1080,2316}[EdgeLightingWindow], caller=android.view.WindowManagerGlobal.removeView:654 android.view.WindowManagerImpl.removeViewImmediate:254 android.app.Dialog.dismissDialog:854 
+07-19 23:19:28.467  8847  8847 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): null
+07-19 23:19:28.468  3244  3924 D CoreBackPreview: Window{e1686d4 u0 EdgeLightingWindow}: Setting back callback null
+07-19 23:19:28.471  8847  8893 D HWUI    : CacheManager::trimMemory(20)
+07-19 23:19:28.471  1877  1877 E ANDR-PERF-MPCTL: ANDR-PERF-MPCTL: internal_perf_lock_acq_verification() 385: Perflock Submit request limit reached.
+07-19 23:19:28.472  8847  8847 I VRI[EdgeLightingWindow]@cbd5829: dispatchDetachedFromWindow
+07-19 23:19:28.475  3244  3924 D InputTransport: Input channel destroyed: 'e1686d4', fd=1057
+07-19 23:19:28.475  3244  3924 V WindowManager: Remove Window{e1686d4 u0 EdgeLightingWindow}: mSurfaceControl=Surface(name=EdgeLightingWindow$_8847#47395)/@0x5130bf8 mAnimatingExit=false mRemoveOnExit=false mHasSurface=true surfaceShowing=true animating=false app-animation=false callers=com.android.server.wm.Session.remove:15 android.view.IWindowSession$Stub.onTransact:813 com.android.server.wm.Session.onTransact:1 android.os.Binder.execTransactInternal:1509 android.os.Binder.execTransact:1454 <bottom of call stack> 
+07-19 23:19:28.477  8847  8847 D InputTransport: Input channel destroyed: 'e1686d4', fd=188
+07-19 23:19:28.479  8847  8847 D ScoverManager: unregisterListener
+07-19 23:19:28.482  8847  8847 I EdgeLightingDispatcher:  mDialog showing : false
+07-19 23:19:28.484  3244  3924 I ActivityManager: Changes in 10423 10 to 19, 256 to 0
+07-19 23:19:28.487  1958  2152 I SurfaceFlinger: Current= 120, Period= 120, Distance= 1
+07-19 23:19:28.488  1958  1958 I SurfaceFlinger: [LayerHierarchy{RequestedLayerState{WindowToken{537427 type=2227 android.os.BinderProxy@b3346e6}#47393 z=1} 1 children}] reparent to OffscreenRoot
+07-19 23:19:28.488  1958  1958 I SurfaceFlinger: [LayerHierarchy{RequestedLayerState{WindowToken{537427 type=2227 android.os.BinderProxy@b3346e6}#47393 z=1} 1 children}] RelativeParent to null
+07-19 23:19:28.488  1958  1958 I SurfaceFlinger: [LayerHierarchy{RequestedLayerState{e1686d4 EdgeLightingWindow#47394} 1 children}] reparent to OffscreenRoot
+07-19 23:19:28.488  1958  1958 I SurfaceFlinger: [LayerHierarchy{RequestedLayerState{e1686d4 EdgeLightingWindow#47394} 1 children}] RelativeParent to null
+07-19 23:19:28.488  1958  1958 I SurfaceFlinger: [LayerHierarchy{RequestedLayerState{EdgeLightingWindow$_8847#47395} no children}] reparent to OffscreenRoot
+07-19 23:19:28.488  1958  1958 I SurfaceFlinger: [LayerHierarchy{RequestedLayerState{EdgeLightingWindow$_8847#47395} no children}] RelativeParent to null
+07-19 23:19:28.488  4634  4634 D SystemUIService: SYSUI_RAM_OPTIMIZATION onTrimMemory=20
+07-19 23:19:28.488  4634  4634 D CentralSurfaces: SYSUI_RAM_OPTIMIZATION onTrimMemory=20
+07-19 23:19:28.488  8847  8847 D SystemUIService: SYSUI_RAM_OPTIMIZATION onTrimMemory=40
+07-19 23:19:28.488  4634  4925 D HWUI    : CacheManager::trimMemory(20)
+07-19 23:19:28.488  8847  8893 D HWUI    : CacheManager::trimMemory(40)
+07-19 23:19:28.488  1819 24733 I sensors-hal: handle_sns_std_sensor_event:436, [SSC_LIGHT] P: 0(0),m:13,c:317,b:13,c0:2382,l:0,f(r):97,u(bl):100,j:0
+07-19 23:19:28.488  1958  1958 I SurfaceFlinger: id=47393 Removed WindowToken{537427 type=2227 android.os.BinderProxy@b3346e6}#47393 (177)
+07-19 23:19:28.488  1958  1958 I SurfaceFlinger: id=47394 Removed e1686d4 EdgeLightingWindow#47394 (177)
+07-19 23:19:28.488  1958  1958 I SurfaceFlinger: id=47395 Removed EdgeLightingWindow$_8847#47395 (177)
+07-19 23:19:28.491  1958  1958 D SurfaceFlinger: Display 4630947093241269891 HWC layers:
+07-19 23:19:28.491  1958  1958 D SurfaceFlinger:        DEVICE |           33711198306357 | 00002102 | RGBA_8888    |    0.0    0.0 1080.0 2316.0 |    0    0 1080 2316 | top.niunaijun.blackbox/top.niunaijun[...]box.app.LauncherActivity$_7849#47386 (83)
+07-19 23:19:28.491  1958  1958 D SurfaceFlinger:        DEVICE |           19902878590424 | 00002100 | RGBA_8888    |    0.0    0.0 1080.0   94.0 |    0    0 1080   94 | StatusBar$_4634#111 (119419)
+07-19 23:19:28.491  1958  1958 D SurfaceFlinger:        DEVICE |           22522808512206 | 00002100 | RGBA_8888    |    0.0    0.0   80.0  360.0 | 1000  442 1080  802 | com.sec.android.app.launcher/com.sam[...]l.app.CocktailBarService$_5244#47067 (1)
+07-19 23:19:28.491  1958  1958 D SurfaceFlinger:        DEVICE |           19902878590251 | 00002100 | RGBA_8888    |    0.0    0.0 1080.0  126.0 |    0 2190 1080 2316 | NavigationBar0$_4634#104 (103398)
+07-19 23:19:28.491  1958  1958 D SurfaceFlinger: 
+07-19 23:19:28.496  1958  1958 I SurfaceFlinger: destroyed WindowToken{537427 type=2227 android.os.BinderProxy@b3346e6}#47393 form LifecycleManager
+07-19 23:19:28.496  1958  1958 I SurfaceFlinger: destroyed EdgeLightingWindow$_8847#47395 form LifecycleManager
+07-19 23:19:28.496  1958  1958 I SurfaceFlinger: destroyed e1686d4 EdgeLightingWindow#47394 form LifecycleManager
+07-19 23:19:28.496  1958  1958 I SurfaceFlinger: id=47393 onLayerDestroyed from LayerHierarchyBuilder(RequestedLayerState{WindowToken{537427 type=2227 android.os.BinderProxy@b3346e6}#47393 !handle z=1})
+07-19 23:19:28.496  1958  1958 I SurfaceFlinger: id=47395 onLayerDestroyed from LayerHierarchyBuilder(RequestedLayerState{EdgeLightingWindow$_8847#47395 !handle})
+07-19 23:19:28.496  1958  1958 I SurfaceFlinger: id=47394 onLayerDestroyed from LayerHierarchyBuilder(RequestedLayerState{e1686d4 EdgeLightingWindow#47394 !handle})
+07-19 23:19:28.496  1958  1958 I SurfaceFlinger: id=47393 Destroyed WindowToken{537427 type=2227 android.os.BinderProxy@b3346e6}#47393
+07-19 23:19:28.496  1958  1958 I SurfaceFlinger: id=47395 Destroyed EdgeLightingWindow$_8847#47395
+07-19 23:19:28.497  1958  1958 I SurfaceFlinger: id=47394 Destroyed e1686d4 EdgeLightingWindow#47394
+07-19 23:19:28.497  1958  2152 I SurfaceFlinger: Current= 120, Period= 120, Distance= 120
+07-19 23:19:28.602  2247  2284 I shsusrd : shsusr_check_cpu_usage(): Output of /proc/2247/stat/ : 2247 (shsusrd0) S 1 2247 0 0 -1 1077936384 4083667 0 8789 0 17808 67811 0 0 20 0 13 0 808 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 0 0 0 17 3 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.602  2247  2284 I shsusrd : 
+07-19 23:19:28.603  2247  2284 I shsusrd : shsusr_check_cpu_usage(): utime 17808 stime 67811 cpu_time_last 85607
+07-19 23:19:28.603  2247  2284 I shsusrd : shsusr_check_cpu_usage(): user time = 17808 | system time = 67811 | total = 85619 | cpu_time_delta = 12, clk_tck 100
+07-19 23:19:28.603  2247  2284 I shsusrd : shsusr_check_cpu_usage(): time_cur 1784499568 time_last 1784499558
+07-19 23:19:28.603  2247  2284 I shsusrd : shsusr_check_cpu_usage(): shsusrd is using 0 pct of CPU - time_delta 10
+07-19 23:19:28.603  2247  2284 I shsusrd : shsusr_check_cpu_usage(): shsusrd usage 0
+07-19 23:19:28.603  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): time_delta for combined : 10 time_cur 1784499568 time_last_combined 1784499558
+07-19 23:19:28.603  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Output of /proc/2247/task/2247/stat: 2247 (shsusrd0) S 1 2247 0 0 -1 1077936384 1192 0 11 0 1 1 0 0 20 0 13 0 808 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 1 0 0 17 3 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.603  2247  2284 I shsusrd : 
+07-19 23:19:28.603  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): tid 2247 utime 1 stime 1 time_delta 10 clk_tck 100, usage 0
+07-19 23:19:28.603  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Output of /proc/2247/task/2281/stat: 2281 (shsusrd12) S 1 2247 0 0 -1 4194368 3758130 0 3032 0 12812 52172 0 0 20 0 13 0 814 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 1 0 0 -1 1 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.603  2247  2284 I shsusrd : 
+07-19 23:19:28.603  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): tid 2281 utime 12812 stime 52172 time_delta 10 clk_tck 100, usage 6400
+07-19 23:19:28.603  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Output of /proc/2247/task/2282/stat: 2282 (shsusrd2) S 1 2247 0 0 -1 4194368 325 0 708 0 3 121 0 0 20 0 13 0 814 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 1 0 0 -1 1 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.603  2247  2284 I shsusrd : 
+07-19 23:19:28.604  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): tid 2282 utime 3 stime 121 time_delta 10 clk_tck 100, usage 0
+07-19 23:19:28.604  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Output of /proc/2247/task/2283/stat: 2283 (shsusrd13) S 1 2247 0 0 -1 1077936192 82 0 128 0 452 1529 0 0 20 0 13 0 814 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 1 0 0 -1 2 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.604  2247  2284 I shsusrd : 
+07-19 23:19:28.604  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): tid 2283 utime 452 stime 1529 time_delta 10 clk_tck 100, usage 100
+07-19 23:19:28.605  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Output of /proc/2247/task/2284/stat: 2284 (shsusrd42) R 1 2247 0 0 -1 4194368 324 0 944 0 1417 5295 0 0 20 0 13 0 814 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 0 0 0 -1 2 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.605  2247  2284 I shsusrd : 
+07-19 23:19:28.605  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): tid 2284 utime 1417 stime 5295 time_delta 10 clk_tck 100, usage 600
+07-19 23:19:28.605  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Output of /proc/2247/task/2285/stat: 2285 (shsusrd6) S 1 2247 0 0 -1 4194368 104 0 211 0 2 104 0 0 20 0 13 0 814 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 1 0 0 -1 0 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.605  2247  2284 I shsusrd : 
+07-19 23:19:28.605  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): tid 2285 utime 2 stime 104 time_delta 10 clk_tck 100, usage 0
+07-19 23:19:28.605  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Output of /proc/2247/task/2286/stat: 2286 (shsusrd14) S 1 2247 0 0 -1 4194368 581 0 1620 0 3 129 0 0 20 0 13 0 814 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 1 0 0 -1 4 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.605  2247  2284 I shsusrd : 
+07-19 23:19:28.605  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): tid 2286 utime 3 stime 129 time_delta 10 clk_tck 100, usage 0
+07-19 23:19:28.605  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Output of /proc/2247/task/27333/stat: 27333 (shsusrd14) S 1 2247 0 0 -1 4194368 16 0 117 0 0 111 0 0 20 0 13 0 573255 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 1 0 0 -1 2 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.605  2247  2284 I shsusrd : 
+07-19 23:19:28.605  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): tid 27333 utime 0 stime 111 time_delta 10 clk_tck 100, usage 0
+07-19 23:19:28.606  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Output of /proc/2247/task/27335/stat: 27335 (shsusrd7) S 1 2247 0 0 -1 4194368 11 0 184 0 0 116 0 0 20 0 13 0 573255 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 1 0 0 -1 0 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.606  2247  2284 I shsusrd : 
+07-19 23:19:28.606  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): tid 27335 utime 0 stime 116 time_delta 10 clk_tck 100, usage 0
+07-19 23:19:28.606  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Output of /proc/2247/task/27337/stat: 27337 (shsusrd5) S 1 2247 0 0 -1 4194368 39 0 331 0 1 107 0 0 20 0 13 0 573255 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 1 0 0 -1 0 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.606  2247  2284 I shsusrd : 
+07-19 23:19:28.606  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): tid 27337 utime 1 stime 107 time_delta 10 clk_tck 100, usage 0
+07-19 23:19:28.606  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Output of /proc/2247/task/6528/stat: 6528 (HwBinder:2247_1) S 1 2247 0 0 -1 1077936192 3 0 0 0 0 0 0 0 20 0 13 0 3892174 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 1 0 0 -1 5 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.606  2247  2284 I shsusrd : 
+07-19 23:19:28.606  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): tid 6528 utime 0 stime 0 time_delta 10 clk_tck 100, usage 0
+07-19 23:19:28.606  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Output of /proc/2247/task/18380/stat: 18380 (shsusrd5) S 1 2247 0 0 -1 4194368 2 0 0 0 0 0 0 0 20 0 13 0 32949541 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 1 0 0 -1 0 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.606  2247  2284 I shsusrd : 
+07-19 23:19:28.606  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): tid 18380 utime 0 stime 0 time_delta 10 clk_tck 100, usage 0
+07-19 23:19:28.606  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Output of /proc/2247/task/18381/stat: 18381 (shsusrd5) S 1 2247 0 0 -1 4194368 2 0 0 0 0 0 0 0 20 0 13 0 32949541 2555342848 758 18446744073709551615 386021384192 386021642648 549047510016 0 0 0 0 0 1073794810 1 0 0 -1 0 0 0 0 0 0 386021665728 386021666664 386824871936 549047511053 549047511096 549047511096 549047517149 0
+07-19 23:19:28.606  2247  2284 I shsusrd : 
+07-19 23:19:28.606  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): tid 18381 utime 0 stime 0 time_delta 10 clk_tck 100, usage 0
+07-19 23:19:28.606  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Combined CPU usage: total_utime 14691 total_stime 59685 total_cpu_time_seconds 0.00, clk_tck 100
+07-19 23:19:28.606  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Combined shsusrd usage 0
+07-19 23:19:28.606  2247  2284 I shsusrd : shsusr_check_cpu_usage_combined(): Combined shsusrd usage FINAL 0
+07-19 23:19:28.637 21715 21769 D SemNativeCarrierFeature_vendor: getInstance
+07-19 23:19:28.668  2807  2807 D BoundBrokerSvc: onRebind: Intent { act=com.google.android.gms.libs.gmscorelogger.service.START dat=chimera-action:/... xflg=0x4 cmp=com.google.android.gms/.chimera.PersistentDirectBootAwareApiService }
+07-19 23:19:28.726  5052  5052 D TelephonyManager: requestModemActivityInfo: Sending result to app: ModemActivityInfo{ mTimestamp=329504407 mSleepTimeMs=237765875 mIdleTimeMs=13215387 mActivityStatsTechSpecificInfo=[{mRat=UNKNOWN,mFrequencyRange=UNKNOWN,mTxTimeMs[]=[5557918, 2140672, 2305594, 4743901, 71776],mRxTimeMs=68394022}]}
+07-19 23:19:28.830  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66bd went down
+07-19 23:19:28.830  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66bd went down
+07-19 23:19:28.832  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66be went down
+07-19 23:19:28.832  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66be went down
+07-19 23:19:28.833  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66bf went down
+07-19 23:19:28.833  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66bf went down
+07-19 23:19:28.835  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c0 went down
+07-19 23:19:28.836  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c0 went down
+07-19 23:19:28.980  3244  5617 I NSLocationMonitor: getGPSUsingApps() called
+07-19 23:19:28.980  5536 27829 I NSLocationManager_FLP: getGPSUsingApps, No change
+07-19 23:19:28.994  3244  5617 D ActivityManager: FCA:FCA recordedFileRss = 63492, and changeinRss = 10296
+07-19 23:19:28.994  3244  5617 D FreecessController: FZ : org.telegram.messenger(10464) [30903] reason: Bg
+07-19 23:19:28.994  3244  5617 D FreecessHandler: freeze org.telegram.messenger(10464)
+07-19 23:19:28.995  3244  5617 W LocationManagerService: onFreezeStateChanged, uid[10464]=true
+07-19 23:19:28.995  3244  5617 I PowerManagerService: [PWL] SetWakeLockEnableDisable uid = 10464 , disable= true
+07-19 23:19:28.995  3244  5617 I PowerManagerService: [PWL] can not change uid =  10464
+07-19 23:19:29.042  3244  4476 D SemWifiTrafficPoller: getSoftApTotalTrafficInBytes:1550160135
+07-19 23:19:29.322  3244  3337 I ActivityManager: Changes in 10054 5 to 15, 400 to 256
+07-19 23:19:29.335  3244  3337 I ProcessStatsService: Pruning old procstats: /data/system/procstats/state-v2-2026-07-18-17-29-21.bin
+07-19 23:19:29.504  1844 18439 I HYPER-HAL: [RequestManager.cpp]releaseLocked(): Released ID : 4377361
+07-19 23:19:29.573  3244  5387 I SemWifiApDataUsage: handleMessage: 15
+07-19 23:19:29.579  3244  5387 D SemWifiApDbHistoryTableHelper: insertOrUpdateOnGivenDate() : data has been updated or inserted for date=2026-07-19
+07-19 23:19:29.581  3244  5387 I SemWifiApDbSimTableHelper: updated for SIM : 8923401000**********
+07-19 23:19:29.935  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c1 went down
+07-19 23:19:29.936  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c1 went down
+07-19 23:19:29.937  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c2 went down
+07-19 23:19:29.938  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c2 went down
+07-19 23:19:29.939  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c3 went down
+07-19 23:19:29.939  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c3 went down
+07-19 23:19:29.941  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c4 went down
+07-19 23:19:29.942  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c4 went down
+07-19 23:19:30.044  3244  4476 D SemWifiTrafficPoller: getSoftApTotalTrafficInBytes:1550234884
+07-19 23:19:30.269  1175  1175 D io_stats: !@   8,0 r 17668498 517609577 w 5115303 146841756 d 640799 145074048 f 173944 612272 iot 9885664 0 th 0 0 0 pt 0 inp 0 0 198821.340
+07-19 23:19:30.269  1175  1175 D io_stats: !@ Read_top(KB): .gms.persistent(2807) 6840 system_server(3244) 1196 sung.android.ce(14156) 652
+07-19 23:19:30.269  1175  1175 D io_stats: !@ Write_top(KB): kworker/u16:0(11772) 680 system_server(3244) 320 egram.messenger(30903) 100
+07-19 23:19:30.555  3244  4477 D SemHostapdHalAidlImpl: ISehHostapd command: GET_STATION_INFO_SWLAN0 ALL
+07-19 23:19:30.557 32168 32168 I hostapd : sehSendCommand 
+07-19 23:19:30.557 32168 32168 I hostapd : doDriverCommand 
+07-19 23:19:30.557 32168 32168 I hostapd : IHostapd iface swlan0
+07-19 23:19:30.564 32168 32168 I wpa_sslib: Recv STA info 3e:dd:fb:2f:b6:a8
+07-19 23:19:30.564 32168 32168 I wpa_sslib: rx_retry_pkts 6875
+07-19 23:19:30.564 32168 32168 I wpa_sslib: rx_bcmc_pkts 55
+07-19 23:19:30.564 32168 32168 I wpa_sslib: tx_pkts_retried 0
+07-19 23:19:30.564 32168 32168 I wpa_sslib: tx_pkts_retry_exhausted 0
+07-19 23:19:30.564 32168 32168 I wpa_sslib: tx_pkts_fw_total 122702
+07-19 23:19:30.564 32168 32168 I wpa_sslib: tx_pkts_fw_retries 27
+07-19 23:19:30.564 32168 32168 I wpa_sslib: tx_pkts_fw_retry_exhausted 27
+07-19 23:19:30.564 32168 32168 I wpa_sslib: mcs_tx_pkts[0] 674
+07-19 23:19:30.564 32168 32168 I wpa_sslib: mcs_tx_pkts[1] 1241
+07-19 23:19:30.564 32168 32168 I wpa_sslib: mcs_tx_pkts[2] 1330
+07-19 23:19:30.564 32168 32168 I wpa_sslib: mcs_tx_pkts[3] 3529
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_tx_pkts[4] 8814
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_tx_pkts[5] 7457
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_tx_pkts[6] 6373
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_tx_pkts[7] 10995
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_tx_pkts[8] 12831
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_tx_pkts[9] 69458
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_tx_pkts[10] 0
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_tx_pkts[11] 0
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_tx_pkts[12] 0
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_tx_pkts[13] 0
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_tx_pkts[14] 0
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_tx_pkts[15] 0
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[0] 69
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[1] 36
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[2] 97
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[3] 611
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[4] 1371
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[5] 593
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[6] 1012
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[7] 7718
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[8] 12124
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[9] 102475
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[10] 0
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[11] 0
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[12] 0
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[13] 0
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[14] 0
+07-19 23:19:30.565 32168 32168 I wpa_sslib: mcs_rx_pkts[15] 0
+07-19 23:19:30.565 32168 32168 I wpa_sslib: num_received_vendor_sta_info 1
+07-19 23:19:30.565 32168 32168 I wpa_sslib: num_request_vendor_sta_info 1
+07-19 23:19:30.571 32168 32168 I wpa_sslib: Recv STA info 3e:dd:fb:2f:b6:a8
+07-19 23:19:30.571 32168 32168 I wpa_sslib: tx_pkts_total 122702
+07-19 23:19:30.571 32168 32168 I wpa_sslib: tx_pckts 122702
+07-19 23:19:30.571 32168 32168 I wpa_sslib: tx_failures 27
+07-19 23:19:30.571 32168 32168 I wpa_sslib: rx_pkts 126284
+07-19 23:19:30.572 32168 32168 I wpa_sslib: num_received_nl80211_sta_info 1
+07-19 23:19:30.572 32168 32168 I wpa_sslib: num_request_nl80211_sta_info 1
+07-19 23:19:30.572 32168 32168 I wpa_sslib: STA information completed
+07-19 23:19:30.577 32168 32168 I wpa_sslib: Recv STA info 60:f2:62:0f:f8:f7
+07-19 23:19:30.577 32168 32168 I wpa_sslib: rx_retry_pkts 32703
+07-19 23:19:30.578 32168 32168 I wpa_sslib: rx_bcmc_pkts 673
+07-19 23:19:30.578 32168 32168 I wpa_sslib: tx_pkts_retried 0
+07-19 23:19:30.578 32168 32168 I wpa_sslib: tx_pkts_retry_exhausted 0
+07-19 23:19:30.578 32168 32168 I wpa_sslib: tx_pkts_fw_total 504378
+07-19 23:19:30.578 32168 32168 I wpa_sslib: tx_pkts_fw_retries 72
+07-19 23:19:30.578 32168 32168 I wpa_sslib: tx_pkts_fw_retry_exhausted 72
+07-19 23:19:30.578 32168 32168 I wpa_sslib: mcs_tx_pkts[0] 774
+07-19 23:19:30.578 32168 32168 I wpa_sslib: mcs_tx_pkts[1] 1253
+07-19 23:19:30.578 32168 32168 I wpa_sslib: mcs_tx_pkts[2] 1343
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_tx_pkts[3] 3705
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_tx_pkts[4] 28414
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_tx_pkts[5] 57228
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_tx_pkts[6] 53059
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_tx_pkts[7] 77395
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_tx_pkts[8] 36648
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_tx_pkts[9] 244559
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_tx_pkts[10] 0
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_tx_pkts[11] 0
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_tx_pkts[12] 0
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_tx_pkts[13] 0
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_tx_pkts[14] 0
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_tx_pkts[15] 0
+07-19 23:19:30.579 32168 32168 I wpa_sslib: mcs_rx_pkts[0] 415
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[1] 432
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[2] 805
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[3] 1052
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[4] 10272
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[5] 27539
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[6] 75846
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[7] 121864
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[8] 186568
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[9] 329060
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[10] 0
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[11] 0
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[12] 0
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[13] 0
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[14] 0
+07-19 23:19:30.580 32168 32168 I wpa_sslib: mcs_rx_pkts[15] 0
+07-19 23:19:30.580 32168 32168 I wpa_sslib: num_received_vendor_sta_info 2
+07-19 23:19:30.580 32168 32168 I wpa_sslib: num_request_vendor_sta_info 2
+07-19 23:19:30.583 32168 32168 I wpa_sslib: Recv STA info 60:f2:62:0f:f8:f7
+07-19 23:19:30.584 32168 32168 I wpa_sslib: tx_pkts_total 504378
+07-19 23:19:30.584 32168 32168 I wpa_sslib: tx_pckts 504378
+07-19 23:19:30.584 32168 32168 I wpa_sslib: tx_failures 72
+07-19 23:19:30.584 32168 32168 I wpa_sslib: rx_pkts 754033
+07-19 23:19:30.584 32168 32168 I wpa_sslib: num_received_nl80211_sta_info 2
+07-19 23:19:30.584 32168 32168 I wpa_sslib: num_request_nl80211_sta_info 2
+07-19 23:19:30.584 32168 32168 I wpa_sslib: STA information completed
+07-19 23:19:30.584 32168 32168 I wpa_sslib: All STAs information completed
+07-19 23:19:30.584 32168 32168 I wpa_sslib: GETSTAINFO ALL Rx_Retry_Pkts=32703 Rx_BcMc_Pkts=673 CAP=-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 15=0,14=0,13=0,12=0,11=0,10=0,9=244559,8=36648,7=77395,6=53059,5=57228,4=28414,3=3705,2=1343,1=1253,0=774 504378 72 0 15=0,14=0,13=0,12=0,11=0,10=0,9=329060,8=186568,7=121864,6=75846,5=27539,4=10272,3=1052,2=805,1=432,0=415 754033 -1 32703
+07-19 23:19:30.584 32168 32168 I hostapd : command is GET_STATION_INFO_SWLAN0 ALL,return value is =332
+07-19 23:19:30.585  3244  5621 D SemWifiApTrafficPoller: received START_TPUT_LOG
+07-19 23:19:30.597 21715 21769 D SemNativeCarrierFeature_vendor: getInstance
+07-19 23:19:30.652  3244  3924 D PowerManagerService: [api] setMasterBrightnessLimit : lowerLimit : -1  upperLimit : 612  mMasterBrightnessLimitPeriod : 200 (uid: 1000 pid: 6071)
+07-19 23:19:30.654  3244  3399 D PowerManagerService: [api] BrightnessLimitRunnable done
+07-19 23:19:31.005  3244  4187 D ActivityManager: FCA:Reclamation for pid: 30903
+07-19 23:19:31.033  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c5 went down
+07-19 23:19:31.033  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c5 went down
+07-19 23:19:31.034  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c6 went down
+07-19 23:19:31.034  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c6 went down
+07-19 23:19:31.034  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c7 went down
+07-19 23:19:31.034  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c7 went down
+07-19 23:19:31.037  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c8 went down
+07-19 23:19:31.037  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c8 went down
+07-19 23:19:31.044  3244  4476 D SemWifiTrafficPoller: getSoftApTotalTrafficInBytes:1550321424
+07-19 23:19:31.079  3244  5387 I SemWifiApDataUsage: handleMessage: 14
+07-19 23:19:31.080  3244  5387 I SemWifiApEbpf: DATA_USAGE_STATS_START_POLL,mhs= true,upstream= 2,client size 2
+07-19 23:19:31.081  3244  5387 D SemWifiApEbpf: getWifiApDataUsageForOverAllMhs():  overall data is1550321424
+07-19 23:19:31.081  3244  5387 I SemWifiApEbpf: updating the overall dataUsage , overall =1550321424 , global = {mTotalDataBytes=1549954143,mTotalDataIngressBytes=0,mTotalDataEgressBytes=0,mCellularBytes=1549954143,mCurrentDayAndSimCellularBytes=1549954143}
+07-19 23:19:31.083  3244  5387 I SemWifiApTrafficPriority: handleDataUsageStats : 60:f2:62:0f:f8:f7 : alive=true,mBitratePerSecond=6.729 kbps,mBitrateIngressPerSecond=2.278 kbps,mBitrateEgressPerSecond=4.451 kbps,mCellularBytes=779030867,mWifiDataBytes=0,mTotalDataBytes=779030867,mTotalDataIngressBytes=516603224,mTotalDataEgressBytes=262427643,mRtBytes=0,mnRtBytes=779030867,ip=Not available.,mRtBitratePerSecond=0 bps,mNrtBitrateperSecond=6.729 kbps,
+07-19 23:19:31.083  3244  5387 I SemWifiApTrafficPriority: handleDataUsageStats : 3e:dd:fb:2f:b6:a8 : alive=true,mBitratePerSecond=580.098 kbps,mBitrateIngressPerSecond=18.064 kbps,mBitrateEgressPerSecond=562.033 kbps,mCellularBytes=771290557,mWifiDataBytes=0,mTotalDataBytes=771290557,mTotalDataIngressBytes=82670088,mTotalDataEgressBytes=688620469,mRtBytes=0,mnRtBytes=771290557,ip=10.186.226.163,mRtBitratePerSecond=0 bps,mNrtBitrateperSecond=580.098 kbps,
+07-19 23:19:31.084  3244  5387 D SemWifiApTrafficPriority: activeNetworkSpeed: 15 MbpswifiInfoSpeed: -1 Mbps
+07-19 23:19:31.084  3244  5387 D SemWifiApTrafficPriority: Log----> Interface Name: rmnet_data0 totalStatsRxMegaBitRate: 0.5638912,ebpfDatarate: 0.566484 ,mCurrSpeedEstimation: 15 mGapiValue: 15.859 mEnablePriorityeBpfAPICalled false
+07-19 23:19:31.084  3244  5387 D SemWifiApTrafficPriority: mCurrentNonGBRAllocated:0
+07-19 23:19:31.085  3244  5387 I SemWifiApTrafficPriority: calculateRecalRestrictTimer,ebpfrate:0,currentNonGBRAllocated:0
+07-19 23:19:31.206  6071  7511 I SDHMS:x : SIOP:: AP:394 BAT:346 USB:331 CHG:392 PA:397 CP:395 WIFI:385 CF:363 BLK:0 SUBBAT:0 SKIN:360 SKINF:360 SKINB:350 LRP:360 LRP2:360 LRF2:360 LRB2:350 AP2:360 CHG2:358 WIFI2:358 UANT2:358 RCV2:357 SPK2:342 FCAM:331 UPSPK:363 DNSPK:331 VAP02:391 VWIFI:386 AMB:330 AMB2:283 AVGCUR:50 AVGSYS:481 POWER:214
+07-19 23:19:31.743  5244  5322 I HoneySpace.StatusIconTracker: invokeEvent() called with: event = Mobile(bundle=Bundle[mParcelledData.dataSize=256])
+07-19 23:19:31.758  1877  1877 E ANDR-PERF-MPCTL: ANDR-PERF-MPCTL: internal_perf_lock_acq_verification() 385: Perflock Submit request limit reached.
+07-19 23:19:31.762  1958  2152 I SurfaceFlinger: Current= 120, Period= 120, Distance= 0
+07-19 23:19:31.771  1958  2152 I SurfaceFlinger: Current= 120, Period= 120, Distance= 120
+07-19 23:19:32.046  3244  4476 D SemWifiTrafficPoller: getSoftApTotalTrafficInBytes:1550351934
+07-19 23:19:32.135  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c9 went down
+07-19 23:19:32.135  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66c9 went down
+07-19 23:19:32.136  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66ca went down
+07-19 23:19:32.136  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66ca went down
+07-19 23:19:32.137  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66cb went down
+07-19 23:19:32.137  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66cb went down
+07-19 23:19:32.141  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66cc went down
+07-19 23:19:32.141  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66cc went down
+07-19 23:19:32.271  1175  1175 D io_stats: !@   8,0 r 17668520 517609677 w 5115413 146842340 d 640799 145074048 f 173945 612280 iot 9885704 0 th 0 0 0 pt 0 inp 0 0 198823.342
+07-19 23:19:32.373  1951  1970 D HeatmapThread: Updated plugType via uevent: 2
+07-19 23:19:32.376  1885  1947 E BatteryDump: !@new_battery_dump : 4307,112,475,550,100,345,331,391,345,0,360,387,0,Full,NO_CHARGING,Normal,Good,USB,1,Normal,0,0,9300,0x0,0x10000,0x0,0,0,0000,0000,00000000,0,0,0,0,336,4301,9987,990,0,
+07-19 23:19:32.382  1885  1885 I sehhealth-service: updateLrpSysfs: write: 360
+07-19 23:19:32.387 21715 21769 D SemNativeCarrierFeature_vendor: getInstance
+07-19 23:19:32.461  2256  2256 I CNSS    : cnss_open_log_file: directory /data/vendor/log/wifi/ created
+07-19 23:19:32.691  4634  4898 D AppOpsPrivacyItemMonitor: showLocationSystemApps  AppOpItem(Op code=1, UID=10101, AttributionTag=null, Package name=com.samsung.android.mcfds, Paused=false)false)false)false)
+07-19 23:19:32.694  4634  4634 D AiAgentEffect: onPrivacyItemsChanged privacyItems.size = 1
+07-19 23:19:32.694  4634  4634 D AiAgentEffect: onPrivacyItemsChanged privacyItems isEmpty or found item is null
+07-19 23:19:32.694  4634  4898 D AppOpsPrivacyItemMonitor: showLocationSystemApps  AppOpItem(Op code=1, UID=10101, AttributionTag=null, Package name=com.samsung.android.mcfds, Paused=false)false)false)false)false)
+07-19 23:19:32.704  5244  5322 I HoneySpace.StatusIconTracker: invokeEvent() called with: event = PrivacyInfo(visible=false)
+07-19 23:19:32.712  4634  4634 W View    : requestLayout() improperly called by android.widget.FrameLayout{f246984 V.E...... ......I. 0,0-1080,2316 #14} during layout: running second layout pass
+07-19 23:19:32.713  4634  4634 W View    : requestLayout() improperly called by com.android.systemui.qs.QSTouchAwareFrameLayout{abf556d V.E...... ......ID 0,157-1080,2316 #7e0a0a4c com.android.systemui:id/qs_frame} during layout: running second layout pass
+07-19 23:19:32.716  4634  4634 W RefactorFlag: New code path expects SceneContainerFlag to be enabled.
+07-19 23:19:32.726  4634  4634 D AiAgentEffect: onPrivacyItemsChanged privacyItems.size = 0
+07-19 23:19:32.726  4634  4634 D AiAgentEffect: onPrivacyItemsChanged privacyItems isEmpty or found item is null
+07-19 23:19:32.729  5244  5322 I HoneySpace.StatusIconTracker: invokeEvent() called with: event = PrivacyInfo(visible=false)
+07-19 23:19:32.729  4634  4634 D AiAgentEffect: onPrivacyItemsChanged privacyItems.size = 0
+07-19 23:19:32.729  4634  4634 D AiAgentEffect: onPrivacyItemsChanged privacyItems isEmpty or found item is null
+07-19 23:19:32.732  5244  5322 I HoneySpace.StatusIconTracker: invokeEvent() called with: event = PrivacyInfo(visible=false)
+07-19 23:19:32.737  4634  4634 W View    : requestLayout() improperly called by android.widget.FrameLayout{f246984 V.E...... ......I. 0,0-1080,2316 #14} during layout: running second layout pass
+07-19 23:19:32.737  4634  4634 W View    : requestLayout() improperly called by com.android.systemui.qs.QSTouchAwareFrameLayout{abf556d V.E...... ......ID 0,157-1080,2316 #7e0a0a4c com.android.systemui:id/qs_frame} during layout: running second layout pass
+07-19 23:19:32.738  4634  4634 W RefactorFlag: New code path expects SceneContainerFlag to be enabled.
+07-19 23:19:32.748  1877  1877 E ANDR-PERF-MPCTL: ANDR-PERF-MPCTL: internal_perf_lock_acq_verification() 385: Perflock Submit request limit reached.
+07-19 23:19:32.755  1958  2152 I SurfaceFlinger: Current= 120, Period= 120, Distance= 1
+07-19 23:19:32.762  1958  2152 I SurfaceFlinger: Current= 120, Period= 120, Distance= 120
+07-19 23:19:32.809  1819 24733 I sensors-hal: handle_sns_std_sensor_event:436, [SSC_LIGHT] P: 0(0),m:13,c:317,b:13,c0:2288,l:0,f(r):97,u(bl):100,j:0
+07-19 23:19:33.007 21715 21769 D SemNativeCarrierFeature_vendor: getInstance
+07-19 23:19:33.021  2807 18442 I NearbyMediums: No BLE Fast/GATT advertisements found in the latest cycle.
+07-19 23:19:33.021  2807 18442 I NearbyMediums: Current Tracked Scanning Clients are : {NearbyConnections.EnvironmentMonitor, NearbySharing, NearbyConnections.TxAdvertisement}
+07-19 23:19:33.047  3244  4476 D SemWifiTrafficPoller: getSoftApTotalTrafficInBytes:1550498334
+07-19 23:19:33.235  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66cd went down
+07-19 23:19:33.235  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66cd went down
+07-19 23:19:33.237  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66ce went down
+07-19 23:19:33.237  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66ce went down
+07-19 23:19:33.237  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66cf went down
+07-19 23:19:33.238  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66cf went down
+07-19 23:19:33.240  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66d0 went down
+07-19 23:19:33.240  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66d0 went down
+07-19 23:19:33.258  3244  3323 E Watchdog: !@Sync: 6623 heap(MB): 159 / 179 FD: 1590 Threads: 549 [2026-07-19 23:19:33.257]
+07-19 23:19:33.705  3244  4980 W SLocation: GeopointGeofenceManger - refresh wifi to receive loc
+07-19 23:19:34.034  2807 18387 I .gms.persistent: Explicit concurrent mark compact GC freed 36MB AllocSpace bytes, 17(332KB) LOS objects, 64% free, 26MB/74MB, paused 239us,2.199ms total 219.098ms
+07-19 23:19:34.047  3244  4476 D SemWifiTrafficPoller: getSoftApTotalTrafficInBytes:1550633587
+07-19 23:19:34.209  3244  4980 D SLocation: WifiBssidMonitor - requestRefresh
+07-19 23:19:34.269  3244 11292 I AfterimageCompensationService: AfcThread mLuminance : 11 , AfpcPeriodCount : 660 , rotation : 0 , AOD : false
+07-19 23:19:34.269  3244 11292 D mAFPC_ABC: [READ] Start nativeDataRead : size : 1
+07-19 23:19:34.271  3244 11292 I SurfaceComposerClient: captureDisplay:Display-4630947093241269891
+07-19 23:19:34.272  1175  1175 D io_stats: !@   8,0 r 17668525 517609697 w 5115415 146842348 d 640815 145081156 f 173945 612280 iot 9885736 0 th 0 0 0 pt 0 inp 0 0 198825.344
+07-19 23:19:34.273  1175  1175 D io_stats: !@ Read_top(KB): f2fs_ckpt-254:6(1420) 80 init(1) 16 kworker/u16:5(15174) 16
+07-19 23:19:34.273  1175  1175 D io_stats: !@ Write_top(KB): f2fs_ckpt-254:6(1420) 132 kworker/u16:0(11772) 124 init(1) 20
+07-19 23:19:34.277  1958  4271 I SurfaceFlinger: Capture layer list: 	 top.niunaijun.blackbox/top.niunaijun.blackbox.app.LauncherActivity$_7849#47386(preserveDisplayColors:0)
+07-19 23:19:34.277  1958  4271 I SurfaceFlinger: Capture layer list: 	 StatusBar$_4634#111(preserveDisplayColors:0)
+07-19 23:19:34.277  1958  4271 I SurfaceFlinger: Capture layer list: 	 com.sec.android.app.launcher/com.samsung.app.honeyspace.edge.edgepanel.app.CocktailBarService$_5244#47067(preserveDisplayColors:0)
+07-19 23:19:34.277  1958  4271 I SurfaceFlinger: Capture layer list: 	 NavigationBar0$_4634#104(preserveDisplayColors:0)
+07-19 23:19:34.279  1958  2084 D SurfaceFlinger: [SEC_SF_EFFECTS] drawLayersInternal,1337, Rendering layer ScreenCaptureFillLayer at index 0
+07-19 23:19:34.279  1958  2084 D SurfaceFlinger: [SEC_SF_EFFECTS] drawLayersInternal,1337, Rendering layer top.niunaijun.blackbox/top.niunaijun.blackbox.app.LauncherActivity$_7849#47386 at index 1
+07-19 23:19:34.280  1958  2084 D SurfaceFlinger: [SEC_SF_EFFECTS] drawLayersInternal,1337, Rendering layer StatusBar$_4634#111 at index 2
+07-19 23:19:34.281  1958  2084 D SurfaceFlinger: [SEC_SF_EFFECTS] drawLayersInternal,1337, Rendering layer com.sec.android.app.launcher/com.samsung.app.honeyspace.edge.edgepanel.app.CocktailBarService$_5244#47067 at index 3
+07-19 23:19:34.281  1958  2084 D SurfaceFlinger: [SEC_SF_EFFECTS] drawLayersInternal,1337, Rendering layer NavigationBar0$_4634#104 at index 4
+07-19 23:19:34.295  3244 11292 D mAFPC_ABC: [READ] luminance = 11
+07-19 23:19:34.295  3244 11292 D mAFPC_ABC: [READ] w = 1080, h = 2316, s = 8, f = 4, s_size = 10079232, luminance = 11, count = 660, captureOrientation = 0
+07-19 23:19:34.335  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66d1 went down
+07-19 23:19:34.335  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66d1 went down
+07-19 23:19:34.337  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66d2 went down
+07-19 23:19:34.337  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66d2 went down
+07-19 23:19:34.338  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66d3 went down
+07-19 23:19:34.338  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66d3 went down
+07-19 23:19:34.340  1765  1835 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66d4 went down
+07-19 23:19:34.340  1765  1833 E minksocket: MinkIPC_QRTR_Service: client with node 1 port 66d4 went down
+07-19 23:19:34.359  3244 11292 E mAFPC_ABC: [READ] [TYPE : 0] saProcess : 0
+07-19 23:19:34.359  3244 11292 D mAFPC_ABC: [READ] END nativeDataRead
+07-19 23:19:34.750  5244  5322 I HoneySpace.StatusIconTracker: invokeEvent() called with: event = Mobile(bundle=Bundle[mParcelledData.dataSize=256])
+07-19 23:19:34.760  1877  1877 E ANDR-PERF-MPCTL: ANDR-PERF-MPCTL: internal_perf_lock_acq_verification() 385: Perflock Submit request limit reached.
+07-19 23:19:34.771  1958  2152 I SurfaceFlinger: Current= 120, Period= 120, Distance= 0
+07-19 23:19:34.779  1958  2152 I SurfaceFlinger: Current= 120, Period= 120, Distance= 120
+07-19 23:19:35.050  3244  4476 D SemWifiTrafficPoller: getSoftApTotalTrafficInBytes:1550663507

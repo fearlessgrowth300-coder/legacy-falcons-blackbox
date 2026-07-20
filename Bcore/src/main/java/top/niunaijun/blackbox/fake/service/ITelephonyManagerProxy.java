@@ -31,14 +31,12 @@ public class ITelephonyManagerProxy extends BinderInvocationStub {
     static String cloneImei() {
         DeviceProfile p = DeviceProfile.CURRENT;
         String v = (p != null && p.imei != null) ? p.imei : Md5Utils.md5(BlackBoxCore.getHostPkg());
-        android.util.Log.d(TAG, "serve imei=" + v);
         return v;
     }
 
     static String cloneImsi() {
         DeviceProfile p = DeviceProfile.CURRENT;
         String v = (p != null && p.imsi != null) ? p.imsi : Md5Utils.md5(BlackBoxCore.getHostPkg());
-        android.util.Log.d(TAG, "serve imsi=" + v);
         return v;
     }
 

@@ -6,6 +6,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackboxa.util.InjectionUtil
+import top.niunaijun.blackboxa.cloud.Supabase
+import top.niunaijun.blackboxa.cloud.VaultKeyStore
+import top.niunaijun.blackboxa.view.auth.AuthActivity
 import top.niunaijun.blackboxa.view.list.ListViewModel
 
 class WelcomeActivity : AppCompatActivity() {
@@ -17,6 +20,11 @@ class WelcomeActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!Supabase.isSignedIn(this) || !VaultKeyStore.isReady(this)) {
+            startActivity(Intent(this, AuthActivity::class.java))
+            finish()
+            return
+        }
         previewInstalledAppList()
         jump()
     }

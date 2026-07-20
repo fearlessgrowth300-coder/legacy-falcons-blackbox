@@ -1,42 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-        xmlns:app="http://schemas.android.com/apk/res-auto"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:paddingTop="16dp">
-
-    <FrameLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content">
-
-        <ImageView
-                android:id="@+id/icon"
-                android:layout_width="48dp"
-                android:layout_height="48dp" />
-
-        <com.othershe.cornerlabelview.CornerLabelView
-                android:id="@+id/cornerLabel"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_gravity="top|start"
-                android:visibility="invisible"
-                app:bg_color="@color/primary"
-                app:position="left_top"
-                app:side_length="22dp"
-                app:text="XP"
-                app:text_color="@color/white"
-                app:text_size="8sp" />
-    </FrameLayout>
-
-    <TextView
-            android:id="@+id/name"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:textColor="@color/primary_text"
-            android:textSize="12sp" />
-
-
-</LinearLayout>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent"
+    android:layout_height="112dp" android:layout_margin="5dp"
+    android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/blackbox_surface"
+    app:cardCornerRadius="20dp" app:cardElevation="0dp"
+    app:strokeColor="@color/blackbox_border" app:strokeWidth="1dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
+        android:gravity="center" android:orientation="vertical" android:padding="10dp">
+        <FrameLayout android:layout_width="wrap_content" android:layout_height="wrap_content">
+            <ImageView android:id="@+id/icon" android:layout_width="48dp" android:layout_height="48dp"
+                android:contentDescription="App icon" />
+            <com.othershe.cornerlabelview.CornerLabelView android:id="@+id/cornerLabel"
+                android:layout_width="24dp" android:layout_height="24dp"
+                android:layout_gravity="top|start" android:visibility="invisible"
+                app:bg_color="@color/blackbox_accent" app:position="left_top"
+                app:side_length="22dp" app:text="XP" app:text_color="@color/white" app:text_size="8sp" />
+        </FrameLayout>
+        <TextView android:id="@+id/name" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="8dp"
+            android:ellipsize="end" android:gravity="center" android:maxLines="1"
+            android:textColor="@color/blackbox_text" android:textSize="12sp" android:textStyle="bold" />
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

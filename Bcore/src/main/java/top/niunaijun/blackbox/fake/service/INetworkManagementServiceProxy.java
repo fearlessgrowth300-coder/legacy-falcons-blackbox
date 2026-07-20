@@ -1,7 +1,5 @@
 package top.niunaijun.blackbox.fake.service;
 
-import static top.niunaijun.blackbox.app.BActivityThread.getUid;
-
 import java.lang.reflect.Method;
 
 import black.android.os.BRINetworkManagementServiceStub;
@@ -9,9 +7,7 @@ import black.android.os.BRServiceManager;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
-import top.niunaijun.blackbox.fake.service.base.UidMethodProxy;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
-import top.niunaijun.blackbox.utils.Slog;
 
 
 public class INetworkManagementServiceProxy extends BinderInvocationStub {
@@ -39,9 +35,30 @@ public class INetworkManagementServiceProxy extends BinderInvocationStub {
     @Override
     protected void onBindMethod() {
         super.onBindMethod();
-        addMethodHook(new UidMethodProxy("setUidCleartextNetworkPolicy", 0));
-        addMethodHook(new UidMethodProxy("setUidMeteredNetworkBlacklist", 0));
-        addMethodHook(new UidMethodProxy("setUidMeteredNetworkWhitelist", 0));
+        // A guest must never mutate policy for the container's real Linux UID: that UID is shared
+        // by every virtual user, and Android reserves these calls for the system network stack.
+        // Socket-level proxy enforcement remains active independently of these advisory policies.
+        addMethodHook(new NoOpUidPolicy("setUidCleartextNetworkPolicy"));
+        addMethodHook(new NoOpUidPolicy("setUidMeteredNetworkBlacklist"));
+        addMethodHook(new NoOpUidPolicy("setUidMeteredNetworkWhitelist"));
+    }
+
+    private static final class NoOpUidPolicy extends MethodHook {
+        private final String name;
+
+        NoOpUidPolicy(String name) {
+            this.name = name;
+        }
+
+        @Override
+        protected String getMethodName() {
+            return name;
+        }
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) {
+            return null;
+        }
     }
 
     @ProxyMethod("getNetworkStatsUidDetail")

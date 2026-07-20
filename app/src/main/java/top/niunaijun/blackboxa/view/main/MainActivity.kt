@@ -8,11 +8,17 @@ import android.os.Bundle
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
+import android.widget.LinearLayout
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.edit
+import androidx.lifecycle.lifecycleScope
 import androidx.viewpager2.widget.ViewPager2
 import com.afollestad.materialdialogs.MaterialDialog
 import com.afollestad.materialdialogs.input.input
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackboxa.R
 import top.niunaijun.blackboxa.app.App
@@ -20,11 +26,19 @@ import top.niunaijun.blackboxa.app.AppManager
 import top.niunaijun.blackboxa.databinding.ActivityMainBinding
 import top.niunaijun.blackboxa.util.Resolution
 import top.niunaijun.blackboxa.util.inflate
+import top.niunaijun.blackboxa.util.toast
 import top.niunaijun.blackboxa.view.apps.AppsFragment
 import top.niunaijun.blackboxa.view.base.LoadingActivity
 import top.niunaijun.blackboxa.view.fake.FakeManagerActivity
 import top.niunaijun.blackboxa.view.list.ListActivity
 import top.niunaijun.blackboxa.view.setting.SettingActivity
+import top.niunaijun.blackboxa.cloud.Supabase
+import top.niunaijun.blackboxa.cloud.VaultKeyStore
+import top.niunaijun.blackboxa.cloud.CloudSync
+import top.niunaijun.blackboxa.cloud.BackupService
+import top.niunaijun.blackboxa.cloud.DriveFolderStore
+import top.niunaijun.blackboxa.view.auth.AuthActivity
+import top.niunaijun.blackboxa.view.auth.AccountSettingsActivity
 
 class MainActivity : LoadingActivity() {
 
@@ -36,8 +50,37 @@ class MainActivity : LoadingActivity() {
 
     private var currentUser = 0
 
+    private val driveFolderPicker =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) {
+                try {
+                    DriveFolderStore.save(this, uri,
+                        VaultKeyStore.ownerHash(this) ?: error("Account recovery is not ready"))
+                    handleConnectedDrive()
+                } catch (e: Exception) {
+                    toast("Could not connect Google Drive: ${e.message}")
+                    showDriveRequired()
+                }
+            } else if (!DriveFolderStore.isConnected(this)) showDriveRequired()
+        }
+
+    private val accountSettingsLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode != RESULT_OK) return@registerForActivityResult
+            when (result.data?.getStringExtra(AccountSettingsActivity.EXTRA_ACTION)) {
+                AccountSettingsActivity.ACTION_BACKUP ->
+                    if (DriveFolderStore.isConnected(this)) confirmBackup() else driveFolderPicker.launch(null)
+                AccountSettingsActivity.ACTION_RESTORE ->
+                    if (DriveFolderStore.isConnected(this)) confirmRestore() else driveFolderPicker.launch(null)
+                AccountSettingsActivity.ACTION_DRIVE -> driveFolderPicker.launch(null)
+                AccountSettingsActivity.ACTION_LOGOUT -> confirmLogout()
+            }
+        }
+
     companion object {
         private const val TAG = "MainActivity"
+        // Only prompt for an update once per app process.
+        private var updateChecked = false
         private const val STORAGE_PERMISSION_REQUEST_CODE = 1001
         private const val VPN_PERMISSION_REQUEST_CODE = 1002
 
@@ -47,10 +90,26 @@ class MainActivity : LoadingActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (!Supabase.isSignedIn(this) || !VaultKeyStore.isReady(this)) {
+            startActivity(Intent(this, AuthActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
+            finish()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
             super.onCreate(savedInstanceState)
 
+            if (!Supabase.isSignedIn(this) || !VaultKeyStore.isReady(this)) {
+                startActivity(Intent(this, AuthActivity::class.java))
+                finish()
+                return
+            }
+
+            var blackBoxReady = false
             try {
                 BlackBoxCore.get().onBeforeMainActivityOnCreate(this)
             } catch (e: Exception) {
@@ -58,10 +117,32 @@ class MainActivity : LoadingActivity() {
             }
 
             setContentView(viewBinding.root)
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    this, android.Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                androidx.core.app.ActivityCompat.requestPermissions(
+                    this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7301
+                )
+            }
             initToolbar(viewBinding.toolbarLayout.toolbar, R.string.app_name)
+            viewBinding.accountBackup.setOnClickListener { openAccountSettings() }
+            updateAccountButton()
+
+            // In-app update check (once per app session).
+            if (!updateChecked) {
+                updateChecked = true
+                top.niunaijun.blackboxa.cloud.Updater.checkAsync(this) { showUpdateDialog(it) }
+            }
             initViewPager()
             initFab()
+            initUserManager()
             initToolbarSubTitle()
+
+            if (!DriveFolderStore.isConnected(this)) {
+                window.decorView.post { showDriveRequired() }
+            }
 
             
             checkStoragePermission()
@@ -75,9 +156,12 @@ class MainActivity : LoadingActivity() {
 
             try {
                 BlackBoxCore.get().onAfterMainActivityOnCreate(this)
+                blackBoxReady = true
             } catch (e: Exception) {
                 Log.e(TAG, "Error in onAfterMainActivityOnCreate: ${e.message}")
             }
+            // Only discard the rollback tree after the restored container initialized cleanly.
+            if (blackBoxReady) CloudSync.cleanupPreviousRestore(this)
         } catch (e: Exception) {
             Log.e(TAG, "Critical error in onCreate: ${e.message}")
             
@@ -300,16 +384,12 @@ class MainActivity : LoadingActivity() {
 
     private fun initViewPager() {
         try {
-            val userList = BlackBoxCore.get().users
-            userList.forEach { fragmentList.add(AppsFragment.newInstance(it.id)) }
-
-            currentUser = userList.firstOrNull()?.id ?: 0
-            fragmentList.add(AppsFragment.newInstance(userList.size))
+            if (BlackBoxCore.get().users.isEmpty()) {
+                BlackBoxCore.get().createUser(0)
+            }
 
             mViewPagerAdapter = ViewPagerAdapter(this)
-            mViewPagerAdapter.replaceData(fragmentList)
             viewBinding.viewPager.adapter = mViewPagerAdapter
-            viewBinding.dotsIndicator.setViewPager2(viewBinding.viewPager)
             viewBinding.viewPager.registerOnPageChangeCallback(
                     object : ViewPager2.OnPageChangeCallback() {
                         override fun onPageSelected(position: Int) {
@@ -324,8 +404,166 @@ class MainActivity : LoadingActivity() {
                         }
                     }
             )
+            refreshUserPages(0)
         } catch (e: Exception) {
             Log.e(TAG, "Error in initViewPager: ${e.message}")
+        }
+    }
+
+    private fun initUserManager() {
+        viewBinding.manageUsers.setOnClickListener { showUserManagerDialog() }
+    }
+
+    private fun showUserManagerDialog() {
+        val users = BlackBoxCore.get().users.sortedBy { it.id }
+        val labels = ArrayList<String>()
+        labels.add("＋ Create new user")
+        users.forEach { user ->
+            val name = AppManager.mRemarkSharedPreferences
+                .getString("Remark${user.id}", "User ${user.id}")
+                .orEmpty().ifBlank { "User ${user.id}" }
+            val defaultName = "User ${user.id}"
+            labels.add(if (name == defaultName) defaultName else "$name  •  $defaultName")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Manage BlackBox users")
+            .setItems(labels.toTypedArray()) { _, position ->
+                if (position == 0) showCreateUserDialog()
+                else showUserActions(users[position - 1].id)
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showCreateUserDialog() {
+        val nextId = (BlackBoxCore.get().users.maxOfOrNull { it.id } ?: -1) + 1
+        MaterialDialog(this).show {
+            title(text = "Create BlackBox user")
+            message(text = "A user is an isolated space for another app clone.")
+            input(hint = "User name", prefill = "User $nextId") { _, value ->
+                createUser(nextId, value.toString().trim().ifBlank { "User $nextId" })
+            }
+            positiveButton(text = "Create")
+            negativeButton(text = "Cancel")
+        }
+    }
+
+    private fun createUser(userId: Int, name: String) {
+        showLoading()
+        lifecycleScope.launch {
+            val created = withContext(Dispatchers.IO) {
+                runCatching { BlackBoxCore.get().createUser(userId) }.getOrNull()
+            }
+            hideLoading()
+            if (created == null) {
+                toast("Could not create User $userId")
+                return@launch
+            }
+            AppManager.mRemarkSharedPreferences.edit {
+                putString("Remark$userId", name)
+            }
+            refreshUserPages(userId)
+            toast("$name created")
+        }
+    }
+
+    private fun showUserActions(userId: Int) {
+        val name = AppManager.mRemarkSharedPreferences
+            .getString("Remark$userId", "User $userId")
+            .orEmpty().ifBlank { "User $userId" }
+        val actions = if (userId == 0) {
+            arrayOf("Open user", "Rename user")
+        } else {
+            arrayOf("Open user", "Rename user", "Delete user")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("$name  •  User $userId")
+            .setItems(actions) { _, which ->
+                when (which) {
+                    0 -> selectUser(userId)
+                    1 -> showRenameUserDialog(userId, name)
+                    2 -> showDeleteUserDialog(userId, name)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showRenameUserDialog(userId: Int, oldName: String) {
+        MaterialDialog(this).show {
+            title(text = "Rename User $userId")
+            input(hint = "User name", prefill = oldName) { _, value ->
+                val name = value.toString().trim().ifBlank { "User $userId" }
+                AppManager.mRemarkSharedPreferences.edit { putString("Remark$userId", name) }
+                if (currentUser == userId) updateUserRemark(userId)
+                toast("User renamed")
+            }
+            positiveButton(text = "Save")
+            negativeButton(text = "Cancel")
+        }
+    }
+
+    private fun showDeleteUserDialog(userId: Int, name: String) {
+        if (userId == 0) {
+            toast("User 0 is the primary user and cannot be deleted")
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Delete $name?")
+            .setMessage(
+                "This permanently deletes every cloned app and all account data inside User $userId. " +
+                    "ShieldProxy lists assigned to this user will stop working. This cannot be undone."
+            )
+            .setPositiveButton("Delete user") { _, _ -> deleteUser(userId, name) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun deleteUser(userId: Int, name: String) {
+        showLoading()
+        lifecycleScope.launch {
+            val error = withContext(Dispatchers.IO) {
+                runCatching { BlackBoxCore.get().deleteUser(userId) }.exceptionOrNull()
+            }
+            hideLoading()
+            if (error != null) {
+                Log.e(TAG, "Could not delete user $userId", error)
+                toast("Could not delete $name")
+                return@launch
+            }
+            AppManager.mRemarkSharedPreferences.edit {
+                remove("Remark$userId")
+                remove("AppList$userId")
+                AppManager.mRemarkSharedPreferences.all.keys
+                    .filter { it.startsWith("cloneName_${userId}_") }
+                    .forEach { remove(it) }
+            }
+            val fallback = BlackBoxCore.get().users.minOfOrNull { it.id } ?: 0
+            refreshUserPages(fallback)
+            toast("$name deleted")
+        }
+    }
+
+    private fun selectUser(userId: Int) {
+        val index = fragmentList.indexOfFirst { it.userID == userId }
+        if (index >= 0) viewBinding.viewPager.setCurrentItem(index, true)
+    }
+
+    private fun refreshUserPages(preferredUserId: Int = currentUser) {
+        val users = BlackBoxCore.get().users.sortedBy { it.id }
+        fragmentList.clear()
+        users.forEach { fragmentList.add(AppsFragment.newInstance(it.id)) }
+        mViewPagerAdapter.replaceData(fragmentList)
+        viewBinding.dotsIndicator.setViewPager2(viewBinding.viewPager)
+
+        viewBinding.viewPager.post {
+            val index = fragmentList.indexOfFirst { it.userID == preferredUserId }
+                .takeIf { it >= 0 } ?: 0
+            if (fragmentList.isNotEmpty()) {
+                viewBinding.viewPager.setCurrentItem(index, false)
+                currentUser = fragmentList[index].userID
+                updateUserRemark(currentUser)
+            }
         }
     }
 
@@ -333,7 +571,7 @@ class MainActivity : LoadingActivity() {
         try {
             viewBinding.fab.setOnClickListener {
                 try {
-                    val userId = viewBinding.viewPager.currentItem
+                    val userId = fragmentList[viewBinding.viewPager.currentItem].userID
                     val intent = Intent(this, ListActivity::class.java)
                     intent.putExtra("userID", userId)
                     apkPathResult.launch(intent)
@@ -362,15 +600,11 @@ class MainActivity : LoadingActivity() {
 
     fun scanUser() {
         try {
-            val userList = BlackBoxCore.get().users
-
-            if (fragmentList.size == userList.size) {
-                fragmentList.add(AppsFragment.newInstance(fragmentList.size))
-            } else if (fragmentList.size > userList.size + 1) {
-                fragmentList.removeLast()
+            val realIds = BlackBoxCore.get().users.map { it.id }.sorted()
+            val shownIds = fragmentList.map { it.userID }.sorted()
+            if (realIds != shownIds) {
+                refreshUserPages(currentUser)
             }
-
-            mViewPagerAdapter.notifyDataSetChanged()
         } catch (e: Exception) {
             Log.e(TAG, "Error in scanUser: ${e.message}")
         }
@@ -399,7 +633,7 @@ class MainActivity : LoadingActivity() {
                             val userId = data.getIntExtra("userID", 0)
                             val source = data.getStringExtra("source")
                             if (source != null) {
-                                fragmentList[userId].installApk(source)
+                                fragmentList.firstOrNull { it.userID == userId }?.installApk(source)
                             }
                         }
                     }
@@ -407,6 +641,150 @@ class MainActivity : LoadingActivity() {
                     Log.e(TAG, "Error handling APK path result: ${e.message}")
                 }
             }
+
+    private fun showDriveRequired() {
+        if (isFinishing || DriveFolderStore.isConnected(this)) return
+        AlertDialog.Builder(this)
+            .setTitle("Connect Google Drive")
+            .setMessage("Choose or create the same private Drive folder used by ShieldProxy. BlackBox encrypts every backup chunk before uploading it, and cloned apps never receive Drive access.")
+            .setPositiveButton("Choose folder") { _, _ -> driveFolderPicker.launch(null) }
+            .setNeutralButton("Open settings") { _, _ -> openAccountSettings() }
+            .setNegativeButton("Later", null)
+            .setCancelable(true)
+            .show()
+    }
+
+    private fun handleConnectedDrive() {
+        updateAccountButton()
+        toast("Google Drive connected")
+        Thread {
+            val hasBackup = runCatching { CloudSync.hasBackup(this) }.getOrDefault(false)
+            runOnUiThread {
+                if (hasBackup) {
+                    AlertDialog.Builder(this)
+                        .setTitle("BlackBox backup found")
+                        .setMessage("Restore the encrypted clone backup, or keep the data currently on this phone?")
+                        .setPositiveButton("Restore") { _, _ -> confirmRestore() }
+                        .setNegativeButton("Keep this phone") { _, _ -> confirmBackup() }
+                        .setCancelable(false)
+                        .show()
+                } else confirmBackup()
+            }
+        }.start()
+    }
+
+    private fun showAccountDialog() {
+        val email = Supabase.email(this) ?: "signed in"
+        val drive = if (DriveFolderStore.isConnected(this)) "Connected" else "Not connected"
+        AlertDialog.Builder(this)
+            .setTitle("Account & encrypted backup")
+            .setMessage("Signed in: $email\nGoogle Drive: $drive\n\nRestore brings back users, clone names, app data, and saved positions.")
+            .setItems(arrayOf("Back up everything", "Restore everything", "Select/change Google Drive folder", "Log out")) { _, which ->
+                when (which) {
+                    0 -> if (DriveFolderStore.isConnected(this)) confirmBackup() else driveFolderPicker.launch(null)
+                    1 -> if (DriveFolderStore.isConnected(this)) confirmRestore() else driveFolderPicker.launch(null)
+                    2 -> driveFolderPicker.launch(null)
+                    3 -> confirmLogout()
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun updateAccountButton() {
+        viewBinding.accountBackup.text = if (DriveFolderStore.isConnected(this))
+            "Account & encrypted backup  •  Protected"
+        else "Account & encrypted backup  •  Connect Drive"
+    }
+
+    private fun showUpdateDialog(release: top.niunaijun.blackboxa.cloud.Updater.Release) {
+        if (isFinishing) return
+        AlertDialog.Builder(this)
+            .setTitle("Update available — v${release.versionName}")
+            .setMessage(release.notes.ifBlank { "A newer version of BlackBox is ready." })
+            .setCancelable(false)
+            .setPositiveButton("Update now") { _, _ -> startUpdate(release) }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    private fun startUpdate(release: top.niunaijun.blackboxa.cloud.Updater.Release) {
+        val progress = AlertDialog.Builder(this)
+            .setTitle("Downloading update…").setMessage("0%").setCancelable(false).create()
+        progress.show()
+        top.niunaijun.blackboxa.cloud.Updater.downloadAndInstall(this, release,
+            onProgress = { pct -> if (!isFinishing) progress.setMessage("$pct%") },
+            onError = { msg -> if (!isFinishing) { progress.dismiss()
+                android.widget.Toast.makeText(this, "Update failed: $msg", android.widget.Toast.LENGTH_LONG).show() } }
+        )
+    }
+
+    private fun openAccountSettings() {
+        accountSettingsLauncher.launch(Intent(this, AccountSettingsActivity::class.java))
+    }
+
+    private fun confirmBackup() {
+        AlertDialog.Builder(this)
+            .setTitle("Back up all clones?")
+            .setMessage("The current data is about 1.5 GB. All cloned apps will close briefly so databases and login files are captured consistently. Use Wi-Fi and keep the phone charging.")
+            .setPositiveButton("Start backup") { _, _ -> backupNow() }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    private fun backupNow() {
+        BackupService.startBackup(this)
+        toast("Encrypted backup is running in the notification area")
+    }
+
+    private fun confirmRestore() {
+        AlertDialog.Builder(this)
+            .setTitle("Restore all BlackBox data?")
+            .setMessage("This replaces the clones on this phone. Install the original apps such as Instagram from Play Store first. BlackBox will restart after the encrypted backup passes every integrity check.")
+            .setPositiveButton("Restore") { _, _ -> restoreNow() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun restoreNow() {
+        BackupService.startRestore(this)
+        toast("Encrypted restore is running in the notification area")
+    }
+
+    private fun restartAfterRestore() {
+        val restart = Intent(this, WelcomeActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val pending = android.app.PendingIntent.getActivity(
+            this, 9201, restart,
+            android.app.PendingIntent.FLAG_CANCEL_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+        val alarm = getSystemService(android.app.AlarmManager::class.java)
+        alarm?.set(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,
+            android.os.SystemClock.elapsedRealtime() + 1_000, pending)
+        finishAffinity()
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
+    private fun confirmLogout() {
+        AlertDialog.Builder(this)
+            .setTitle("Log out?")
+            .setMessage("Running clones will close. The encrypted Drive backup is not deleted.")
+            .setPositiveButton("Log out") { _, _ ->
+                runCatching {
+                    for (user in BlackBoxCore.get().users) {
+                        for (app in BlackBoxCore.get().getInstalledApplications(0, user.id).orEmpty()) {
+                            BlackBoxCore.get().stopPackage(app.packageName, user.id)
+                        }
+                    }
+                }
+                Supabase.signOut(this); VaultKeyStore.clear(this)
+                startActivity(Intent(this, AuthActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+                finish()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         try {
@@ -421,6 +799,7 @@ class MainActivity : LoadingActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         try {
             when (item.itemId) {
+                R.id.main_account -> openAccountSettings()
                 R.id.main_git -> {
                     val intent =
                             Intent(

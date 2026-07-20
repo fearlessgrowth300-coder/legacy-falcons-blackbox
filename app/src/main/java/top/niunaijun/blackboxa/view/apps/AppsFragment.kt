@@ -50,6 +50,9 @@ class AppsFragment : Fragment() {
         
         fun newInstance(userID:Int): AppsFragment {
             val fragment = AppsFragment()
+            // FragmentStateAdapter asks for stable IDs before onCreate() runs.
+            // Set the ID immediately so every BlackBox user has a unique page.
+            fragment.userID = userID
             val bundle = bundleOf("userID" to userID)
             fragment.arguments = bundle
             return fragment
@@ -81,7 +84,9 @@ class AppsFragment : Fragment() {
             viewBinding.recyclerView.adapter = mAdapter
             
             
-            val layoutManager = GridLayoutManager(requireContext(), 4)
+            // Three wider cards keep clone names readable and give each isolated app a clear tap
+            // target. Four columns made renamed Instagram/WhatsApp clones indistinguishable.
+            val layoutManager = GridLayoutManager(requireContext(), 3)
             layoutManager.isItemPrefetchEnabled = true
             layoutManager.initialPrefetchItemCount = 8
             viewBinding.recyclerView.layoutManager = layoutManager
@@ -405,8 +410,16 @@ class AppsFragment : Fragment() {
                 val key = "cloneName_${userID}_${data.packageName}"
                 val ed = top.niunaijun.blackboxa.app.AppManager.mRemarkSharedPreferences.edit()
                 if (name.isEmpty()) ed.remove(key) else ed.putString(key, name)
-                ed.apply()
-                viewModel.getInstalledApps(userID)   // refresh grid
+                // BlackBox hosts multiple processes.  An asynchronous apply() can leave the
+                // clone label visible only in this process' memory and lose it on restart.
+                // Persist the label before refreshing the grid so ShieldProxy always sees the
+                // same stable clone identity through the bridge provider.
+                if (ed.commit()) {
+                    viewModel.getInstalledApps(userID)   // refresh grid
+                } else {
+                    Log.e(TAG, "Failed to persist clone name for user $userID")
+                    toast("Could not save clone name")
+                }
             }
             .setNegativeButton("Cancel", null)
             .show()
