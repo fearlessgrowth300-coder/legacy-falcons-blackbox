@@ -374,6 +374,9 @@ public class ComponentResolver {
                 return null;
             }
             ServiceInfo si = PackageManagerCompat.generateServiceInfo(service, mFlags, ps.readUserState(userId), userId);
+            if (si == null) {
+                return null;
+            }
 
             final ResolveInfo res = new ResolveInfo();
             res.serviceInfo = si;
@@ -478,6 +481,9 @@ public class ComponentResolver {
             }
             ActivityInfo ai =
                     PackageManagerCompat.generateActivityInfo(activity, mFlags, ps.readUserState(userId), userId);
+            if (ai == null) {
+                return null;
+            }
 
             final ResolveInfo res = new ResolveInfo();
             res.activityInfo = ai;
@@ -597,6 +603,9 @@ public class ComponentResolver {
             }
 
             ProviderInfo pi = PackageManagerCompat.generateProviderInfo(provider, mFlags, ps.readUserState(userId), userId);
+            if (pi == null) {
+                return null;
+            }
             final ResolveInfo res = new ResolveInfo();
             res.providerInfo = pi;
             if ((mFlags & PackageManager.GET_RESOLVED_FILTER) != 0) {

@@ -30,6 +30,7 @@ import java.util.UUID;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.core.GmsCore;
+import top.niunaijun.blackbox.core.GuestProxy;
 import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.core.system.BProcessManagerService;
 import top.niunaijun.blackbox.core.system.ISystemService;
@@ -534,7 +535,9 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
                 BProcessManagerService.get().killPackageAsUser(packageName, userId);
                 int i = BPackageInstallerService.get().uninstallPackageAsUser(ps, removeApp, userId);
                 if (i < 0) {
-                    
+                    Slog.e(TAG, "uninstall failed for user " + userId + " package " + packageName
+                            + " result=" + i);
+                    return;
                 }
 
                 if (removeApp) {
@@ -543,6 +546,10 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
                 } else {
                     ps.removeUser(userId);
                     ps.save();
+                }
+                if (!GuestProxy.clear(userId, packageName)) {
+                    Slog.e(TAG, "unable to remove protected route after uninstall for user "
+                            + userId + " package " + packageName);
                 }
                 onPackageUninstalled(packageName, removeApp, userId);
             }
@@ -561,6 +568,10 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
                         int i = BPackageInstallerService.get().uninstallPackageAsUser(ps, true, userId);
                         if (i < 0) {
                             continue;
+                        }
+                        if (!GuestProxy.clear(userId, packageName)) {
+                            Slog.e(TAG, "unable to remove protected route after uninstall for user "
+                                    + userId + " package " + packageName);
                         }
                         onPackageUninstalled(packageName, true, userId);
                     }
@@ -673,6 +684,12 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
             String hostPackageName = BlackBoxCore.getHostPkg();
             if (packageName.equals(hostPackageName)) {
                 return result.installError("Cannot clone BlackBox app from within BlackBox. This would create infinite recursion and is not allowed for security reasons.");
+            }
+            // A fresh clone must never inherit an encrypted route left by an older, removed
+            // instance. Preserve routes for genuine app updates, but fail closed when stale
+            // route state cannot be removed before a new per-user install.
+            if (!isInstalled(packageName, userId) && !GuestProxy.clear(userId, packageName)) {
+                return result.installError("Could not clear stale proxy assignment. The clone was not installed.");
             }
             
             

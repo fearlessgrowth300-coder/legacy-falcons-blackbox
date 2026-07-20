@@ -199,6 +199,11 @@ public class BActivityThread extends IBActivityThread.Stub {
                         && proxyStatus != top.niunaijun.blackbox.core.GuestProxy.ApplyStatus.NOT_CONFIGURED) {
                     throw new SecurityException("Assigned proxy is not ready: " + proxyStatus);
                 }
+                // Install after GuestProxy has read BlackBox's host key, but before any guest
+                // Application class can touch its own login-encryption aliases.
+                if (!top.niunaijun.blackbox.core.KeystoreIsolation.installForCurrentProcess()) {
+                    throw new SecurityException("Per-clone AndroidKeyStore isolation unavailable");
+                }
             } catch (Throwable t) {
                 top.niunaijun.blackbox.utils.Slog.w("GuestProxy", "apply failed: " + t.getMessage());
                 throw new RuntimeException("Refusing to start guest with a broken proxy assignment", t);

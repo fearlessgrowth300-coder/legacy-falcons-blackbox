@@ -56,11 +56,8 @@ import top.niunaijun.blackbox.fake.service.MediaRecorderClassProxy;
 import top.niunaijun.blackbox.fake.service.SQLiteDatabaseProxy;
 import top.niunaijun.blackbox.fake.service.ClassLoaderProxy;
 import top.niunaijun.blackbox.fake.service.FileSystemProxy;
-import top.niunaijun.blackbox.fake.service.GmsProxy;
 import top.niunaijun.blackbox.fake.service.LevelDbProxy;
 import top.niunaijun.blackbox.fake.service.DeviceIdProxy;
-import top.niunaijun.blackbox.fake.service.GoogleAccountManagerProxy;
-import top.niunaijun.blackbox.fake.service.AuthenticationProxy;
 import top.niunaijun.blackbox.fake.service.AndroidIdProxy;
 import top.niunaijun.blackbox.fake.service.AudioPermissionProxy;
 
@@ -93,7 +90,6 @@ import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.fake.service.ISettingsProviderProxy;
 import top.niunaijun.blackbox.fake.service.FeatureFlagUtilsProxy;
-import top.niunaijun.blackbox.fake.service.WorkManagerProxy;
 
 
 
@@ -133,7 +129,6 @@ public class HookManager {
             addInjector(new ReLinkerProxy());
             addInjector(new WebViewProxy());
             addInjector(new WebViewFactoryProxy());
-            addInjector(new WorkManagerProxy());
             addInjector(new MediaRecorderProxy());
             addInjector(new AudioRecordProxy());
             addInjector(new IMiuiSecurityManagerProxy());
@@ -143,11 +138,8 @@ public class HookManager {
             addInjector(new SQLiteDatabaseProxy());
             addInjector(new ClassLoaderProxy());
             addInjector(new FileSystemProxy());
-            addInjector(new GmsProxy());
             addInjector(new LevelDbProxy());
             addInjector(new DeviceIdProxy());
-            addInjector(new GoogleAccountManagerProxy());
-            addInjector(new AuthenticationProxy());
             addInjector(new AndroidIdProxy());
             addInjector(new AudioPermissionProxy());
             addInjector(new ILocationManagerProxy());

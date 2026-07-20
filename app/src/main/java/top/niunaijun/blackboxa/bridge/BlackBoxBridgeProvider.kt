@@ -29,6 +29,20 @@ class BlackBoxBridgeProvider : ContentProvider() {
         uri: Uri, projection: Array<out String>?, selection: String?,
         selectionArgs: Array<out String>?, sortOrder: String?
     ): Cursor {
+        if (uri.lastPathSegment == "routes") {
+            val routes = MatrixCursor(arrayOf("userId", "packageName", "routeId"))
+            val ctx = context ?: return routes
+            if (!Supabase.isSignedIn(ctx) || !VaultKeyStore.isReady(ctx)) return routes
+            try {
+                for (u in BlackBoxCore.get().users) {
+                    for (pkg in GuestProxy.configuredPackagesForUser(u.id)) {
+                        routes.addRow(arrayOf(u.id, pkg, GuestProxy.routeIdFor(u.id, pkg).orEmpty()))
+                    }
+                }
+            } catch (_: Exception) {
+            }
+            return routes
+        }
         val c = MatrixCursor(arrayOf("userId", "packageName", "label"))
         val ctx = context ?: return c
         if (!Supabase.isSignedIn(ctx) || !VaultKeyStore.isReady(ctx)) return c
@@ -81,34 +95,104 @@ class BlackBoxBridgeProvider : ContentProvider() {
         }
         try {
             when (method) {
+                "canSetProxy" -> {
+                    // Read-only first phase for ShieldProxy profile saves. It lets ShieldProxy
+                    // validate every clone assignment before changing either app's stored state.
+                    val e = extras!!
+                    val userId = e.getInt("userId", -1)
+                    val pkg = e.getString("pkg")
+                    val type = e.getString("type", "http").trim().lowercase()
+                    val server = e.getString("server", "").trim()
+                    val port = e.getInt("port")
+                    val username = e.getString("username", "")
+                    val password = e.getString("password", "")
+                    val validNode = server.isNotBlank() && port in 1..65535 &&
+                        type in setOf("http", "https", "socks", "socks5")
+                    val knownUser = userId >= 0 && BlackBoxCore.get().users.any { it.id == userId }
+                    val knownApp = pkg != null && knownUser && BlackBoxCore.get().isInstalled(pkg, userId)
+                    val conflict = validNode && knownApp && GuestProxy.wouldConflictWithSharedGms(
+                        userId, pkg!!, type, server, port, username, password
+                    )
+                    val ok = validNode && knownApp && !conflict
+                    res.putBoolean("ok", ok)
+                    res.putString("state", when {
+                        !validNode -> "INVALID_PROXY"
+                        !knownUser -> "UNKNOWN_USER"
+                        !knownApp -> "UNKNOWN_CLONE"
+                        conflict -> "ROUTE_CONFLICT"
+                        else -> "PREFLIGHT_READY"
+                    })
+                    if (!ok) {
+                        res.putString("err", when {
+                            !validNode -> "The selected proxy configuration is invalid"
+                            !knownUser -> "The BlackBox user no longer exists"
+                            !knownApp -> "The selected clone is not installed in that BlackBox user"
+                            else -> "This BlackBox user already uses a different proxy while Google services are shared. Move this app to a separate BlackBox user or assign the same proxy."
+                        })
+                    }
+                }
                 "assignAndVerifyRoute" -> {
                     val e = extras!!
-                    val userId = e.getInt("userId")
+                    val userId = e.getInt("userId", -1)
                     val pkg = e.getString("pkg")
                     val expectedExitIp = e.getString("expectedExitIp")
-                    val saved = GuestProxy.save(
-                        userId,
-                        pkg,
-                        e.getString("type", "http"),
-                        e.getString("server", ""),
-                        e.getInt("port"),
-                        e.getString("username", ""),
-                        e.getString("password", "")
+                    val type = e.getString("type", "http").trim().lowercase()
+                    val server = e.getString("server", "").trim()
+                    val port = e.getInt("port")
+                    val username = e.getString("username", "")
+                    val password = e.getString("password", "")
+                    // Repeat the profile editor's read-only checks at the atomic launch boundary.
+                    // A restored profile can outlive a deleted or moved clone, so an earlier
+                    // successful preflight must not authorize a later write for the wrong user.
+                    val validNode = server.isNotBlank() && port in 1..65535 &&
+                        type in setOf("http", "https", "socks", "socks5")
+                    val knownUser = userId >= 0 && BlackBoxCore.get().users.any { it.id == userId }
+                    val knownApp = pkg != null && knownUser && BlackBoxCore.get().isInstalled(pkg, userId)
+                    val validExitIp = !expectedExitIp.isNullOrBlank()
+                    val conflict = validNode && knownApp && GuestProxy.wouldConflictWithSharedGms(
+                        userId, pkg, type, server, port, username, password
                     )
-                    val gmsRoute = if (saved) GuestProxy.syncGmsRouteForUser(userId) else null
+                    val saved = validNode && knownApp && validExitIp && !conflict && GuestProxy.save(
+                        userId, pkg, type, server, port, username, password
+                    )
+                    val gmsRoute = if (saved && GuestProxy.isSharedGmsActive(userId)) {
+                        GuestProxy.syncGmsRouteForUser(userId)
+                    } else null
                     res.putString("gmsRoute", gmsRoute?.name.orEmpty())
-                    if (!saved || pkg == null || expectedExitIp.isNullOrBlank()) {
+                    if (!validNode) {
+                        res.putBoolean("ok", false)
+                        res.putString("state", "INVALID_PROXY")
+                        res.putString("err", "The selected proxy configuration is invalid")
+                    } else if (!knownUser) {
+                        res.putBoolean("ok", false)
+                        res.putString("state", "UNKNOWN_USER")
+                        res.putString("err", "The BlackBox user no longer exists")
+                    } else if (!knownApp) {
+                        res.putBoolean("ok", false)
+                        res.putString("state", "UNKNOWN_CLONE")
+                        res.putString("err", "The selected clone is not installed in that BlackBox user. Choose its current user before opening it.")
+                    } else if (!validExitIp) {
+                        res.putBoolean("ok", false)
+                        res.putString("state", "EXPECTED_EXIT_MISSING")
+                        res.putString("err", "The proxy exit IP could not be confirmed")
+                    } else if (conflict) {
+                        res.putBoolean("ok", false)
+                        res.putString("state", "ROUTE_CONFLICT")
+                        res.putString("err", "This BlackBox user already uses a different proxy while Google services are shared. Move this app to a separate BlackBox user or assign the same proxy.")
+                    } else if (!saved) {
                         res.putBoolean("ok", false)
                         res.putString("state", "CONFIG_REJECTED")
                         res.putString("err", "A valid app route and expected exit IP are required")
                     } else {
-                        try { BlackBoxCore.get().stopPackage(pkg, userId) } catch (_: Throwable) {}
-                        val expectedRouteId = GuestProxy.routeIdFor(userId, pkg)
+                        val installedPkg = pkg!!
+                        val confirmedExitIp = expectedExitIp!!
+                        try { BlackBoxCore.get().stopPackage(installedPkg, userId) } catch (_: Throwable) {}
+                        val expectedRouteId = GuestProxy.routeIdFor(userId, installedPkg)
                         val config = if (expectedRouteId != null) {
-                            BlackBoxCore.getBActivityManager().initProcess(pkg, pkg, userId)
+                            BlackBoxCore.getBActivityManager().initProcess(installedPkg, installedPkg, userId)
                         } else null
                         if (config == null || expectedRouteId == null) {
-                            try { BlackBoxCore.get().stopPackage(pkg, userId) } catch (_: Throwable) {}
+                            try { BlackBoxCore.get().stopPackage(installedPkg, userId) } catch (_: Throwable) {}
                             res.putBoolean("ok", false)
                             res.putString("state", "PREPARE_FAILED")
                             res.putString("err", "Unable to create the guarded guest process")
@@ -118,31 +202,39 @@ class BlackBoxBridgeProvider : ContentProvider() {
                             // 16. Keep the gate fail-closed while allowing that bounded startup
                             // window; every non-NOT_RUNNING result is returned immediately.
                             val probe = verifyProxyRouteAfterStartup(
-                                pkg, userId, expectedRouteId, expectedExitIp
+                                installedPkg, userId, expectedRouteId, confirmedExitIp
                             )
                             res.putAll(probe)
                             res.putBoolean("configured", true)
                             res.putString("expectedRouteId", expectedRouteId)
                             if (!probe.getBoolean("ok")) {
-                                try { BlackBoxCore.get().stopPackage(pkg, userId) } catch (_: Throwable) {}
+                                try { BlackBoxCore.get().stopPackage(installedPkg, userId) } catch (_: Throwable) {}
                             }
                         }
                     }
                 }
                 "setProxy" -> {
                     val e = extras!!
-                    val userId = e.getInt("userId")
+                    val userId = e.getInt("userId", -1)
                     val pkg = e.getString("pkg")   // per-app proxy; null = legacy per-user
-                    val saved = GuestProxy.save(
-                        userId,
-                        pkg,
-                        e.getString("type", "http"),
-                        e.getString("server", ""),
-                        e.getInt("port"),
-                        e.getString("username", ""),
-                        e.getString("password", "")
+                    val type = e.getString("type", "http").trim().lowercase()
+                    val server = e.getString("server", "").trim()
+                    val port = e.getInt("port")
+                    val username = e.getString("username", "")
+                    val password = e.getString("password", "")
+                    val validNode = server.isNotBlank() && port in 1..65535 &&
+                        type in setOf("http", "https", "socks", "socks5")
+                    val knownUser = userId >= 0 && BlackBoxCore.get().users.any { it.id == userId }
+                    val knownApp = pkg == null || (knownUser && BlackBoxCore.get().isInstalled(pkg, userId))
+                    val conflict = validNode && knownApp && pkg != null && GuestProxy.wouldConflictWithSharedGms(
+                        userId, pkg, type, server, port, username, password
                     )
-                    val gmsRoute = if (saved && pkg != null) GuestProxy.syncGmsRouteForUser(userId) else null
+                    val saved = validNode && knownUser && knownApp && !conflict && GuestProxy.save(
+                        userId, pkg, type, server, port, username, password
+                    )
+                    val gmsRoute = if (saved && GuestProxy.isSharedGmsActive(userId)) {
+                        GuestProxy.syncGmsRouteForUser(userId)
+                    } else null
                     // The guest reads its proxy at process init, so a clone that's already running
                     // (or kept alive) would keep its OLD proxy / go direct. Force-stop it so the
                     // next launch applies the just-assigned proxy — this is why "the proxy wasn't
@@ -152,6 +244,10 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     }
                     res.putBoolean("ok", saved)
                     res.putString("state", when {
+                        !validNode -> "INVALID_PROXY"
+                        !knownUser -> "UNKNOWN_USER"
+                        !knownApp -> "UNKNOWN_CLONE"
+                        conflict -> "ROUTE_CONFLICT"
                         !saved -> "CONFIG_REJECTED"
                         gmsRoute == GuestProxy.GmsRouteStatus.CONFLICT ||
                             gmsRoute == GuestProxy.GmsRouteStatus.INVALID -> "CONFIG_SAVED_GMS_BLOCKED"
@@ -159,7 +255,15 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     })
                     res.putString("gmsRoute", gmsRoute?.name.orEmpty())
                     if (saved) res.putString("routeId", GuestProxy.routeIdFor(userId, pkg))
-                    if (!saved) res.putString("err", "Proxy configuration was invalid or could not be committed")
+                    if (!saved) {
+                        res.putString("err", when {
+                            !validNode -> "The selected proxy configuration is invalid"
+                            !knownUser -> "The BlackBox user no longer exists"
+                            !knownApp -> "The selected clone is not installed in that BlackBox user"
+                            conflict -> "This BlackBox user already uses a different proxy while Google services are shared. Move this app to a separate BlackBox user or assign the same proxy."
+                            else -> "Proxy configuration was invalid or could not be committed"
+                        })
+                    }
                 }
                 "getRouteState" -> {
                     val e = extras!!
@@ -204,6 +308,24 @@ class BlackBoxBridgeProvider : ContentProvider() {
                         res.putBoolean("complete", complete)
                         res.putString("identityDigest", digest)
                         if (!complete) res.putString("err", "Incomplete identity profile")
+                    }
+                }
+                "userSecurityState" -> {
+                    // Signed, non-secret state used by ShieldProxy before it saves assignments.
+                    // ShieldProxy must not guess from a local preference: GMS may have been
+                    // installed directly in BlackBox or restored on another phone.
+                    val userId = extras!!.getInt("userId", -1)
+                    val knownUser = userId >= 0 && BlackBoxCore.get().users.any { it.id == userId }
+                    res.putBoolean("ok", knownUser)
+                    if (knownUser) {
+                        res.putBoolean("gmsInstalled", BlackBoxCore.get().isInstallGms(userId))
+                        res.putBoolean(
+                            "keepAliveEnabled",
+                            top.niunaijun.blackbox.core.GuestKeepAlive.isEnabled(userId)
+                        )
+                        res.putBoolean("sharedGmsActive", GuestProxy.isSharedGmsActive(userId))
+                    } else {
+                        res.putString("err", "Unknown BlackBox user")
                     }
                 }
                 "verifyRoute" -> {
@@ -271,8 +393,16 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     // Launch a clone (so it picks up a freshly-assigned proxy). Lets ShieldProxy
                     // open all of a list's clones at once.
                     val e = extras!!
-                    BlackBoxCore.get().launchApk(e.getString("pkg"), e.getInt("userId"))
-                    res.putBoolean("ok", true)
+                    val userId = e.getInt("userId")
+                    val launched = BlackBoxCore.get().launchApk(e.getString("pkg"), userId)
+                    res.putBoolean("ok", launched)
+                    if (!launched) {
+                        res.putString(
+                            "err",
+                            BlackBoxCore.get().getLaunchBlockReason(userId)
+                                ?: "The clone could not be launched"
+                        )
+                    }
                 }
                 "uninstallApp" -> {
                     val e = extras!!

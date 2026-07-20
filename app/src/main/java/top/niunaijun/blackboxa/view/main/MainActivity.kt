@@ -471,22 +471,52 @@ class MainActivity : LoadingActivity() {
         val name = AppManager.mRemarkSharedPreferences
             .getString("Remark$userId", "User $userId")
             .orEmpty().ifBlank { "User $userId" }
-        val actions = if (userId == 0) {
-            arrayOf("Open user", "Rename user")
-        } else {
-            arrayOf("Open user", "Rename user", "Delete user")
+        val actions = mutableListOf("Open user", "Rename user")
+        if (!top.niunaijun.blackbox.core.KeystoreIsolation.isEnabled(userId)) {
+            actions.add("Protect encrypted logins")
         }
+        if (userId != 0) actions.add("Delete user")
         AlertDialog.Builder(this)
             .setTitle("$name  •  User $userId")
-            .setItems(actions) { _, which ->
-                when (which) {
-                    0 -> selectUser(userId)
-                    1 -> showRenameUserDialog(userId, name)
-                    2 -> showDeleteUserDialog(userId, name)
+            .setItems(actions.toTypedArray()) { _, which ->
+                when (actions[which]) {
+                    "Open user" -> selectUser(userId)
+                    "Rename user" -> showRenameUserDialog(userId, name)
+                    "Protect encrypted logins" -> showKeystoreUpgradeDialog(userId, name)
+                    "Delete user" -> showDeleteUserDialog(userId, name)
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun showKeystoreUpgradeDialog(userId: Int, name: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Protect $name's encrypted logins?")
+            .setMessage(
+                "This gives User $userId a private Android security-key space so another clone " +
+                    "cannot replace its Instagram, WhatsApp or other encrypted login keys.\n\n" +
+                    "Android does not allow old keys to be copied or renamed. Existing apps may " +
+                    "ask you to log in one time after this upgrade. No app files are deleted."
+            )
+            .setPositiveButton("Protect this user") { _, _ -> upgradeKeystoreIsolation(userId, name) }
+            .setNegativeButton("Not now", null)
+            .show()
+    }
+
+    private fun upgradeKeystoreIsolation(userId: Int, name: String) {
+        showLoading()
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    BlackBoxCore.get().getInstalledApplications(0, userId).orEmpty()
+                        .forEach { BlackBoxCore.get().stopPackage(it.packageName, userId) }
+                    top.niunaijun.blackbox.core.KeystoreIsolation.enableForUser(userId)
+                }.getOrDefault(false)
+            }
+            hideLoading()
+            toast(if (ok) "$name encrypted-login isolation is active" else "Could not protect $name")
+        }
     }
 
     private fun showRenameUserDialog(userId: Int, oldName: String) {

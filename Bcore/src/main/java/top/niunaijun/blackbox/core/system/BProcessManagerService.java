@@ -54,6 +54,16 @@ public class BProcessManagerService implements ISystemService {
         ApplicationInfo info = BPackageManagerService.get().getApplicationInfo(packageName, 0, userId);
         if (info == null)
             return null;
+        // Fail before allocating a physical proxy process when a protected app has lost,
+        // corrupted, or conflicting route credentials. GMS clients retry failed binds very
+        // aggressively; allowing each retry to start another proxy process can exhaust every
+        // slot and ANR the container. Unprotected apps are unaffected.
+        if (GuestProxy.isRouteRequired(userId, packageName)
+                && GuestProxy.routeIdFor(userId, packageName) == null) {
+            Slog.e(TAG, "refusing process start for required invalid route: user="
+                    + userId + " pkg=" + packageName + " process=" + processName);
+            return null;
+        }
         ProcessRecord app;
         int buid = BUserHandle.getUid(userId, BPackageManagerService.get().getAppId(packageName));
         synchronized (mProcessLock) {
@@ -94,7 +104,20 @@ public class BProcessManagerService implements ISystemService {
                 mProcessMap.put(buid, bProcess);
             }
             if (!initAppProcessL(app)) {
-                
+                // Provider startup already created the physical proxy process. If guest
+                // initialization failed (for example, a fail-closed proxy assignment), leaving
+                // that process alive consumes a slot and repeated GMS binds can exhaust every slot
+                // and ANR the container. Kill it before removing the virtual process record.
+                // app.pid is assigned only after successful initialization, so app.kill()
+                // cannot clean up this failure path. Resolve the PID from the allocated proxy
+                // slot and terminate that physical worker directly.
+                try {
+                    int failedPid = getPid(BlackBoxCore.getContext(),
+                            ProxyManifest.getProcessName(app.bpid));
+                    if (failedPid > 0 && failedPid != Process.myPid()) {
+                        Process.killProcess(failedPid);
+                    }
+                } catch (Throwable ignored) { }
                 bProcess.remove(processName);
                 mPidsSelfLocked.remove(app);
                 app = null;

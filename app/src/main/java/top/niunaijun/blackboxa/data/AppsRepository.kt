@@ -438,8 +438,18 @@ class AppsRepository {
         }
     }
 
-    fun launchApk(packageName: String, userId: Int, launchLiveData: MutableLiveData<Boolean>) {
+    fun launchApk(
+        packageName: String,
+        userId: Int,
+        launchLiveData: MutableLiveData<Boolean>,
+        resultLiveData: MutableLiveData<String>
+    ) {
         try {
+            val blockReason = BlackBoxCore.get().getLaunchBlockReason(userId)
+            if (!blockReason.isNullOrBlank()) {
+                resultLiveData.postValue(blockReason)
+                return
+            }
             val result = BlackBoxCore.get().launchApk(packageName, userId)
             launchLiveData.postValue(result)
         } catch (e: Exception) {

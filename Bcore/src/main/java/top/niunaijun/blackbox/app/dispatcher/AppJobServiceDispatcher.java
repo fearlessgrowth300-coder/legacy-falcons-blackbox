@@ -4,8 +4,8 @@ import android.app.job.JobParameters;
 import android.app.job.JobService;
 import android.content.res.Configuration;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
@@ -14,7 +14,7 @@ import top.niunaijun.blackbox.entity.JobRecord;
 
 public class AppJobServiceDispatcher {
     private static final AppJobServiceDispatcher sServiceDispatcher = new AppJobServiceDispatcher();
-    private final Map<Integer, JobRecord> mJobRecords = new HashMap<>();
+    private final Map<Integer, JobRecord> mJobRecords = new ConcurrentHashMap<>();
 
     public static AppJobServiceDispatcher get() {
         return sServiceDispatcher;
@@ -38,9 +38,7 @@ public class AppJobServiceDispatcher {
             return false;
         boolean b = jobService.onStopJob(params);
         jobService.onDestroy();
-        synchronized (mJobRecords) {
-            mJobRecords.remove(params.getJobId());
-        }
+        mJobRecords.remove(params.getJobId());
         return b;
     }
 
@@ -53,11 +51,15 @@ public class AppJobServiceDispatcher {
     }
 
     public void onDestroy() {
-
-
-
-
-
+        for (JobRecord jobRecord : mJobRecords.values()) {
+            if (jobRecord.mJobService != null) {
+                try {
+                    jobRecord.mJobService.onDestroy();
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        mJobRecords.clear();
     }
 
     public void onLowMemory() {
@@ -84,6 +86,8 @@ public class AppJobServiceDispatcher {
             }
             try {
                 JobRecord record = BlackBoxCore.getBJobManager().queryJobRecord(BlackBoxCore.getAppProcessName(), jobId);
+                if (record == null || record.mServiceInfo == null)
+                    return null;
                 record.mJobService = BlackBoxCore.currentActivityThread().createJobService(record.mServiceInfo);
                 if (record.mJobService == null)
                     return null;

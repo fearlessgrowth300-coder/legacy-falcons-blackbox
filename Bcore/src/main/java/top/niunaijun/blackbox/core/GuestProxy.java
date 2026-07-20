@@ -4,8 +4,11 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.json.JSONObject;
@@ -182,6 +185,93 @@ public class GuestProxy {
         return GMS_ROUTE_PACKAGES.contains(pkg);
     }
 
+    /** Non-secret inventory for ShieldProxy's route manager. Includes both valid configs and
+     * fail-closed required markers so a corrupt/missing credential file can still be removed.
+     * Shared-GMS copies and the internal probe are implementation details, not user assignments. */
+    public static synchronized List<String> configuredPackagesForUser(int userId) {
+        if (userId < 0) return Collections.emptyList();
+        try {
+            File dir = BEnvironment.getUserDir(userId);
+            File[] entries = dir == null ? null : dir.listFiles();
+            if (entries == null) return Collections.emptyList();
+            Set<String> packages = new HashSet<>();
+            for (File entry : entries) {
+                if (entry == null || !entry.isFile()) continue;
+                String name = entry.getName();
+                String pkg = null;
+                if (name.startsWith("proxy_required_") && name.endsWith(".flag")) {
+                    pkg = name.substring("proxy_required_".length(), name.length() - ".flag".length());
+                } else if (name.startsWith("proxy_") && name.endsWith(".json")) {
+                    pkg = name.substring("proxy_".length(), name.length() - ".json".length());
+                }
+                if (validPackage(pkg) && !isGmsRoutePackage(pkg) && !"com.fpprobe".equals(pkg)) {
+                    packages.add(pkg);
+                }
+            }
+            List<String> sorted = new ArrayList<>(packages);
+            Collections.sort(sorted);
+            return sorted;
+        } catch (Throwable ignored) {
+            return Collections.emptyList();
+        }
+    }
+
+    /** Google account/auth/push services share one process identity inside a virtual user. Once
+     * GMS is installed (or keep-alive is enabled), differently routed apps in that same user would
+     * make GMS exit on an ambiguous IP and must be rejected before any credential file is changed. */
+    public static boolean isSharedGmsActive(int userId) {
+        try {
+            return GmsCore.isInstalledGoogleService(userId) || GuestKeepAlive.isEnabled(userId);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /** Preflight for an app-specific assignment. This is deliberately read-only so callers can
+     * show a clear "move this app to another BlackBox user" warning without first poisoning the
+     * user's existing GMS route. Corrupt sibling configs also fail closed. */
+    public static boolean wouldConflictWithSharedGms(int userId, String pkg, String type,
+                                                     String server, int port, String user,
+                                                     String pass) {
+        if (!isSharedGmsActive(userId) || !validPackage(pkg) || isGmsRoutePackage(pkg)
+                || "com.fpprobe".equals(pkg)) {
+            return false;
+        }
+        try {
+            JSONObject candidate = new JSONObject();
+            candidate.put("enabled", true);
+            candidate.put("type", type == null ? "" : type.trim().toLowerCase());
+            candidate.put("server", server == null ? "" : server.trim());
+            candidate.put("port", port);
+            candidate.put("username", user == null ? "" : user);
+            candidate.put("password", pass == null ? "" : pass);
+            String candidateRoute = routeId(candidate);
+            if (candidateRoute == null) return true;
+
+            File dir = BEnvironment.getUserDir(userId);
+            File[] configs = dir == null ? null : dir.listFiles();
+            if (configs == null) return false;
+            for (File sibling : configs) {
+                String name = sibling.getName();
+                if (!sibling.isFile() || !name.startsWith("proxy_") || !name.endsWith(".json")) {
+                    continue;
+                }
+                String siblingPkg = name.substring("proxy_".length(), name.length() - ".json".length());
+                if (pkg.equals(siblingPkg) || !validPackage(siblingPkg)
+                        || isGmsRoutePackage(siblingPkg) || "com.fpprobe".equals(siblingPkg)) {
+                    continue;
+                }
+                JSONObject siblingConfig = new JSONObject(
+                        ProxyConfigCrypto.readText(sibling, userId, siblingPkg));
+                String siblingRoute = routeId(siblingConfig);
+                if (siblingRoute == null || !candidateRoute.equals(siblingRoute)) return true;
+            }
+            return false;
+        } catch (Throwable ignored) {
+            return true;
+        }
+    }
+
     private static boolean blockGmsRoutes(int userId) {
         boolean changed = false;
         for (String pkg : GMS_ROUTE_PACKAGES) {
@@ -243,6 +333,11 @@ public class GuestProxy {
             Slog.w(TAG, "refusing invalid proxy config for user " + userId + " pkg " + pkg);
             return false;
         }
+        if (pkg != null && wouldConflictWithSharedGms(
+                userId, pkg, normalizedType, normalizedServer, port, user, pass)) {
+            Slog.w(TAG, "refusing route conflict for shared-GMS user " + userId + " pkg " + pkg);
+            return false;
+        }
         try {
             // Commit policy first. If anything later fails, the app remains blocked instead of direct.
             if (!markRouteRequired(userId, pkg)) return false;
@@ -256,7 +351,9 @@ public class GuestProxy {
 
             ProxyConfigCrypto.writeText(file(userId, pkg), userId, pkg, o.toString());
             if (pkg != null && !pkg.isEmpty() && !isGmsRoutePackage(pkg)
-                    && !"com.fpprobe".equals(pkg)) syncGmsRouteForUser(userId);
+                    && !"com.fpprobe".equals(pkg) && isSharedGmsActive(userId)) {
+                syncGmsRouteForUser(userId);
+            }
             Slog.d(TAG, "saved protected proxy route for user " + userId + " pkg " + pkg);
             return true;
         } catch (Throwable e) {
@@ -280,7 +377,9 @@ public class GuestProxy {
                 if (required.exists() && !required.delete()) return false;
             }
             if (pkg != null && !pkg.isEmpty() && !isGmsRoutePackage(pkg)
-                    && !"com.fpprobe".equals(pkg)) syncGmsRouteForUser(userId);
+                    && !"com.fpprobe".equals(pkg) && isSharedGmsActive(userId)) {
+                syncGmsRouteForUser(userId);
+            }
             return true;
         } catch (Throwable ignored) {
             return false;

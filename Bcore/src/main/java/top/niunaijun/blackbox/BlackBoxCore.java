@@ -1104,6 +1104,12 @@ public class BlackBoxCore extends ClientConfiguration {
     }
 
     public boolean launchApk(String packageName, int userId) {
+        String routeBlock = getLaunchBlockReason(userId);
+        if (routeBlock != null) {
+            Slog.e(TAG, "Blocked unsafe launch for user " + userId + " pkg "
+                    + packageName + ": " + routeBlock);
+            return false;
+        }
         onBeforeMainLaunchApk(packageName, userId);
         
         
@@ -1129,6 +1135,25 @@ public class BlackBoxCore extends ClientConfiguration {
         }
         startActivity(launchIntentForPackage, userId);
         return true;
+    }
+
+    /**
+     * A virtual user with shared Google services must have one usable common route. Returning a
+     * message (instead of opening the guest) prevents GMS bind loops, clone crashes, and accidental
+     * direct-network behavior while still telling the UI how the user can repair the assignment.
+     */
+    public String getLaunchBlockReason(int userId) {
+        if (!GuestProxy.isSharedGmsActive(userId)) return null;
+        GuestProxy.GmsRouteStatus route = GuestProxy.syncGmsRouteForUser(userId);
+        if (route == GuestProxy.GmsRouteStatus.CONFLICT) {
+            return "This BlackBox user has apps assigned to different proxies while Google services are shared. "
+                    + "Move this app to a separate BlackBox user, or assign the same proxy to every app in this user.";
+        }
+        if (route == GuestProxy.GmsRouteStatus.INVALID) {
+            return "This BlackBox user's protected Google-services route is missing or invalid. "
+                    + "Reconnect the proxy in ShieldProxy before opening the clone.";
+        }
+        return null;
     }
     public boolean isInstalled(String packageName, int userId) {
         return getBPackageManager().isInstalled(packageName, userId);

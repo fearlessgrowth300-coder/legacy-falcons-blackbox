@@ -176,6 +176,11 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                                         providerInfo.packageName,
                                         providerInfo.processName,
                                         BActivityThread.getUserId());
+                        if (appConfig == null) {
+                            Slog.e(TAG, "Protected provider process was blocked: "
+                                    + providerInfo.packageName + "/" + providerInfo.processName);
+                            return null;
+                        }
                         if (appConfig.bpid != BActivityThread.getAppPid()) {
                             providerBinder = BlackBoxCore.getBActivityManager()
                                     .acquireContentProviderClient(providerInfo);

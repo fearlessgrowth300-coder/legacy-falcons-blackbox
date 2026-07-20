@@ -1,22 +1,30 @@
 package top.niunaijun.blackbox.fake.service;
 
 import android.app.job.JobInfo;
+import android.app.job.JobScheduler;
 import android.content.Context;
 import android.os.IBinder;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.List;
 
 import black.android.app.job.BRIJobSchedulerStub;
 import black.android.os.BRServiceManager;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.entity.AppConfig;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Slog;
-import top.niunaijun.blackbox.utils.UIDSpoofingHelper;
 
-
+/**
+ * Virtualizes JobScheduler without ever falling through to a real, physically installed app.
+ * Android 14+ namespaces are replaced with a stable per-BlackBox-user/process namespace. Older
+ * Android releases are protected by BJobManagerService's single-owner check for legacy job IDs.
+ */
 public class IJobServiceProxy extends BinderInvocationStub {
     public static final String TAG = "JobServiceStub";
 
@@ -26,7 +34,7 @@ public class IJobServiceProxy extends BinderInvocationStub {
 
     @Override
     protected Object getWho() {
-        IBinder jobScheduler = BRServiceManager.get().getService("jobscheduler");
+        IBinder jobScheduler = BRServiceManager.get().getService(Context.JOB_SCHEDULER_SERVICE);
         return BRIJobSchedulerStub.get().asInterface(jobScheduler);
     }
 
@@ -38,161 +46,35 @@ public class IJobServiceProxy extends BinderInvocationStub {
     @ProxyMethod("schedule")
     public static class Schedule extends MethodHook {
         @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            try {
-                
-                if (args == null || args.length == 0) {
-                    Slog.w(TAG, "Schedule: No arguments provided, returning RESULT_FAILURE");
-                    return 0; 
-                }
-                
-                if (args[0] == null) {
-                    Slog.w(TAG, "Schedule: args[0] is null, returning RESULT_FAILURE");
-                    return 0; 
-                }
-                
-                if (!(args[0] instanceof JobInfo)) {
-                    Slog.w(TAG, "Schedule: args[0] is not JobInfo: " + args[0].getClass().getSimpleName());
-                    
-                    return handleNonJobInfoSchedule(who, method, args);
-                }
-                
-                JobInfo jobInfo = (JobInfo) args[0];
-                Slog.d(TAG, "Schedule: Processing JobInfo for package: " + jobInfo.getService().getPackageName());
-                
-                
-                try {
-                    JobInfo proxyJobInfo = BlackBoxCore.getBJobManager().schedule(jobInfo);
-                    if (proxyJobInfo != null) {
-                        args[0] = proxyJobInfo;
-                        Slog.d(TAG, "Schedule: Successfully created proxy JobInfo");
-                        return method.invoke(who, args);
-                    }
-                } catch (Exception e) {
-                    Slog.w(TAG, "Schedule: BlackBox job manager failed, trying system fallback", e);
-                }
-                
-                
-                return scheduleWithUIDSpoofing(who, method, args, jobInfo);
-                
-            } catch (Exception e) {
-                Slog.e(TAG, "Schedule: Error processing job", e);
-                
-                
-                if (isUIDValidationError(e)) {
-                    Slog.w(TAG, "UID validation failed for job scheduling, returning RESULT_FAILURE: " + e.getCause().getMessage());
-                    return 0; 
-                }
-                
-                
-                try {
-                    return method.invoke(who, args);
-                } catch (Exception fallbackException) {
-                    Slog.e(TAG, "Schedule: Fallback also failed", fallbackException);
-                    return 0; 
-                }
-            }
+        protected Object hook(Object who, Method method, Object[] args) {
+            return scheduleInternal(who, method, args);
         }
-        
-        
-        private Object handleNonJobInfoSchedule(Object who, Method method, Object[] args) throws Throwable {
-            try {
-                
-                if (args[0] instanceof String) {
-                    String workId = (String) args[0];
-                    Slog.d(TAG, "Schedule: Handling WorkManager string ID: " + workId);
-                    
-                    
-                    JobInfo minimalJobInfo = createMinimalJobInfo(workId);
-                    if (minimalJobInfo != null) {
-                        args[0] = minimalJobInfo;
-                        return method.invoke(who, args);
-                    }
-                }
-                
-                
-                return method.invoke(who, args);
-            } catch (Exception e) {
-                Slog.w(TAG, "Schedule: Failed to handle non-JobInfo schedule", e);
-                return 0; 
-            }
-        }
-        
-        
-        private Object scheduleWithUIDSpoofing(Object who, Method method, Object[] args, JobInfo jobInfo) throws Throwable {
-            try {
-                
-                String targetPackage = jobInfo.getService().getPackageName();
-                Slog.d(TAG, "Schedule: Attempting UID spoofing for package: " + targetPackage);
-                
-                
-                UIDSpoofingHelper.logUIDInfo("job_schedule", targetPackage);
-                
-                
-                if (UIDSpoofingHelper.needsUIDSpoofing("job_schedule", targetPackage)) {
-                    Slog.d(TAG, "Schedule: UID spoofing needed, attempting to bypass validation");
-                    
-                    
-                    
-                    Slog.w(TAG, "Schedule: UID spoofing not fully implemented, returning RESULT_FAILURE");
-                    return 0; 
-                } else {
-                    Slog.d(TAG, "Schedule: No UID spoofing needed, proceeding normally");
-                    return method.invoke(who, args);
-                }
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Schedule: UID spoofing failed", e);
-                return 0; 
-            }
-        }
-        
-        
-        private JobInfo createMinimalJobInfo(String workId) {
-            try {
-                
-                
-                Slog.d(TAG, "Schedule: Creating minimal JobInfo for work ID: " + workId);
-                return null; 
-            } catch (Exception e) {
-                Slog.w(TAG, "Schedule: Failed to create minimal JobInfo", e);
-                return null;
-            }
-        }
-        
-        
-        private boolean isUIDValidationError(Exception e) {
-            if (e.getCause() instanceof IllegalArgumentException) {
-                String message = e.getCause().getMessage();
-                return message != null && message.contains("cannot schedule job");
-            }
-            
-            if (e.getCause() instanceof android.os.RemoteException) {
-                String message = e.getCause().getMessage();
-                return message != null && message.contains("cannot schedule job");
-            }
-            
-            return false;
+    }
+
+    @ProxyMethod("enqueue")
+    public static class Enqueue extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) {
+            return scheduleInternal(who, method, args);
         }
     }
 
     @ProxyMethod("cancel")
     public static class Cancel extends MethodHook {
         @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+        protected Object hook(Object who, Method method, Object[] args) {
+            int jobIdIndex = findLastIntegerArg(args);
+            if (jobIdIndex < 0) return defaultValue(method);
+            int guestJobId = (Integer) args[jobIdIndex];
             try {
-                Integer jobId = (Integer) args[0];
-                if (jobId == null) {
-                    Slog.w(TAG, "Cancel: JobId is null");
-                    return method.invoke(who, args);
-                }
-                
-                args[0] = BlackBoxCore.getBJobManager()
-                        .cancel(BActivityThread.getAppConfig().processName, jobId);
+                int systemJobId = BlackBoxCore.getBJobManager().cancel(processName(), guestJobId);
+                if (systemJobId < 0) return defaultValue(method);
+                args[jobIdIndex] = systemJobId;
+                applyIsolatedNamespace(method, args);
                 return method.invoke(who, args);
-            } catch (Exception e) {
-                Slog.e(TAG, "Cancel: Error canceling job", e);
-                return method.invoke(who, args);
+            } catch (Throwable t) {
+                Slog.w(TAG, "Cancel failed closed for virtual job " + guestJobId, t);
+                return defaultValue(method);
             }
         }
     }
@@ -200,156 +82,157 @@ public class IJobServiceProxy extends BinderInvocationStub {
     @ProxyMethod("cancelAll")
     public static class CancelAll extends MethodHook {
         @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+        protected Object hook(Object who, Method method, Object[] args) {
             try {
-                BlackBoxCore.getBJobManager().cancelAll(BActivityThread.getAppConfig().processName);
-                return method.invoke(who, args);
-            } catch (Exception e) {
-                Slog.e(TAG, "CancelAll: Error canceling all jobs", e);
-                return method.invoke(who, args);
+                BlackBoxCore.getBJobManager().cancelAll(processName());
+                // On namespace-capable Android this cancels only the current virtual app's jobs.
+                // Legacy cancelAll is intentionally not forwarded because it would cancel jobs
+                // belonging to every clone sharing the BlackBox host UID.
+                if (applyIsolatedNamespace(method, args)) {
+                    return method.invoke(who, args);
+                }
+            } catch (Throwable t) {
+                Slog.w(TAG, "Cancel-all failed closed for virtual process " + processName(), t);
+            }
+            return defaultValue(method);
+        }
+    }
+
+    @ProxyMethod("getAllPendingJobs")
+    public static class GetAllPendingJobs extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) {
+            try {
+                // Modern Android can safely ask the real scheduler after constraining the query to
+                // this clone's namespace. Legacy Android receives only BlackBox's virtual records.
+                if (applyIsolatedNamespace(method, args)) {
+                    return method.invoke(who, args);
+                }
+                List<JobInfo> jobs = BlackBoxCore.getBJobManager().getAllPendingJobs(processName());
+                return adaptJobList(method.getReturnType(), jobs);
+            } catch (Throwable t) {
+                Slog.w(TAG, "Pending-job query failed closed", t);
+                return adaptJobList(method.getReturnType(), Collections.emptyList());
             }
         }
     }
 
-    @ProxyMethod("enqueue")
-    public static class Enqueue extends MethodHook {
+    @ProxyMethod("getPendingJob")
+    public static class GetPendingJob extends MethodHook {
         @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+        protected Object hook(Object who, Method method, Object[] args) {
+            int jobIdIndex = findLastIntegerArg(args);
+            if (jobIdIndex < 0) return null;
             try {
-                
-                if (args == null || args.length == 0) {
-                    Slog.w(TAG, "Enqueue: No arguments provided, returning RESULT_FAILURE");
-                    return 0; 
-                }
-                
-                if (args[0] == null) {
-                    Slog.w(TAG, "Enqueue: args[0] is null, returning RESULT_FAILURE");
-                    return 0; 
-                }
-                
-                if (!(args[0] instanceof JobInfo)) {
-                    Slog.w(TAG, "Enqueue: args[0] is not JobInfo: " + args[0].getClass().getSimpleName());
-                    
-                    return handleNonJobInfoEnqueue(who, method, args);
-                }
-                
-                JobInfo jobInfo = (JobInfo) args[0];
-                Slog.d(TAG, "Enqueue: Processing JobInfo for package: " + jobInfo.getService().getPackageName());
-                
-                
-                try {
-                    JobInfo proxyJobInfo = BlackBoxCore.getBJobManager().schedule(jobInfo);
-                    if (proxyJobInfo != null) {
-                        args[0] = proxyJobInfo;
-                        Slog.d(TAG, "Enqueue: Successfully created proxy JobInfo");
-                        return method.invoke(who, args);
-                    }
-                } catch (Exception e) {
-                    Slog.w(TAG, "Enqueue: BlackBox job manager failed, trying system fallback", e);
-                }
-                
-                
-                return enqueueWithUIDSpoofing(who, method, args, jobInfo);
-                
-            } catch (Exception e) {
-                Slog.e(TAG, "Enqueue: Error processing job", e);
-                
-                
-                if (isUIDValidationError(e)) {
-                    Slog.w(TAG, "UID validation failed for job enqueuing, returning RESULT_FAILURE: " + e.getCause().getMessage());
-                    return 0; 
-                }
-                
-                
-                try {
-                    return method.invoke(who, args);
-                } catch (Exception fallbackException) {
-                    Slog.e(TAG, "Enqueue: Fallback also failed", fallbackException);
-                    return 0; 
-                }
-            }
-        }
-        
-        
-        private Object handleNonJobInfoEnqueue(Object who, Method method, Object[] args) throws Throwable {
-            try {
-                
-                if (args[0] instanceof String) {
-                    String workId = (String) args[0];
-                    Slog.d(TAG, "Enqueue: Handling WorkManager string ID: " + workId);
-                    
-                    
-                    JobInfo minimalJobInfo = createMinimalJobInfo(workId);
-                    if (minimalJobInfo != null) {
-                        args[0] = minimalJobInfo;
-                        return method.invoke(who, args);
-                    }
-                }
-                
-                
-                return method.invoke(who, args);
-            } catch (Exception e) {
-                Slog.w(TAG, "Enqueue: Failed to handle non-JobInfo enqueue", e);
-                return 0; 
-            }
-        }
-        
-        
-        private Object enqueueWithUIDSpoofing(Object who, Method method, Object[] args, JobInfo jobInfo) throws Throwable {
-            try {
-                
-                String targetPackage = jobInfo.getService().getPackageName();
-                Slog.d(TAG, "Enqueue: Attempting UID spoofing for package: " + targetPackage);
-                
-                
-                UIDSpoofingHelper.logUIDInfo("job_enqueue", targetPackage);
-                
-                
-                if (UIDSpoofingHelper.needsUIDSpoofing("job_enqueue", targetPackage)) {
-                    Slog.d(TAG, "Enqueue: UID spoofing needed, attempting to bypass validation");
-                    
-                    
-                    
-                    Slog.w(TAG, "Enqueue: UID spoofing not fully implemented, returning RESULT_FAILURE");
-                    return 0; 
-                } else {
-                    Slog.d(TAG, "Enqueue: No UID spoofing needed, proceeding normally");
+                if (applyIsolatedNamespace(method, args)) {
                     return method.invoke(who, args);
                 }
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Enqueue: UID spoofing failed", e);
-                return 0; 
-            }
-        }
-        
-        
-        private JobInfo createMinimalJobInfo(String workId) {
-            try {
-                
-                
-                Slog.d(TAG, "Enqueue: Creating minimal JobInfo for work ID: " + workId);
-                return null; 
-            } catch (Exception e) {
-                Slog.w(TAG, "Enqueue: Failed to create minimal JobInfo", e);
+                return BlackBoxCore.getBJobManager().getPendingJob(
+                        processName(), (Integer) args[jobIdIndex]);
+            } catch (Throwable t) {
+                Slog.w(TAG, "Pending-job lookup failed closed", t);
                 return null;
             }
         }
-        
-        
-        private boolean isUIDValidationError(Exception e) {
-            if (e.getCause() instanceof IllegalArgumentException) {
-                String message = e.getCause().getMessage();
-                return message != null && message.contains("cannot schedule job");
-            }
-            
-            if (e.getCause() instanceof android.os.RemoteException) {
-                String message = e.getCause().getMessage();
-                return message != null && message.contains("cannot schedule job");
-            }
-            
-            return false;
+    }
+
+    private static Object scheduleInternal(Object who, Method method, Object[] args) {
+        int jobInfoIndex = findJobInfoArg(args);
+        if (jobInfoIndex < 0) {
+            Slog.w(TAG, method.getName() + " rejected: no JobInfo argument");
+            return JobScheduler.RESULT_FAILURE;
         }
+        JobInfo guestJob = (JobInfo) args[jobInfoIndex];
+        if (guestJob == null) return JobScheduler.RESULT_FAILURE;
+        int guestJobId = guestJob.getId();
+        boolean namespaceIsolated = applyIsolatedNamespace(method, args);
+        try {
+            JobInfo proxyJob = BlackBoxCore.getBJobManager().schedule(
+                    guestJob, namespaceIsolated);
+            if (proxyJob == null) return JobScheduler.RESULT_FAILURE;
+            args[jobInfoIndex] = proxyJob;
+            Object result = method.invoke(who, args);
+            if (result instanceof Integer
+                    && ((Integer) result) != JobScheduler.RESULT_SUCCESS) {
+                BlackBoxCore.getBJobManager().cancel(processName(), guestJobId);
+            }
+            return result;
+        } catch (Throwable t) {
+            BlackBoxCore.getBJobManager().cancel(processName(), guestJobId);
+            Slog.w(TAG, method.getName() + " failed closed for virtual job " + guestJobId, t);
+            return JobScheduler.RESULT_FAILURE;
+        }
+    }
+
+    private static int findJobInfoArg(Object[] args) {
+        if (args == null) return -1;
+        for (int i = 0; i < args.length; i++) {
+            if (args[i] instanceof JobInfo) return i;
+        }
+        return -1;
+    }
+
+    private static int findLastIntegerArg(Object[] args) {
+        if (args == null) return -1;
+        for (int i = args.length - 1; i >= 0; i--) {
+            if (args[i] instanceof Integer) return i;
+        }
+        return -1;
+    }
+
+    private static boolean applyIsolatedNamespace(Method method, Object[] args) {
+        if (method == null || args == null) return false;
+        Class<?>[] parameterTypes = method.getParameterTypes();
+        int count = Math.min(parameterTypes.length, args.length);
+        for (int i = 0; i < count; i++) {
+            if (parameterTypes[i] == String.class) {
+                String guestNamespace = args[i] instanceof String ? (String) args[i] : null;
+                args[i] = isolatedNamespace(guestNamespace);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String isolatedNamespace(String guestNamespace) {
+        AppConfig config = BActivityThread.getAppConfig();
+        int userId = config == null ? BActivityThread.getUserId() : config.userId;
+        String process = config == null ? processName() : config.processName;
+        int processHash = process == null ? 0 : process.hashCode();
+        int namespaceHash = guestNamespace == null ? 0 : guestNamespace.hashCode();
+        return "bb_u" + userId + "_p" + Integer.toHexString(processHash)
+                + "_n" + Integer.toHexString(namespaceHash);
+    }
+
+    private static String processName() {
+        AppConfig config = BActivityThread.getAppConfig();
+        if (config != null && config.processName != null) return config.processName;
+        String process = BlackBoxCore.getAppProcessName();
+        return process == null ? "" : process;
+    }
+
+    private static Object adaptJobList(Class<?> returnType, List<JobInfo> jobs) {
+        if (returnType == null || returnType.isAssignableFrom(jobs.getClass())
+                || List.class.isAssignableFrom(returnType)) {
+            return jobs;
+        }
+        try {
+            Constructor<?> constructor = returnType.getDeclaredConstructor(List.class);
+            constructor.setAccessible(true);
+            return constructor.newInstance(jobs);
+        } catch (Throwable t) {
+            Slog.w(TAG, "Unable to create virtual pending-job result", t);
+            return null;
+        }
+    }
+
+    private static Object defaultValue(Method method) {
+        if (method == null) return null;
+        Class<?> type = method.getReturnType();
+        if (type == boolean.class || type == Boolean.class) return false;
+        if (type == int.class || type == Integer.class) return 0;
+        if (type == long.class || type == Long.class) return 0L;
+        return null;
     }
 
     @Override

@@ -69,7 +69,7 @@ class AppsViewModel(private val repo: AppsRepository) : BaseViewModel() {
 
     fun launchApk(packageName: String, userID: Int) {
         launchOnUI {
-            repo.launchApk(packageName, userID, launchLiveData)
+            repo.launchApk(packageName, userID, launchLiveData, resultLiveData)
         }
     }
 

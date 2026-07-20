@@ -8,12 +8,9 @@ import android.content.pm.PackageInfo;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
-import android.content.pm.Signature;
-import android.os.Bundle;
 import android.os.RemoteException;
 import android.util.Log;
 
-import java.io.File;
 import java.util.Collections;
 import java.util.List;
 
@@ -34,8 +31,6 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
     private static final String INSTAGRAM_COLD_START_ACTIVITY = "com.instagram.modal.ModalActivity";
     private static final BPackageManager sPackageManager = new BPackageManager();
     private final TransactionThrottler transactionThrottler = new TransactionThrottler();
-    private static volatile boolean sIsFindingApkPath = false; 
-
     public static BPackageManager get() {
         return sPackageManager;
     }
@@ -47,10 +42,6 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
     }
     
     
-    private boolean shouldUseFallbackMode() {
-        return transactionThrottler.getFailureCount() >= 2 || !isServiceHealthy();
-    }
-
     
     public void forceReinitialize() {
         Log.d(TAG, "Force reinitializing PackageManager service");
@@ -87,11 +78,11 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
     }
 
     public Intent getLaunchIntentForPackage(String packageName, int userId) {
-        
-        if (shouldUseFallbackMode()) {
-            Log.w(TAG, "Using fallback launch intent for " + packageName + " due to service failures");
-            return createFallbackLaunchIntent(packageName);
-        }
+        // Never resolve a virtual launch through Android's host PackageManager. If the virtual
+        // package service is unavailable, returning a physical app intent can open the real-phone
+        // app outside BlackBox and bypass the clone's route and identity boundary. The virtual
+        // queries below already return no result while the service is unhealthy, which is the
+        // required fail-closed behavior.
         
         Intent intentToResolve = new Intent(Intent.ACTION_MAIN);
         intentToResolve.addCategory(Intent.CATEGORY_INFO);
@@ -147,26 +138,6 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
     }
     
     
-    private Intent createFallbackLaunchIntent(String packageName) {
-        try {
-            
-            Intent intent = BlackBoxCore.getContext().getPackageManager().getLaunchIntentForPackage(packageName);
-            if (intent != null) {
-                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                return intent;
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Fallback launch intent failed for " + packageName, e);
-        }
-        
-        
-        Intent intent = new Intent(Intent.ACTION_MAIN);
-        intent.addCategory(Intent.CATEGORY_LAUNCHER);
-        intent.setPackage(packageName);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        return intent;
-    }
-
     public ResolveInfo resolveService(Intent intent, int flags, String resolvedType, int userId) {
         
         if (transactionThrottler.shouldThrottle()) {
@@ -312,16 +283,16 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
         try {
             IBPackageManagerService service = getServiceWithFallback();
             if (service == null) {
-                Log.w(TAG, "PackageManager service is null for getApplicationInfo, using fallback");
-                return createFallbackApplicationInfo(packageName, flags, userId);
+                Log.w(TAG, "PackageManager service is null for getApplicationInfo; failing closed");
+                return null;
             }
             return service.getApplicationInfo(packageName, flags, userId);
         } catch (RemoteException e) {
             Log.e(TAG, "RemoteException in getApplicationInfo for " + packageName, e);
-            return createFallbackApplicationInfo(packageName, flags, userId);
+            return null;
         } catch (Exception e) {
             Log.e(TAG, "Exception in getApplicationInfo for " + packageName, e);
-            return createFallbackApplicationInfo(packageName, flags, userId);
+            return null;
         }
     }
 
@@ -329,16 +300,16 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
         try {
             IBPackageManagerService service = getServiceWithFallback();
             if (service == null) {
-                Log.w(TAG, "PackageManager service is null for getPackageInfo, using fallback");
-                return createFallbackPackageInfo(packageName, flags, userId);
+                Log.w(TAG, "PackageManager service is null for getPackageInfo; failing closed");
+                return null;
             }
             return service.getPackageInfo(packageName, flags, userId);
         } catch (RemoteException e) {
             Log.e(TAG, "RemoteException in getPackageInfo for " + packageName, e);
-            return createFallbackPackageInfo(packageName, flags, userId);
+            return null;
         } catch (Exception e) {
             Log.e(TAG, "Exception in getPackageInfo for " + packageName, e);
-            return createFallbackPackageInfo(packageName, flags, userId);
+            return null;
         }
     }
 
@@ -601,14 +572,11 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
     }
 
     public boolean isInstalled(String packageName, int userId) {
-        
-        if (shouldUseFallbackMode()) {
-            Log.w(TAG, "Using fallback isInstalled check for " + packageName + " due to service failures");
-            return isInstalledFallback(packageName);
-        }
-        
+        // Virtual membership is per BlackBox user. A host PackageManager fallback only proves
+        // that the shared APK exists on the real phone; it cannot prove this user owns a clone.
+        // Always ask the virtual service and return false if that authoritative check is down.
         try {
-            IBPackageManagerService service = getService();
+            IBPackageManagerService service = getServiceWithFallback();
             if (service != null) {
                 boolean result = service.isInstalled(packageName, userId);
                 transactionThrottler.reset(); 
@@ -642,24 +610,6 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
         }
         return false;
     }
-    
-    
-    private boolean isInstalledFallback(String packageName) {
-        try {
-            
-            BlackBoxCore.getContext().getPackageManager().getPackageInfo(packageName, 0);
-            return true;
-        } catch (Exception e) {
-            Log.d(TAG, "Fallback isInstalled check failed for " + packageName + ", assuming not installed");
-            
-            if (packageName != null && (packageName.equals("com.media.bestrecorder.audiorecorder") || 
-                                       packageName.startsWith("top.niunaijun.blackbox"))) {
-                Log.w(TAG, "Returning true for known app " + packageName + " despite fallback failure");
-                return true;
-            }
-            return false;
-        }
-    }
 
     public List<InstalledPackage> getInstalledPackagesAsUser(int userId) {
         try {
@@ -681,183 +631,6 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
 
     private void crash(Throwable e) {
         e.printStackTrace();
-    }
-
-    private ApplicationInfo createFallbackApplicationInfo(String packageName, int flags, int userId) {
-        Log.w(TAG, "Creating fallback ApplicationInfo for " + packageName);
-        ApplicationInfo info = new ApplicationInfo();
-        info.packageName = packageName;
-        info.flags = flags;
-        info.uid = 0; 
-        
-        
-        
-        String apkPath = findActualApkPath(packageName);
-        if (apkPath != null) {
-            info.sourceDir = apkPath;
-            info.publicSourceDir = apkPath;
-        } else {
-            
-            Log.w(TAG, "No APK found for " + packageName + ", using null paths to prevent I/O errors");
-            info.sourceDir = null; 
-            info.publicSourceDir = null; 
-        }
-        
-        info.dataDir = "/data/data/" + packageName;
-        info.nativeLibraryDir = "/data/app-lib/" + packageName;
-        info.metaData = new Bundle();
-        info.splitNames = new String[]{};
-        
-        
-        info.flags |= ApplicationInfo.FLAG_ALLOW_BACKUP;
-        info.flags |= ApplicationInfo.FLAG_SUPPORTS_RTL;
-        
-        return info;
-    }
-
-    
-    private String findActualApkPath(String packageName) {
-        if (sIsFindingApkPath) {
-            Log.w(TAG, "findActualApkPath called recursively, returning null to prevent infinite loop.");
-            return null;
-        }
-        sIsFindingApkPath = true;
-        try {
-            
-            
-            Log.d(TAG, "Skipping PackageManager call to prevent recursion for " + packageName);
-            
-            
-            String[] commonPaths = {
-                
-                "/data/app/~~*/" + packageName + "-*/base.apk",
-                "/data/app/~~*/" + packageName + "*/base.apk",
-                
-                
-                "/data/app/" + packageName + "-1/base.apk",
-                "/data/app/" + packageName + "-2/base.apk",
-                "/data/app/" + packageName + "/base.apk",
-                
-                
-                "/system/app/" + packageName + ".apk",
-                "/system/priv-app/" + packageName + ".apk",
-                "/system_ext/app/" + packageName + ".apk",
-                "/product/app/" + packageName + ".apk",
-                "/vendor/app/" + packageName + ".apk"
-            };
-            
-            
-            for (String path : commonPaths) {
-                if (isValidApkPath(path)) {
-                    Log.d(TAG, "Found existing APK at: " + path);
-                    return path;
-                }
-            }
-            
-            
-            String hashBasedPath = findHashBasedApkPath(packageName);
-            if (hashBasedPath != null) {
-                Log.d(TAG, "Found hash-based APK at: " + hashBasedPath);
-                return hashBasedPath;
-            }
-            
-            Log.w(TAG, "No existing APK found for " + packageName + ", using null path");
-            return null;
-        } finally {
-            sIsFindingApkPath = false; 
-        }
-    }
-
-    
-    private String findHashBasedApkPath(String packageName) {
-        try {
-            File dataAppDir = new File("/data/app");
-            if (!dataAppDir.exists() || !dataAppDir.isDirectory()) {
-                return null;
-            }
-            
-            
-            File[] hashDirs = dataAppDir.listFiles((dir, name) -> name.startsWith("~~") && name.endsWith("=="));
-            if (hashDirs == null) {
-                return null;
-            }
-            
-            for (File hashDir : hashDirs) {
-                if (!hashDir.isDirectory()) {
-                    continue;
-                }
-                
-                
-                File[] packageDirs = hashDir.listFiles((dir, name) -> name.startsWith(packageName));
-                if (packageDirs == null) {
-                    continue;
-                }
-                
-                for (File packageDir : packageDirs) {
-                    if (!packageDir.isDirectory()) {
-                        continue;
-                    }
-                    
-                    
-                    File baseApk = new File(packageDir, "base.apk");
-                    if (isValidApkPath(baseApk.getAbsolutePath())) {
-                        return baseApk.getAbsolutePath();
-                    }
-                }
-            }
-        } catch (Exception e) {
-            Log.d(TAG, "Error searching for hash-based APK path for " + packageName + ": " + e.getMessage());
-        }
-        
-        return null;
-    }
-
-    
-    private boolean isValidApkPath(String path) {
-        try {
-            
-            if (path.contains("*")) {
-                return false;
-            }
-            
-            File apkFile = new File(path);
-            if (!apkFile.exists()) {
-                return false;
-            }
-            
-            
-            if (!apkFile.canRead()) {
-                Log.d(TAG, "APK file not readable: " + path);
-                return false;
-            }
-            
-            long fileSize = apkFile.length();
-            if (fileSize < 1024) { 
-                Log.d(TAG, "APK file too small: " + path + " (size: " + fileSize + ")");
-                return false;
-            }
-            
-            return true;
-        } catch (Exception e) {
-            Log.d(TAG, "Error checking APK path " + path + ": " + e.getMessage());
-            return false;
-        }
-    }
-
-    private PackageInfo createFallbackPackageInfo(String packageName, int flags, int userId) {
-        Log.w(TAG, "Creating fallback PackageInfo for " + packageName);
-        PackageInfo info = new PackageInfo();
-        info.packageName = packageName;
-        info.versionCode = 1; 
-        info.versionName = "1.0"; 
-        info.applicationInfo = createFallbackApplicationInfo(packageName, flags, userId);
-        info.firstInstallTime = System.currentTimeMillis(); 
-        info.lastUpdateTime = System.currentTimeMillis(); 
-        info.installLocation = 0; 
-        info.gids = new int[]{}; 
-        info.splitNames = new String[]{}; 
-        info.signatures = new Signature[]{}; 
-        return info;
     }
 }
 

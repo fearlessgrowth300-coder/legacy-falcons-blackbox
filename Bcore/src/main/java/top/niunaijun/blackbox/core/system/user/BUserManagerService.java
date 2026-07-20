@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 
 import top.niunaijun.blackbox.core.env.BEnvironment;
+import top.niunaijun.blackbox.core.KeystoreIsolation;
 import top.niunaijun.blackbox.core.system.ISystemService;
 import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
 import top.niunaijun.blackbox.utils.CloseUtils;
@@ -82,6 +83,10 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
     public void deleteUser(int userId) throws RemoteException {
         synchronized (mUserLock) {
             synchronized (mUsers) {
+                if (!KeystoreIsolation.deleteForUser(userId)) {
+                    throw new IllegalStateException(
+                            "Could not safely delete encrypted keys for User " + userId);
+                }
                 BPackageManagerService.get().deleteUser(userId);
 
                 mUsers.remove(userId);
@@ -99,6 +104,14 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
         mUsers.put(userId, bUserInfo);
         synchronized (mUsers) {
             saveUserInfoLocked();
+        }
+        // New users are safe from their first app launch. Existing users loaded from user.conf
+        // retain legacy non-exportable keys until the owner chooses the explicit upgrade.
+        if (!KeystoreIsolation.markNewUser(userId)) {
+            mUsers.remove(userId);
+            synchronized (mUsers) { saveUserInfoLocked(); }
+            KeystoreIsolation.deleteForUser(userId);
+            throw new IllegalStateException("Could not create isolated key namespace for User " + userId);
         }
         return bUserInfo;
     }

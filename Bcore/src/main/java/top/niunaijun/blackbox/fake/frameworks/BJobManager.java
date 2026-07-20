@@ -3,6 +3,9 @@ package top.niunaijun.blackbox.fake.frameworks;
 import android.app.job.JobInfo;
 import android.os.RemoteException;
 
+import java.util.Collections;
+import java.util.List;
+
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.core.system.ServiceManager;
 import top.niunaijun.blackbox.core.system.am.IBJobManagerService;
@@ -21,9 +24,9 @@ public class BJobManager extends BlackManager<IBJobManagerService> {
         return ServiceManager.JOB_MANAGER;
     }
 
-    public JobInfo schedule(JobInfo info) {
+    public JobInfo schedule(JobInfo info, boolean namespaceIsolated) {
         try {
-            return getService().schedule(info, BActivityThread.getUserId());
+            return getService().schedule(info, BActivityThread.getUserId(), namespaceIsolated);
         } catch (RemoteException e) {
             e.printStackTrace();
         }
@@ -54,5 +57,25 @@ public class BJobManager extends BlackManager<IBJobManagerService> {
             e.printStackTrace();
         }
         return -1;
+    }
+
+    public List<JobInfo> getAllPendingJobs(String processName) {
+        try {
+            List<JobInfo> jobs = getService().getAllPendingJobs(
+                    processName, BActivityThread.getUserId());
+            return jobs == null ? Collections.emptyList() : jobs;
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+        return Collections.emptyList();
+    }
+
+    public JobInfo getPendingJob(String processName, int jobId) {
+        try {
+            return getService().getPendingJob(processName, jobId, BActivityThread.getUserId());
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }

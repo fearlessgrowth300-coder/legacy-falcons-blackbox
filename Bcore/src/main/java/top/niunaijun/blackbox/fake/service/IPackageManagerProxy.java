@@ -338,7 +338,7 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             String type = MethodParameterUtils.getFirstParam(args, String.class);
             Integer flags = MethodParameterUtils.getFirstParam(args, Integer.class);
             List<ResolveInfo> resolves = BlackBoxCore.getBPackageManager().queryBroadcastReceivers(intent, flags, type, BActivityThread.getUserId());
-            Slog.d(TAG, "queryIntentReceivers: " + resolves);
+            Slog.d(TAG, "queryIntentReceivers count: " + (resolves == null ? 0 : resolves.size()));
 
             
             if (BuildCompat.isN()) {
