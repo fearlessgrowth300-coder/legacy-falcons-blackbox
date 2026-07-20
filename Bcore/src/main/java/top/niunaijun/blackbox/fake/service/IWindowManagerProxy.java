@@ -28,6 +28,18 @@ public class IWindowManagerProxy extends BinderInvocationStub {
     protected void inject(Object baseInvocation, Object proxyInvocation) {
         replaceSystemService("window");
         BRWindowManagerGlobal.get()._set_sWindowManagerService(null);
+
+        // ActivityThread can initialize WindowManagerGlobal before BlackBox installs service
+        // hooks. In that case new guest windows reuse the already-cached raw IWindowSession and
+        // bypass IWindowSessionProxy completely. Wrap the cached session as well so relayouts,
+        // package attribution and virtual-window compatibility remain enforced.
+        IInterface cachedSession = BRWindowManagerGlobal.get().sWindowSession();
+        if (cachedSession != null) {
+            IWindowSessionProxy sessionProxy = new IWindowSessionProxy(cachedSession);
+            sessionProxy.injectHook();
+            BRWindowManagerGlobal.get()._set_sWindowSession(
+                    (IInterface) sessionProxy.getProxyInvocation());
+        }
     }
 
     @Override

@@ -12,4 +12,7 @@ public interface WindowManagerGlobal {
 
     @BStaticField
     IInterface sWindowManagerService();
+
+    @BStaticField
+    IInterface sWindowSession();
 }
