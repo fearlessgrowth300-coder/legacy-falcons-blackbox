@@ -475,11 +475,19 @@ class BlackBoxBridgeProvider : ContentProvider() {
             putString("state", "NOT_RUNNING")
             putString("err", "The routed guest process did not become ready")
         }
-        repeat(16) { attempt ->
+        repeat(30) { attempt ->
             last = BlackBoxCore.getBActivityManager()
                 .verifyProxyRoute(pkg, userId, routeId, expectedExitIp)
             if (last.getString("state") != "NOT_RUNNING") return last
-            if (attempt < 15) {
+            // WhatsApp can tear down its empty warm-up process while Android is resolving its
+            // registration/permission activities. Re-request the same guarded process during the
+            // bounded gate instead of treating that transient teardown as a permanent failure.
+            if (attempt == 7 || attempt == 15 || attempt == 23) {
+                runCatching {
+                    BlackBoxCore.getBActivityManager().initProcess(pkg, pkg, userId)
+                }
+            }
+            if (attempt < 29) {
                 try {
                     Thread.sleep(100)
                 } catch (_: InterruptedException) {
