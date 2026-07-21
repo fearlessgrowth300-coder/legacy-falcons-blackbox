@@ -361,9 +361,12 @@ public class GuestProxy {
             o.put("port", port);
             o.put("username", user == null ? "" : user);
             o.put("password", pass == null ? "" : pass);
-            o.put("countryIso", normalizeCountryIso(countryIso));
+            String effectiveCountryIso = normalizeCountryIso(countryIso);
+            if (effectiveCountryIso.isEmpty()) effectiveCountryIso = countryForProxy(user);
+            o.put("countryIso", effectiveCountryIso);
 
             ProxyConfigCrypto.writeText(file(userId, pkg), userId, pkg, o.toString());
+            updateUnregisteredWhatsAppCountry(userId, pkg, effectiveCountryIso);
             if (pkg != null && !pkg.isEmpty() && !isGmsRoutePackage(pkg)
                     && !"com.fpprobe".equals(pkg) && isSharedGmsActive(userId)) {
                 syncGmsRouteForUser(userId);
@@ -394,6 +397,7 @@ public class GuestProxy {
                     && !"com.fpprobe".equals(pkg) && isSharedGmsActive(userId)) {
                 syncGmsRouteForUser(userId);
             }
+            updateUnregisteredWhatsAppCountry(userId, pkg, physicalCountryIso());
             return true;
         } catch (Throwable ignored) {
             return false;
@@ -430,8 +434,9 @@ public class GuestProxy {
             // route two apps through the same credentials and defeats deterministic isolation.
             File f = file(userId, pkg);
             if (!f.exists()) {
-                return isRouteRequired(userId, pkg)
-                        ? ApplyStatus.INVALID_CONFIG : ApplyStatus.NOT_CONFIGURED;
+                if (isRouteRequired(userId, pkg)) return ApplyStatus.INVALID_CONFIG;
+                updateUnregisteredWhatsAppCountry(userId, pkg, physicalCountryIso());
+                return ApplyStatus.NOT_CONFIGURED;
             }
             if (!markRouteRequired(userId, pkg)) return ApplyStatus.INVALID_CONFIG;
 
@@ -537,9 +542,9 @@ public class GuestProxy {
 
     /**
      * WhatsApp stores the phone-country default the first time its registration screen opens.
-     * Legacy clones may therefore keep +234 after their route is migrated to a verified US
-     * country. Change only that cached dial code, and only while the phone-number field is empty;
-     * a registered or partly-entered account is never modified.
+     * Keep that cached default synchronized whenever a route is changed or removed. Change only
+     * the dial code, and only while the phone-number field is empty; a registered or partly-entered
+     * account is never modified.
      */
     private static void updateUnregisteredWhatsAppCountry(int userId, String pkg, String countryIso) {
         if (!"com.whatsapp".equals(pkg)) return;
@@ -627,6 +632,29 @@ public class GuestProxy {
         String value = iso.trim().toLowerCase(java.util.Locale.ROOT);
         if (value.equals("uk")) value = "gb";
         return value.matches("[a-z]{2}") ? value : "";
+    }
+
+    /** Physical phone country used after an app route is explicitly removed. */
+    private static String physicalCountryIso() {
+        try {
+            android.content.Context context = BlackBoxCore.getContext();
+            android.telephony.TelephonyManager telephony = (android.telephony.TelephonyManager)
+                    context.getSystemService(android.content.Context.TELEPHONY_SERVICE);
+            if (telephony != null) {
+                String country = normalizeCountryIso(telephony.getSimCountryIso());
+                if (!country.isEmpty()) return country;
+                country = normalizeCountryIso(telephony.getNetworkCountryIso());
+                if (!country.isEmpty()) return country;
+            }
+        } catch (Throwable ignored) {
+        }
+        String localeCountry = normalizeCountryIso(java.util.Locale.getDefault().getCountry());
+        if (!localeCountry.isEmpty()) return localeCountry;
+        // Some Wi-Fi-only devices do not expose a network country. Preserve the actual local
+        // default on the current test/launch market instead of retaining a removed proxy country.
+        String zone = java.util.TimeZone.getDefault().getID();
+        if ("Africa/Lagos".equals(zone)) return "ng";
+        return "";
     }
 
     private static String countryForProxy(String proxyUser) {
