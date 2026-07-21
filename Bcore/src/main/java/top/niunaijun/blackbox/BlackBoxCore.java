@@ -1104,6 +1104,9 @@ public class BlackBoxCore extends ClientConfiguration {
     }
 
     public boolean launchApk(String packageName, int userId) {
+        if (!ensureWhatsAppGoogleServices(packageName, userId)) {
+            return false;
+        }
         String routeBlock = getLaunchBlockReason(userId);
         if (routeBlock != null) {
             Slog.e(TAG, "Blocked unsafe launch for user " + userId + " pkg "
@@ -1134,6 +1137,32 @@ public class BlackBoxCore extends ClientConfiguration {
             return false;
         }
         startActivity(launchIntentForPackage, userId);
+        return true;
+    }
+
+    /**
+     * WhatsApp performs its official-client checks through Google Play services. A newly created
+     * BlackBox user may contain WhatsApp alone, so provision the device's official Google packages
+     * before the first launch. installGms() also copies the user's single protected route to every
+     * shared Google process; any conflicting or invalid route therefore fails closed.
+     */
+    private boolean ensureWhatsAppGoogleServices(String packageName, int userId) {
+        if (!"com.whatsapp".equals(packageName) || GmsCore.isInstalledGoogleService(userId)) {
+            return true;
+        }
+        if (!GmsCore.isSupportGms()) {
+            Slog.e(TAG, "Cannot launch WhatsApp for user " + userId
+                    + ": official Google Play services are unavailable on the host device");
+            return false;
+        }
+        Slog.i(TAG, "Provisioning official Google services for WhatsApp user " + userId);
+        InstallResult result = installGms(userId);
+        if (!result.success || !GmsCore.isInstalledGoogleService(userId)) {
+            Slog.e(TAG, "Cannot launch WhatsApp for user " + userId
+                    + ": Google-services provisioning failed: "
+                    + (result.msg == null ? "unknown error" : result.msg));
+            return false;
+        }
         return true;
     }
 
