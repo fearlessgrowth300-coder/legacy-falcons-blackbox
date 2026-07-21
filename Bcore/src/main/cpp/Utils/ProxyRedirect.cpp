@@ -245,7 +245,9 @@ static bool buildTarget(const sockaddr *dest, socklen_t len, ProxyTarget *out) {
     return !out->host.empty() && out->port > 0;
 }
 
-static bool doHandshake(int fd, const ProxyTarget &target, const ProxySnapshot &proxy) {
+static bool doHandshake(int fd, const ProxyTarget &target, const ProxySnapshot &proxy,
+                        bool *retryable) {
+    if (retryable) *retryable = true;
     if (proxy.type == PROXY_HTTP) {
         std::string req = "CONNECT ";
         req += target.host; req += ":"; req += std::to_string(target.port);
@@ -260,7 +262,17 @@ static bool doHandshake(int fd, const ProxyTarget &target, const ProxySnapshot &
         if (!writeAll(fd, req.data(), req.size())) return false;
         char line[512];
         if (readLine(fd, line, sizeof(line)) <= 0) return false;
-        if (!strstr(line, " 200")) { LOGD("http connect refused: %s", line); return false; }
+        if (!strstr(line, " 200")) {
+            int status = 0;
+            if (sscanf(line, "HTTP/%*s %d", &status) == 1 && status >= 400 && status < 500) {
+                // Authentication, policy and destination denials will not improve by immediately
+                // opening two more carrier sessions. Fail closed without extra rejected
+                // handshakes. Transient 5xx/transport failures remain retryable below.
+                if (retryable) *retryable = false;
+            }
+            LOGD("http connect refused: %s", line);
+            return false;
+        }
         // drain remaining headers until blank line
         while (readLine(fd, line, sizeof(line)) > 0) {}
         return true;
@@ -339,7 +351,7 @@ static int connectUpstream(const ProxySnapshot &proxy) {
     int result = orig_connect(fd, (const sockaddr *) &proxy.proxy, proxy.proxyLen);
     if (result != 0 && (errno == EINPROGRESS || errno == EALREADY)) {
         pollfd pfd{fd, POLLOUT, 0};
-        do { result = poll(&pfd, 1, 2500); } while (result < 0 && errno == EINTR);
+        do { result = poll(&pfd, 1, 8000); } while (result < 0 && errno == EINTR);
         if (result > 0) {
             int socketError = 0;
             socklen_t errorLen = sizeof(socketError);
@@ -361,7 +373,10 @@ static int connectUpstream(const ProxySnapshot &proxy) {
     }
 
     if (flags >= 0) fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
-    timeval handshakeTimeout{2, 0};
+    // Residential/mobile gateways occasionally need more than two seconds to establish the
+    // upstream cellular hop. A short timeout caused Instagram's parallel image requests to be
+    // reset even while the proxy itself was healthy.
+    timeval handshakeTimeout{8, 0};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &handshakeTimeout, sizeof(handshakeTimeout));
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &handshakeTimeout, sizeof(handshakeTimeout));
     int one = 1;
@@ -479,9 +494,23 @@ static void relayWorker(int listener, ProxyTarget target, ProxySnapshot proxy) {
         return;
     }
 
-    int upstream = connectUpstream(proxy);
-    if (upstream < 0 || !doHandshake(upstream, target, proxy)) {
-        if (upstream >= 0) resetAndClose(upstream);
+    int upstream = -1;
+    bool ready = false;
+    // Mobile proxy gateways can return a transient 5xx or close one CONNECT while rotating their
+    // upstream carrier. Retry on the SAME encrypted assignment; never fall back to the phone.
+    for (int attempt = 0; attempt < 3 && !ready; ++attempt) {
+        if (g_routeGeneration.load(std::memory_order_acquire) != proxy.generation) break;
+        upstream = connectUpstream(proxy);
+        bool retryable = true;
+        ready = upstream >= 0 && doHandshake(upstream, target, proxy, &retryable);
+        if (!ready) {
+            if (upstream >= 0) resetAndClose(upstream);
+            upstream = -1;
+            if (!retryable) break;
+            if (attempt < 2) usleep((useconds_t) ((attempt + 1) * 150000));
+        }
+    }
+    if (!ready) {
         resetAndClose(client);
         int failure = g_relayFailures.fetch_add(1) + 1;
         if (failure <= 8) LOGD("async proxy relay failed (#%d)", failure);

@@ -49,6 +49,13 @@ public class NativeCore {
     public static native void spoofDevice(String[] keys, String[] values);
 
     /**
+     * Merge dynamic properties (for example SIM/operator country) into the current clone profile.
+     * Unlike {@link #spoofDevice(String[], String[])}, this never clears the already-installed
+     * Build/device properties for the clone.
+     */
+    public static native void updateDeviceProperties(String[] keys, String[] values);
+
+    /**
      * Route all outbound TCP from THIS guest process through a proxy
      * (type 0=http CONNECT, 1=socks5). Pass host=null to disable.
      */

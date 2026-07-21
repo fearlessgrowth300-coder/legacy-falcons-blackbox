@@ -1205,24 +1205,47 @@ public class BActivityThread extends IBActivityThread.Stub {
             return out;
         }
 
-        HttpURLConnection connection = null;
         long started = SystemClock.elapsedRealtime();
         try {
-            connection = (HttpURLConnection) new URL("https://api.ipify.org/?format=text").openConnection();
-            connection.setConnectTimeout(8000);
-            connection.setReadTimeout(8000);
-            connection.setUseCaches(false);
-            connection.setRequestProperty("Connection", "close");
-            connection.setRequestProperty("User-Agent", "BlackBoxRouteProbe/1");
-            int code = connection.getResponseCode();
-            if (code < 200 || code >= 300) throw new java.io.IOException("HTTP " + code);
-            String ip;
-            try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-                ip = reader.readLine();
+            String ip = null;
+            Throwable lastProbeError = null;
+            // An exit-check vendor can be temporarily unavailable even while the assigned route is
+            // carrying app traffic. Probe independent HTTPS endpoints inside this exact guest
+            // process; every attempt still passes through the same fail-closed proxy hook.
+            String[] endpoints = {
+                    "https://checkip.amazonaws.com/",
+                    "https://api.ipify.org/?format=text"
+            };
+            for (String endpoint : endpoints) {
+                HttpURLConnection connection = null;
+                try {
+                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                    connection.setConnectTimeout(5000);
+                    connection.setReadTimeout(5000);
+                    connection.setUseCaches(false);
+                    connection.setRequestProperty("Connection", "close");
+                    connection.setRequestProperty("User-Agent", "BlackBoxRouteProbe/1");
+                    int code = connection.getResponseCode();
+                    if (code < 200 || code >= 300) throw new java.io.IOException("HTTP " + code);
+                    try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                            new java.io.InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                        String candidate = reader.readLine();
+                        candidate = candidate == null ? "" : candidate.trim();
+                        if (!candidate.matches("^[0-9a-fA-F:.]{3,64}$")) {
+                            throw new java.io.IOException("Invalid exit IP response");
+                        }
+                        ip = candidate;
+                        break;
+                    }
+                } catch (Throwable error) {
+                    lastProbeError = error;
+                } finally {
+                    if (connection != null) connection.disconnect();
+                }
             }
-            ip = ip == null ? "" : ip.trim();
-            if (!ip.matches("^[0-9a-fA-F:.]{3,64}$")) throw new java.io.IOException("Invalid exit IP response");
+            if (ip == null) {
+                throw new java.io.IOException("All in-clone exit checks failed", lastProbeError);
+            }
             out.putString("exitIp", ip);
             boolean exitChanged = expectedExitIp != null && !expectedExitIp.trim().isEmpty()
                     && !ip.equalsIgnoreCase(expectedExitIp.trim());
@@ -1243,7 +1266,6 @@ public class BActivityThread extends IBActivityThread.Stub {
             out.putString("state", "EXIT_CHECK_FAILED");
             out.putString("err", error.getClass().getSimpleName() + ": " + error.getMessage());
         } finally {
-            if (connection != null) connection.disconnect();
             out.putLong("latencyMs", SystemClock.elapsedRealtime() - started);
         }
         return out;

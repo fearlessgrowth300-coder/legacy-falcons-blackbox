@@ -233,6 +233,12 @@ public class GuestProxy {
     public static boolean wouldConflictWithSharedGms(int userId, String pkg, String type,
                                                      String server, int port, String user,
                                                      String pass) {
+        return wouldConflictWithSharedGms(userId, pkg, type, server, port, user, pass, null);
+    }
+
+    public static boolean wouldConflictWithSharedGms(int userId, String pkg, String type,
+                                                     String server, int port, String user,
+                                                     String pass, String countryIso) {
         if (!isSharedGmsActive(userId) || !validPackage(pkg) || isGmsRoutePackage(pkg)
                 || "com.fpprobe".equals(pkg)) {
             return false;
@@ -245,6 +251,7 @@ public class GuestProxy {
             candidate.put("port", port);
             candidate.put("username", user == null ? "" : user);
             candidate.put("password", pass == null ? "" : pass);
+            candidate.put("countryIso", normalizeCountryIso(countryIso));
             String candidateRoute = routeId(candidate);
             if (candidateRoute == null) return true;
 
@@ -314,7 +321,8 @@ public class GuestProxy {
                 || !(type.equals("http") || type.equals("https")
                 || type.equals("socks") || type.equals("socks5"))) return null;
         String canonical = type + "\n" + server + "\n" + port + "\n"
-                + o.optString("username", "") + "\n" + o.optString("password", "");
+                + o.optString("username", "") + "\n" + o.optString("password", "") + "\n"
+                + normalizeCountryIso(o.optString("countryIso", ""));
         byte[] digest = MessageDigest.getInstance("SHA-256")
                 .digest(canonical.getBytes(StandardCharsets.UTF_8));
         StringBuilder hex = new StringBuilder();
@@ -324,6 +332,11 @@ public class GuestProxy {
 
     /** Save (and enable) a proxy for a specific app in a User. Called from the host bridge. */
     public static boolean save(int userId, String pkg, String type, String server, int port, String user, String pass) {
+        return save(userId, pkg, type, server, port, user, pass, null);
+    }
+
+    public static boolean save(int userId, String pkg, String type, String server, int port,
+                               String user, String pass, String countryIso) {
         String normalizedType = type == null ? "" : type.trim().toLowerCase();
         String normalizedServer = server == null ? "" : server.trim();
         if (userId < 0 || (pkg != null && !pkg.isEmpty() && !validPackage(pkg))
@@ -334,7 +347,7 @@ public class GuestProxy {
             return false;
         }
         if (pkg != null && wouldConflictWithSharedGms(
-                userId, pkg, normalizedType, normalizedServer, port, user, pass)) {
+                userId, pkg, normalizedType, normalizedServer, port, user, pass, countryIso)) {
             Slog.w(TAG, "refusing route conflict for shared-GMS user " + userId + " pkg " + pkg);
             return false;
         }
@@ -348,6 +361,7 @@ public class GuestProxy {
             o.put("port", port);
             o.put("username", user == null ? "" : user);
             o.put("password", pass == null ? "" : pass);
+            o.put("countryIso", normalizeCountryIso(countryIso));
 
             ProxyConfigCrypto.writeText(file(userId, pkg), userId, pkg, o.toString());
             if (pkg != null && !pkg.isEmpty() && !isGmsRoutePackage(pkg)
@@ -448,7 +462,7 @@ public class GuestProxy {
 
             // Make the clock + language match the exit region so a US exit IP doesn't sit on an
             // Africa/Lagos timezone (a detectable mismatch). Derived from the proxy's region/city.
-            applyGeoConsistency(user, userId);
+            applyGeoConsistency(user, normalizeCountryIso(o.optString("countryIso", "")), userId);
             return ApplyStatus.READY;
         } catch (Throwable e) {
             NativeCore.disableProxy();
@@ -463,11 +477,13 @@ public class GuestProxy {
      * the clone's clock and language line up with its exit IP. Best-effort process-level default
      * (TimeZone.setDefault / Locale.setDefault) — covers the Java date/locale paths apps use.
      */
-    private static void applyGeoConsistency(String proxyUser, int userId) {
+    private static void applyGeoConsistency(String proxyUser, String verifiedCountryIso, int userId) {
         try {
             String u = proxyUser == null ? "" : proxyUser.toLowerCase();
-            String tz = timezoneFor(u);
-            java.util.Locale loc = localeFor(u);
+            String countryIso = verifiedCountryIso.isEmpty() ? countryForProxy(u) : verifiedCountryIso;
+            String appPkg = top.niunaijun.blackbox.app.BActivityThread.getAppPackageName();
+            String tz = timezoneFor(u, countryIso);
+            java.util.Locale loc = localeFor(u, countryIso);
             if (tz != null) {
                 java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(tz));
             }
@@ -481,15 +497,14 @@ public class GuestProxy {
             double[] ll = latLngForProxy(u);
             if (ll != null) {
                 try {
-                    String pkg = top.niunaijun.blackbox.app.BActivityThread.getAppPackageName();
                     double jLat = ll[0] + ((userId * 37 % 100) - 50) / 10000.0;   // ±0.005°
                     double jLng = ll[1] + ((userId * 53 % 100) - 50) / 10000.0;
                     top.niunaijun.blackbox.fake.frameworks.BLocationManager lm =
                             top.niunaijun.blackbox.fake.frameworks.BLocationManager.get();
-                    lm.setPattern(userId, pkg, top.niunaijun.blackbox.fake.frameworks.BLocationManager.OWN_MODE);
-                    lm.setLocation(userId, pkg,
+                    lm.setPattern(userId, appPkg, top.niunaijun.blackbox.fake.frameworks.BLocationManager.OWN_MODE);
+                    lm.setLocation(userId, appPkg,
                             new top.niunaijun.blackbox.entity.location.BLocation(jLat, jLng));
-                    Slog.d(TAG, "geo location profile applied for " + pkg);
+                    Slog.d(TAG, "geo location profile applied for " + appPkg);
                 } catch (Throwable t) {
                     Slog.w(TAG, "set fake location failed: " + t.getMessage());
                 }
@@ -497,18 +512,19 @@ public class GuestProxy {
             // SIM/carrier country → the phone-number country picker in WhatsApp/Instagram reads
             // this (gsm.sim.operator.*), NOT the IP. Match it to the proxy country so a US proxy
             // doesn't still show Nigeria +234.
-            String[] sim = simForProxy(u);   // {mccMnc, iso, operatorName}
+            String[] sim = simForCountry(countryIso);   // {mccMnc, iso, operatorName}
             if (sim != null) {
                 DeviceProfile cur = DeviceProfile.CURRENT;
                 if (cur != null) { cur.mccMnc = sim[0]; cur.simCountryIso = sim[1]; cur.simOperatorName = sim[2]; cur.simSpoofed = true; }
                 try {
                     // Doubled per slot ("us,us") — dual-SIM phones read slot [phoneId].
                     String n = sim[0] + "," + sim[0], i = sim[1] + "," + sim[1], a = sim[2] + "," + sim[2];
-                    NativeCore.spoofDevice(
+                    NativeCore.updateDeviceProperties(
                         new String[]{"gsm.operator.numeric","gsm.operator.iso-country","gsm.operator.alpha",
                                      "gsm.sim.operator.numeric","gsm.sim.operator.iso-country","gsm.sim.operator.alpha"},
                         new String[]{n, i, a, n, i, a});
                 } catch (Throwable ignored) {}
+                updateUnregisteredWhatsAppCountry(userId, appPkg, countryIso);
             }
 
             if (tz != null || loc != null || sim != null) {
@@ -517,6 +533,63 @@ public class GuestProxy {
         } catch (Throwable e) {
             Slog.w(TAG, "geo consistency failed: " + e.getMessage());
         }
+    }
+
+    /**
+     * WhatsApp stores the phone-country default the first time its registration screen opens.
+     * Legacy clones may therefore keep +234 after their route is migrated to a verified US
+     * country. Change only that cached dial code, and only while the phone-number field is empty;
+     * a registered or partly-entered account is never modified.
+     */
+    private static void updateUnregisteredWhatsAppCountry(int userId, String pkg, String countryIso) {
+        if (!"com.whatsapp".equals(pkg)) return;
+        String dialCode = dialCodeForCountry(countryIso);
+        if (dialCode == null) return;
+        File prefs = new File(BEnvironment.getDataDir(pkg, userId),
+                "shared_prefs/register_phone_prefs.xml");
+        if (!prefs.isFile()) return;
+        try {
+            String xml = top.niunaijun.blackbox.utils.FileUtils.readToString(prefs.getAbsolutePath());
+            java.util.regex.Pattern emptyPhone = java.util.regex.Pattern.compile(
+                    "<string\\s+name=\\\"com\\.whatsapp\\.registration\\.RegisterPhone\\.input_phone_number\\\"\\s*>\\s*</string>");
+            if (!emptyPhone.matcher(xml).find()) return;
+            java.util.regex.Pattern cachedCountry = java.util.regex.Pattern.compile(
+                    "(<string\\s+name=\\\"com\\.whatsapp\\.registration\\.RegisterPhone\\.input_country_code\\\"\\s*>)([^<]*)(</string>)");
+            java.util.regex.Matcher matcher = cachedCountry.matcher(xml);
+            if (!matcher.find() || dialCode.equals(matcher.group(2).trim())) return;
+            String updated = xml.substring(0, matcher.start()) + matcher.group(1) + dialCode
+                    + matcher.group(3) + xml.substring(matcher.end());
+            File tmp = new File(prefs.getParentFile(), prefs.getName() + ".country.tmp");
+            top.niunaijun.blackbox.utils.FileUtils.writeToFile(
+                    updated.getBytes(StandardCharsets.UTF_8), tmp);
+            if (!tmp.renameTo(prefs)) {
+                if (tmp.exists()) tmp.delete();
+                return;
+            }
+            Slog.d(TAG, "updated unregistered WhatsApp country cache for user " + userId);
+        } catch (Throwable error) {
+            Slog.w(TAG, "WhatsApp country cache update skipped: " + error.getClass().getSimpleName());
+        }
+    }
+
+    private static String dialCodeForCountry(String iso) {
+        String c = normalizeCountryIso(iso);
+        if (c.equals("us") || c.equals("ca")) return "1";
+        if (c.equals("gb")) return "44";
+        if (c.equals("de")) return "49";
+        if (c.equals("fr")) return "33";
+        if (c.equals("au")) return "61";
+        if (c.equals("ng")) return "234";
+        if (c.equals("es")) return "34";
+        if (c.equals("it")) return "39";
+        if (c.equals("nl")) return "31";
+        if (c.equals("ie")) return "353";
+        if (c.equals("br")) return "55";
+        if (c.equals("mx")) return "52";
+        if (c.equals("za")) return "27";
+        if (c.equals("in")) return "91";
+        if (c.equals("jp")) return "81";
+        return null;
     }
 
     /** Approximate lat/lng for the proxy's city (falls back to region/country center). */
@@ -549,18 +622,43 @@ public class GuestProxy {
     }
 
     /** Map a proxy username's country to a plausible carrier: {mccMnc, iso, operatorName}. */
-    private static String[] simForProxy(String u) {
-        if (u.contains("country-us")) return new String[]{"310260", "us", "T-Mobile"};
-        if (u.contains("country-gb") || u.contains("country-uk")) return new String[]{"23410", "gb", "O2"};
-        if (u.contains("country-ca")) return new String[]{"302610", "ca", "Rogers"};
-        if (u.contains("country-de")) return new String[]{"26201", "de", "Telekom"};
-        if (u.contains("country-fr")) return new String[]{"20801", "fr", "Orange"};
-        if (u.contains("country-au")) return new String[]{"50501", "au", "Telstra"};
+    private static String normalizeCountryIso(String iso) {
+        if (iso == null) return "";
+        String value = iso.trim().toLowerCase(java.util.Locale.ROOT);
+        if (value.equals("uk")) value = "gb";
+        return value.matches("[a-z]{2}") ? value : "";
+    }
+
+    private static String countryForProxy(String proxyUser) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("(?:^|[-_])country[-_]?([a-z]{2})(?:[-_]|$)")
+                .matcher(proxyUser == null ? "" : proxyUser);
+        return matcher.find() ? normalizeCountryIso(matcher.group(1)) : "";
+    }
+
+    private static String[] simForCountry(String iso) {
+        String u = normalizeCountryIso(iso);
+        if (u.equals("us")) return new String[]{"310260", "us", "T-Mobile"};
+        if (u.equals("gb")) return new String[]{"23410", "gb", "O2"};
+        if (u.equals("ca")) return new String[]{"302610", "ca", "Rogers"};
+        if (u.equals("de")) return new String[]{"26201", "de", "Telekom"};
+        if (u.equals("fr")) return new String[]{"20801", "fr", "Orange"};
+        if (u.equals("au")) return new String[]{"50501", "au", "Telstra"};
+        if (u.equals("ng")) return new String[]{"62130", "ng", "MTN NG"};
+        if (u.equals("es")) return new String[]{"21407", "es", "Movistar"};
+        if (u.equals("it")) return new String[]{"22210", "it", "Vodafone IT"};
+        if (u.equals("nl")) return new String[]{"20408", "nl", "KPN"};
+        if (u.equals("ie")) return new String[]{"27201", "ie", "Vodafone IE"};
+        if (u.equals("br")) return new String[]{"72405", "br", "Claro"};
+        if (u.equals("mx")) return new String[]{"334020", "mx", "Telcel"};
+        if (u.equals("za")) return new String[]{"65501", "za", "Vodacom"};
+        if (u.equals("in")) return new String[]{"40445", "in", "Airtel"};
+        if (u.equals("jp")) return new String[]{"44010", "jp", "NTT DOCOMO"};
         return null; // unknown → keep the profile default (US)
     }
 
     /** Map a SOAX-style proxy username (…country-us-region-texas-city-dallas…) to a timezone. */
-    private static String timezoneFor(String u) {
+    private static String timezoneFor(String u, String countryIso) {
         if (u.contains("country-us")) {
             if (u.contains("region-california") || u.contains("region-washington")
                     || u.contains("region-oregon") || u.contains("region-nevada")) return "America/Los_Angeles";
@@ -577,16 +675,26 @@ public class GuestProxy {
         if (u.contains("country-de")) return "Europe/Berlin";
         if (u.contains("country-fr")) return "Europe/Paris";
         if (u.contains("country-au")) return "Australia/Sydney";
+        if (countryIso.equals("us")) return "America/New_York";
+        if (countryIso.equals("gb")) return "Europe/London";
+        if (countryIso.equals("ca")) return "America/Toronto";
+        if (countryIso.equals("de")) return "Europe/Berlin";
+        if (countryIso.equals("fr")) return "Europe/Paris";
+        if (countryIso.equals("au")) return "Australia/Sydney";
+        if (countryIso.equals("ng")) return "Africa/Lagos";
         return null; // unknown region — leave the device's real timezone
     }
 
-    private static java.util.Locale localeFor(String u) {
+    private static java.util.Locale localeFor(String u, String countryIso) {
         if (u.contains("country-us")) return java.util.Locale.US;
         if (u.contains("country-gb") || u.contains("country-uk")) return java.util.Locale.UK;
         if (u.contains("country-ca")) return java.util.Locale.CANADA;
         if (u.contains("country-de")) return java.util.Locale.GERMANY;
         if (u.contains("country-fr")) return java.util.Locale.FRANCE;
         if (u.contains("country-au")) return new java.util.Locale("en", "AU");
+        if (!countryIso.isEmpty()) {
+            return new java.util.Locale("", countryIso.toUpperCase(java.util.Locale.ROOT));
+        }
         return null;
     }
 }

@@ -186,8 +186,31 @@ void spoofDevice(JNIEnv *env, jclass clazz, jobjectArray keys, jobjectArray valu
     vs_ensure_installed();
 }
 
+void updateDeviceProperties(JNIEnv *env, jclass clazz, jobjectArray keys, jobjectArray values) {
+    ALOGD("merge device properties");
+    if (keys == nullptr || values == nullptr) { vs_ensure_installed(); return; }
+    jsize n = env->GetArrayLength(keys);
+    jsize m = env->GetArrayLength(values);
+    if (m < n) n = m;
+    for (jsize i = 0; i < n; ++i) {
+        auto k = (jstring) env->GetObjectArrayElement(keys, i);
+        auto v = (jstring) env->GetObjectArrayElement(values, i);
+        if (k && v) {
+            const char *ck = env->GetStringUTFChars(k, nullptr);
+            const char *cv = env->GetStringUTFChars(v, nullptr);
+            vs_set(ck, cv);
+            env->ReleaseStringUTFChars(k, ck);
+            env->ReleaseStringUTFChars(v, cv);
+        }
+        if (k) env->DeleteLocalRef(k);
+        if (v) env->DeleteLocalRef(v);
+    }
+    vs_ensure_installed();
+}
+
 static JNINativeMethod gMethods[] = {
         {"spoofDevice", "([Ljava/lang/String;[Ljava/lang/String;)V", (void *) spoofDevice},
+        {"updateDeviceProperties", "([Ljava/lang/String;[Ljava/lang/String;)V", (void *) updateDeviceProperties},
         {"setProxy",    "(ILjava/lang/String;ILjava/lang/String;Ljava/lang/String;)Z", (void *) setProxy},
         {"disableProxy","()V",                                       (void *) disableProxy},
         {"disableHiddenApi", "()Z",                               (void *) disableHiddenApi},

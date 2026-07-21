@@ -106,12 +106,13 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     val port = e.getInt("port")
                     val username = e.getString("username", "")
                     val password = e.getString("password", "")
+                    val countryIso = e.getString("countryIso", "")
                     val validNode = server.isNotBlank() && port in 1..65535 &&
                         type in setOf("http", "https", "socks", "socks5")
                     val knownUser = userId >= 0 && BlackBoxCore.get().users.any { it.id == userId }
                     val knownApp = pkg != null && knownUser && BlackBoxCore.get().isInstalled(pkg, userId)
                     val conflict = validNode && knownApp && GuestProxy.wouldConflictWithSharedGms(
-                        userId, pkg!!, type, server, port, username, password
+                        userId, pkg!!, type, server, port, username, password, countryIso
                     )
                     val ok = validNode && knownApp && !conflict
                     res.putBoolean("ok", ok)
@@ -141,6 +142,7 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     val port = e.getInt("port")
                     val username = e.getString("username", "")
                     val password = e.getString("password", "")
+                    val countryIso = e.getString("countryIso", "")
                     // Repeat the profile editor's read-only checks at the atomic launch boundary.
                     // A restored profile can outlive a deleted or moved clone, so an earlier
                     // successful preflight must not authorize a later write for the wrong user.
@@ -150,10 +152,10 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     val knownApp = pkg != null && knownUser && BlackBoxCore.get().isInstalled(pkg, userId)
                     val validExitIp = !expectedExitIp.isNullOrBlank()
                     val conflict = validNode && knownApp && GuestProxy.wouldConflictWithSharedGms(
-                        userId, pkg, type, server, port, username, password
+                        userId, pkg, type, server, port, username, password, countryIso
                     )
                     val saved = validNode && knownApp && validExitIp && !conflict && GuestProxy.save(
-                        userId, pkg, type, server, port, username, password
+                        userId, pkg, type, server, port, username, password, countryIso
                     )
                     val gmsRoute = if (saved && GuestProxy.isSharedGmsActive(userId)) {
                         GuestProxy.syncGmsRouteForUser(userId)
@@ -222,15 +224,16 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     val port = e.getInt("port")
                     val username = e.getString("username", "")
                     val password = e.getString("password", "")
+                    val countryIso = e.getString("countryIso", "")
                     val validNode = server.isNotBlank() && port in 1..65535 &&
                         type in setOf("http", "https", "socks", "socks5")
                     val knownUser = userId >= 0 && BlackBoxCore.get().users.any { it.id == userId }
                     val knownApp = pkg == null || (knownUser && BlackBoxCore.get().isInstalled(pkg, userId))
                     val conflict = validNode && knownApp && pkg != null && GuestProxy.wouldConflictWithSharedGms(
-                        userId, pkg, type, server, port, username, password
+                        userId, pkg, type, server, port, username, password, countryIso
                     )
                     val saved = validNode && knownUser && knownApp && !conflict && GuestProxy.save(
-                        userId, pkg, type, server, port, username, password
+                        userId, pkg, type, server, port, username, password, countryIso
                     )
                     val gmsRoute = if (saved && GuestProxy.isSharedGmsActive(userId)) {
                         GuestProxy.syncGmsRouteForUser(userId)
