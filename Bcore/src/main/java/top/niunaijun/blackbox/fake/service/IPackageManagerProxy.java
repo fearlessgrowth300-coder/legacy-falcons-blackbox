@@ -75,6 +75,34 @@ public class IPackageManagerProxy extends BinderInvocationStub {
     }
 
     @Override
+    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        String permission = permissionFromArgs(args);
+        if (permission != null
+                && (isAudioPermission(permission) || isStorageOrMediaPermission(permission)
+                || android.Manifest.permission.CAMERA.equals(permission))
+                && method.getName().toLowerCase(java.util.Locale.ROOT).contains("check")
+                && method.getReturnType() == int.class) {
+            return PackageManager.PERMISSION_GRANTED;
+        }
+        return super.invoke(proxy, method, args);
+    }
+
+    private static String permissionFromArgs(Object[] args) {
+        if (args == null) return null;
+        for (Object arg : args) {
+            if (arg instanceof String && ((String) arg).startsWith("android.permission.")) {
+                return (String) arg;
+            }
+            if (arg instanceof String[]) {
+                for (String value : (String[]) arg) {
+                    if (value != null && value.startsWith("android.permission.")) return value;
+                }
+            }
+        }
+        return null;
+    }
+
+    @Override
     protected void onBindMethod() {
         super.onBindMethod();
         addMethodHook(new ValueMethodProxy("addOnPermissionsChangeListener", 0));
@@ -156,10 +184,9 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 if (packageInfo.requestedPermissions != null && packageInfo.requestedPermissionsFlags != null) {
                     for (int i = 0; i < packageInfo.requestedPermissions.length; i++) {
                         String perm = packageInfo.requestedPermissions[i];
-                        if (perm != null && (perm.equals(android.Manifest.permission.RECORD_AUDIO)
-                                || perm.equals("android.permission.FOREGROUND_SERVICE_MICROPHONE")
-                                || perm.equals(android.Manifest.permission.MODIFY_AUDIO_SETTINGS)
-                                || perm.equals(android.Manifest.permission.CAPTURE_AUDIO_OUTPUT))) {
+                        if (perm != null && (isAudioPermission(perm)
+                                || isStorageOrMediaPermission(perm)
+                                || perm.equals(android.Manifest.permission.CAMERA))) {
                             packageInfo.requestedPermissionsFlags[i] |= PackageInfo.REQUESTED_PERMISSION_GRANTED;
                         }
                     }
@@ -441,13 +468,12 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             
             
             if (isAudioPermission(permission)) {
-                Slog.d(TAG, "SimpleAudioPermissionHook: Granting audio permission: " + permission + " to " + packageName);
                 return PackageManager.PERMISSION_GRANTED;
             }
 
             
-            if (isStorageOrMediaPermission(permission)) {
-                Slog.d(TAG, "SimpleAudioPermissionHook: Granting storage/media permission: " + permission + " to " + packageName);
+            if (isStorageOrMediaPermission(permission)
+                    || android.Manifest.permission.CAMERA.equals(permission)) {
                 return PackageManager.PERMISSION_GRANTED;
             }
             
@@ -471,13 +497,12 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             
             
             if (isAudioPermission(permission)) {
-                Slog.d(TAG, "CheckSelfPermission: Granting audio permission: " + permission + " to " + packageName);
                 return PackageManager.PERMISSION_GRANTED;
             }
 
             
-            if (isStorageOrMediaPermission(permission)) {
-                Slog.d(TAG, "CheckSelfPermission: Granting storage/media permission: " + permission + " to " + packageName);
+            if (isStorageOrMediaPermission(permission)
+                    || android.Manifest.permission.CAMERA.equals(permission)) {
                 return PackageManager.PERMISSION_GRANTED;
             }
             
@@ -501,13 +526,12 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             
             
             if (isAudioPermission(permission)) {
-                Slog.d(TAG, "ShouldShowRequestPermissionRationale: Not showing rationale for audio permission: " + permission);
                 return false;
             }
 
             
-            if (isStorageOrMediaPermission(permission)) {
-                Slog.d(TAG, "ShouldShowRequestPermissionRationale: Not showing rationale for storage/media permission: " + permission);
+            if (isStorageOrMediaPermission(permission)
+                    || android.Manifest.permission.CAMERA.equals(permission)) {
                 return false;
             }
             
@@ -527,7 +551,12 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String[] permissions = (String[]) args[0];
-            String packageName = (String) args[1];
+            // Runtime permissions are granted to the real Android package/UID.  A guest package
+            // does not exist in the phone package manager, so forwarding its name makes the
+            // permission controller return a denial (or no useful result) even when BlackBox
+            // already owns the requested permission.  Keep the guest-facing PackageManager
+            // virtual, but map the outbound request to the host identity.
+            MethodParameterUtils.replaceFirstAppPkg(args);
             
             
             

@@ -843,16 +843,36 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             
             
             if (isAudioPermission(permission)) {
-                Slog.d(TAG, "ActivityManager checkPermission: Granting audio permission: " + permission);
                 return PackageManager.PERMISSION_GRANTED;
             }
 
             
-            if (isStorageOrMediaPermission(permission)) {
-                Slog.d(TAG, "ActivityManager checkPermission: Granting storage/media permission: " + permission);
+            if (isStorageOrMediaPermission(permission)
+                    || Manifest.permission.CAMERA.equals(permission)) {
                 return PackageManager.PERMISSION_GRANTED;
             }
             
+            return method.invoke(who, args);
+        }
+    }
+
+    /** Android 16 moved Context.checkPermission() to this device-aware binder call. */
+    @ProxyMethod("checkPermissionForDevice")
+    public static class checkPermissionForDevice extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            String permission = args != null && args.length > 0 ? (String) args[0] : null;
+            if (isAudioPermission(permission)
+                    || isStorageOrMediaPermission(permission)
+                    || Manifest.permission.CAMERA.equals(permission)) {
+                return PackageManager.PERMISSION_GRANTED;
+            }
+            // Signature: permission, pid, uid, deviceId. Do not replace the last integer,
+            // because it is the device id rather than the uid on Android 16.
+            if (args != null && args.length > 2 && args[2] instanceof Integer
+                    && ((Integer) args[2]) == BlackBoxCore.getBUid()) {
+                args[2] = BlackBoxCore.getHostUid();
+            }
             return method.invoke(who, args);
         }
     }

@@ -67,6 +67,7 @@ public class TrieTree {
 
     public String search(String word) {
         TrieNode current = root;
+        String longestMatch = null;
         for (int index = 0; index < word.length(); ++index) {
             char content = word.charAt(index);
 
@@ -74,11 +75,11 @@ public class TrieTree {
             if (current.children.contains(node))
                 current = current.nextNode(content);
             else
-                return null;
+                break;
 
             if (current.isEnd)
-                return current.word;
+                longestMatch = current.word;
         }
-        return null;
+        return longestMatch;
     }
 }

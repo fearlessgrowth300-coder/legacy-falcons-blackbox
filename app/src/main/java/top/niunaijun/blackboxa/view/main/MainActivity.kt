@@ -688,9 +688,15 @@ class MainActivity : LoadingActivity() {
         updateAccountButton()
         toast("Google Drive connected")
         Thread {
-            val hasBackup = runCatching { CloudSync.hasBackup(this) }.getOrDefault(false)
+            val lookup = runCatching { CloudSync.hasBackup(this) }
             runOnUiThread {
-                if (hasBackup) {
+                if (lookup.isFailure) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Could not inspect Drive backup")
+                        .setMessage("Nothing was overwritten. Check the Drive connection and try Restore again.\n\n${lookup.exceptionOrNull()?.message.orEmpty()}")
+                        .setPositiveButton("OK", null)
+                        .show()
+                } else if (lookup.getOrDefault(false)) {
                     AlertDialog.Builder(this)
                         .setTitle("BlackBox backup found")
                         .setMessage("Restore the encrypted clone backup, or keep the data currently on this phone?")
@@ -698,7 +704,14 @@ class MainActivity : LoadingActivity() {
                         .setNegativeButton("Keep this phone") { _, _ -> confirmBackup() }
                         .setCancelable(false)
                         .show()
-                } else confirmBackup()
+                } else {
+                    AlertDialog.Builder(this)
+                        .setTitle("No BlackBox backup found")
+                        .setMessage("No completed backup was found in this folder for this account. Back up the data on this phone now?")
+                        .setPositiveButton("Back up this phone") { _, _ -> confirmBackup() }
+                        .setNegativeButton("Not now", null)
+                        .show()
+                }
             }
         }.start()
     }

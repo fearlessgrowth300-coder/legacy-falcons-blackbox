@@ -134,12 +134,22 @@ public class IOCore {
             if (BlackBoxCore.getContext().getExternalCacheDir() != null && context.getExternalCacheDir() != null) {
                 File external = BEnvironment.getExternalUserDir(BlackBoxCore.getUserId());
 
-                
+                // MediaStore returns physical paths under the phone's shared media folders.
+                // These more-specific no-op rules must be installed before the broad /sdcard
+                // relocation; otherwise thumbnails and selected Reel/Post files are rewritten
+                // into the clone's empty private volume and apps report a false permission error.
+                // Only user media is shared. Android/data, app databases, accounts and every
+                // other external path continue to use the per-BlackBox-user volume below.
+                String[] sharedMediaDirs = {"DCIM", "Pictures", "Movies"};
+                for (String dir : sharedMediaDirs) {
+                    String sdcardPath = "/sdcard/" + dir;
+                    String emulatedPath = String.format("/storage/emulated/%d/%s", systemUserId, dir);
+                    rule.put(sdcardPath, sdcardPath);
+                    rule.put(emulatedPath, emulatedPath);
+                }
+
                 rule.put("/sdcard", external.getAbsolutePath());
                 rule.put(String.format("/storage/emulated/%d", systemUserId), external.getAbsolutePath());
-
-                blackRule.add("/sdcard/Pictures");
-                blackRule.add(String.format("/storage/emulated/%d/Pictures", systemUserId));
             }
             if (BlackBoxCore.get().isHideRoot()) {
                 hideRoot(rule);

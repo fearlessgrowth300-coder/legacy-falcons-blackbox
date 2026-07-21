@@ -32,7 +32,7 @@ object CloudSync {
         val running = stopGuestsForSnapshot()
         try {
             Thread.sleep(1_000)
-            DriveVault.backup(ctx, APP_TAG, keep = 1, sourceBytes = sourceBytes) { zip ->
+            DriveVault.backup(ctx, APP_TAG, keep = 10, sourceBytes = sourceBytes) { zip ->
                 zip.setLevel(1)
                 if (root.isDirectory) addTree(zip, root, ctx.dataDir, progress, hashSetOf())
                 prefs.listFiles()?.filter { it.isFile && it.name !in EXCLUDED_PREFS }?.forEach {
