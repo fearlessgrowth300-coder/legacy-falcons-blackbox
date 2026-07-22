@@ -37,7 +37,14 @@ object Supabase {
             ?: prefs(ctx).getString(name, null)
     // Persistent session: signed in as long as tokens are stored. No expiry / no auto-logout;
     // only an explicit signOut() clears it.
-    fun isSignedIn(ctx: Context): Boolean = hasStoredSession(ctx)
+    /** Unlock only after this process has verified the stored session with GoTrue recently. */
+    fun isSignedIn(ctx: Context): Boolean {
+        if (!hasStoredSession(ctx) || !validatedThisProcess.get() || !tokenIsFresh(accessToken(ctx))) {
+            return false
+        }
+        val age = System.currentTimeMillis() - validatedAtMs.get()
+        return age in 0..VALIDATION_MAX_AGE_MS
+    }
     fun hasStoredSession(ctx: Context): Boolean =
         !accessToken(ctx).isNullOrBlank() && !refreshToken(ctx).isNullOrBlank()
     fun email(ctx: Context): String? = secret(ctx, "email")
@@ -128,8 +135,10 @@ object Supabase {
                 validatedAtMs.set(System.currentTimeMillis())
             } else clearLocalSession(ctx)
             valid
+        } catch (e: HttpError) {
+            if (e.code == 401 || e.code == 403) clearLocalSession(ctx)
+            false
         } catch (_: Exception) {
-            clearLocalSession(ctx)
             false
         }
     }

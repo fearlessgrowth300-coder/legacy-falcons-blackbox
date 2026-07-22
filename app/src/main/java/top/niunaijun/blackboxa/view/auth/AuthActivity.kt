@@ -96,15 +96,33 @@ class AuthActivity : AppCompatActivity() {
         if (!Supabase.hasStoredSession(this)) return
         // Already unlocked on this device → straight in, no network (works offline). The session
         // never expires; only an explicit Log out ends it.
-        if (VaultKeyStore.isReady(this)) { openMain(); return }
         // Stored session but the local key isn't set up yet: fetch it. NEVER log out on failure.
         setBusy(true)
         status.setTextColor(Color.LTGRAY)
-        status.text = "Preparing your account..."
+        status.text = "Checking your account..."
         Thread {
+            val valid = Supabase.validateStoredSession(this)
+            if (!valid) {
+                runOnUiThread {
+                    setBusy(false)
+                    status.setTextColor(Color.parseColor("#FFB74D"))
+                    if (Supabase.hasStoredSession(this)) {
+                        status.text = "Couldn't verify your account. Check your connection, then retry."
+                        primary.text = "Retry"
+                        primary.setOnClickListener { migrateExistingSession() }
+                    } else {
+                        status.text = "Your session expired. Enter your email to get a new 6-digit code."
+                        primary.text = "Send code"
+                        primary.setOnClickListener { onPrimary() }
+                    }
+                }
+                return@Thread
+            }
             try {
                 val email = Supabase.email(this) ?: error("Account email is missing")
-                VaultKeyStore.provision(this, email, Supabase.getOrCreateBackupKey(this))
+                if (!VaultKeyStore.isReady(this) || !VaultKeyStore.belongsTo(this, email)) {
+                    VaultKeyStore.provision(this, email, Supabase.getOrCreateBackupKey(this))
+                }
                 runOnUiThread { openMain() }
             } catch (_: Exception) {
                 runOnUiThread {
