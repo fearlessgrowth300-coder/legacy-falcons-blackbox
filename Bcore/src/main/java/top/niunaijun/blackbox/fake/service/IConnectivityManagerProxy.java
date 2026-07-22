@@ -19,6 +19,8 @@ import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.ScanClass;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
+import top.niunaijun.blackbox.utils.AttributionSourceUtils;
+import top.niunaijun.blackbox.utils.MethodParameterUtils;
 import top.niunaijun.blackbox.utils.Slog;
 
 
@@ -332,7 +334,13 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             if (android.os.Build.VERSION.SDK_INT >= 21) {
                 try {
-                    
+                    // ConnectivityService validates every package/attribution against the
+                    // process's real host uid.  Android 16 added the caller package to this
+                    // method, so forwarding com.android.vending from a virtual Play process
+                    // crashes Cronet before Play Integrity can bind.
+                    MethodParameterUtils.replaceAllAppPkg(args);
+                    MethodParameterUtils.replaceFirstUid(args);
+                    AttributionSourceUtils.fixAttributionSourceInArgs(args);
                     Object result = method.invoke(who, args);
                     if (result != null) {
                         
@@ -361,7 +369,9 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
                     Slog.w(TAG, "Error creating NetworkCapabilities: " + e.getMessage());
                 }
             }
-            return method.invoke(who, args);
+            // Never repeat the same rejected Binder call.  The existing fallback advertises
+            // only generic connected capabilities and contains no route or proxy identity.
+            return IConnectivityManagerProxy.createNetworkCapabilities();
         }
     }
 

@@ -28,6 +28,11 @@ public class AttributionSourceUtils {
             if (arg != null && arg.getClass().getName().contains("AttributionSource")) {
                 try {
                     fixAttributionSourceUid(arg, uid, packageName);
+                    // Android 16 keeps an immutable parcel state in some vendor builds.  A
+                    // reflective field write can appear to succeed while the old uid is still
+                    // marshalled to the destination provider.  Rebuilding the outer source makes
+                    // the Binder-visible identity deterministic.
+                    args[i] = rebuildAttributionSource(arg, uid, packageName);
                     Slog.d(TAG, "Fixed AttributionSource UID in method arguments");
                 } catch (Exception e) {
                     Slog.w(TAG, "Failed to fix AttributionSource in args: " + e.getMessage());
@@ -130,6 +135,34 @@ public class AttributionSourceUtils {
         }
     }
 
+    private static Object rebuildAttributionSource(Object original, int uid, String packageName) {
+        if (original == null || android.os.Build.VERSION.SDK_INT < 31) return original;
+        try {
+            Class<?> sourceClass = Class.forName("android.content.AttributionSource");
+            Class<?> builderClass = Class.forName("android.content.AttributionSource$Builder");
+            Object builder = builderClass.getConstructor(int.class).newInstance(uid);
+            builderClass.getMethod("setPackageName", String.class).invoke(builder, packageName);
+
+            try {
+                Object tag = sourceClass.getMethod("getAttributionTag").invoke(original);
+                builderClass.getMethod("setAttributionTag", String.class).invoke(builder, tag);
+            } catch (Throwable ignored) {
+            }
+            try {
+                Object token = sourceClass.getMethod("getToken").invoke(original);
+                if (token instanceof android.os.IBinder) {
+                    builderClass.getMethod("setToken", android.os.IBinder.class).invoke(builder, token);
+                }
+            } catch (Throwable ignored) {
+            }
+            return builderClass.getMethod("build").invoke(builder);
+        } catch (Throwable e) {
+            Slog.w(TAG, "Could not rebuild AttributionSource; using rewritten state: "
+                    + e.getClass().getSimpleName());
+            return original;
+        }
+    }
+
     
     public static void fixAttributionSourceInBundle(Object bundle) {
         fixAttributionSourceInBundle(bundle, BlackBoxCore.getHostUid(), currentCallerPackage());
@@ -150,6 +183,11 @@ public class AttributionSourceUtils {
                     
                     if (value != null && value.getClass().getName().contains("AttributionSource")) {
                         fixAttributionSourceUid(value, uid, packageName);
+                        Object replacement = rebuildAttributionSource(value, uid, packageName);
+                        if (replacement instanceof android.os.Parcelable) {
+                            ((android.os.Bundle) bundle).putParcelable(
+                                    key, (android.os.Parcelable) replacement);
+                        }
                         Slog.d(TAG, "Fixed AttributionSource UID in Bundle key: " + key);
                     }
                 } catch (Exception e) {

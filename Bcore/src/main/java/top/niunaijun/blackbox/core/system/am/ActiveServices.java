@@ -199,7 +199,9 @@ public class ActiveServices {
         ComponentName stubComp = new ComponentName(BlackBoxCore.getHostPkg(), ProxyManifest.getProxyService(processRecord.bpid));
         stub.setComponent(stubComp);
         stub.setAction(UUID.randomUUID().toString());
-        ProxyServiceRecord.saveStub(stub, targetIntent, serviceInfo, runningServiceRecord, processRecord.userId, runningServiceRecord.mStartId.get());
+        ProxyServiceRecord.saveStub(stub, targetIntent, serviceInfo, runningServiceRecord,
+                processRecord.userId, runningServiceRecord.mStartId.get(),
+                processRecord.getClientConfig());
         return stub;
     }
 

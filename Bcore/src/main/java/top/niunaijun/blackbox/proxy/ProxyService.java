@@ -63,6 +63,19 @@ public class ProxyService extends Service {
         if (intent == null) return false;
         ProxyServiceRecord record = ProxyServiceRecord.create(intent);
         if (record.mServiceInfo == null) return false;
+        // ActiveServices already selected the exact virtual process slot.  Initialize this
+        // Android-created ProxyService process with that same config before dispatching the guest
+        // service.  Calling restartProcess() here can only start another process; it cannot attach
+        // the current P<n> process and therefore returned a null binder to API 36 clients.
+        if (BActivityThread.getAppConfig() == null && record.mAppConfig != null) {
+            try {
+                BActivityThread.currentActivityThread().initProcess(record.mAppConfig);
+            } catch (Throwable e) {
+                Log.w(TAG, "Unable to initialize proxy service guest", e);
+                return false;
+            }
+        }
+        if (BActivityThread.getAppConfig() != null) return true;
         try {
             BlackBoxCore.getBActivityManager().restartProcess(
                     record.mServiceInfo.packageName,
@@ -71,7 +84,7 @@ public class ProxyService extends Service {
         } catch (Throwable ignored) {
             return false;
         }
-        return BActivityThread.currentActivityThread().isInit();
+        return BActivityThread.getAppConfig() != null;
     }
 
     @Override
