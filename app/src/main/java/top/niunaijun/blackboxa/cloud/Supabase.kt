@@ -145,19 +145,29 @@ object Supabase {
         }.getOrNull()
 
         val legacy = decodeLegacy(getCurrentUser(ctx))
-        val candidate = legacy ?: ByteArray(32).also(SecureRandom()::nextBytes)
-        val row = JSONObject().put("app", RECOVERY_KEY_APP).put("data",
-            JSONObject().put("key", Base64.encodeToString(candidate, Base64.NO_WRAP)))
-        restInsertIgnore(ctx, "$URL/rest/v1/app_backups?on_conflict=user_id,app", "[$row]")
-        val response = restRead(ctx,
-            "$URL/rest/v1/app_backups?app=eq.$RECOVERY_KEY_APP&select=data&limit=1")
-            ?: error("Could not read the account recovery key")
-        val rows = org.json.JSONArray(response)
-        require(rows.length() == 1) { "Could not create the account recovery key" }
         val primary = runCatching {
+            val candidate = legacy ?: ByteArray(32).also(SecureRandom()::nextBytes)
+            val row = JSONObject().put("app", RECOVERY_KEY_APP).put("data",
+                JSONObject().put("key", Base64.encodeToString(candidate, Base64.NO_WRAP)))
+            restInsertIgnore(ctx, "$URL/rest/v1/app_backups?on_conflict=user_id,app", "[$row]")
+            val response = restRead(ctx,
+                "$URL/rest/v1/app_backups?app=eq.$RECOVERY_KEY_APP&select=data&limit=1")
+                ?: error("Could not read the account recovery key")
+            val rows = org.json.JSONArray(response)
+            require(rows.length() == 1) { "Could not create the account recovery key" }
             Base64.decode(rows.getJSONObject(0).getJSONObject("data").getString("key"), Base64.NO_WRAP)
                 .takeIf { it.size == 32 } ?: error("Invalid account recovery key")
-        }.getOrElse { throw IllegalStateException("Could not verify the account recovery key", it) }
+        }.getOrElse { failure ->
+            // Existing accounts can safely authenticate their old encrypted files with the
+            // immutable key already stored in private auth metadata. Keep new accounts fail-closed
+            // if the atomic store is unavailable because they have no trusted fallback yet.
+            legacy?.let {
+                android.util.Log.w("BlackBoxKeyRecovery",
+                    "Atomic recovery-key store unavailable; using verified legacy candidate (${failure.javaClass.simpleName})")
+                return listOf(it)
+            }
+            throw IllegalStateException("Could not verify the account recovery key", failure)
+        }
         return buildList {
             legacy?.let(::add)
             if (none { it.contentEquals(primary) }) add(primary)
