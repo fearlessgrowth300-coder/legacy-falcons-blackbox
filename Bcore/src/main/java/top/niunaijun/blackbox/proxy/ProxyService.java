@@ -2,6 +2,7 @@ package top.niunaijun.blackbox.proxy;
 
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.content.res.Configuration;
 import android.os.IBinder;
 import android.util.Log;
@@ -63,6 +64,17 @@ public class ProxyService extends Service {
         if (intent == null) return false;
         ProxyServiceRecord record = ProxyServiceRecord.create(intent);
         if (record.mServiceInfo == null) return false;
+        // A persisted Android service restart can outlive the virtual package/user that created it.
+        // Never bind stale ServiceInfo into an empty guest process: that previously dereferenced a
+        // null PackageInfo, crashed the P<n> worker repeatedly and made the BlackBox UI unresponsive.
+        PackageInfo installed = BlackBoxCore.getBPackageManager().getPackageInfo(
+                record.mServiceInfo.packageName, 0, record.mUserId);
+        if (installed == null || installed.applicationInfo == null) {
+            Log.w(TAG, "Ignoring stale proxy-service restart for missing virtual package "
+                    + record.mServiceInfo.packageName + " user=" + record.mUserId);
+            stopSelf();
+            return false;
+        }
         // ActiveServices already selected the exact virtual process slot.  Initialize this
         // Android-created ProxyService process with that same config before dispatching the guest
         // service.  Calling restartProcess() here can only start another process; it cannot attach

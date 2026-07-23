@@ -41,6 +41,11 @@ public class GuestProxy {
 
     /** Route applied to the current guest process; never contains credentials. */
     public static volatile String CURRENT_ROUTE_ID;
+    /** Non-secret geographic expectations applied to this guest process. */
+    public static volatile String CURRENT_COUNTRY_ISO = "";
+    public static volatile String CURRENT_TIMEZONE_ID = "";
+    public static volatile Double CURRENT_LATITUDE;
+    public static volatile Double CURRENT_LONGITUDE;
 
     // Proxy config is stored PER-APP-PER-USER: proxy_<pkg>.json. This lets two apps in the SAME
     // User (e.g. User 0 running both WhatsApp and Instagram) each route through a DIFFERENT proxy.
@@ -337,6 +342,14 @@ public class GuestProxy {
 
     public static boolean save(int userId, String pkg, String type, String server, int port,
                                String user, String pass, String countryIso) {
+        return save(userId, pkg, type, server, port, user, pass, countryIso,
+                null, null, null, null, null);
+    }
+
+    public static boolean save(int userId, String pkg, String type, String server, int port,
+                               String user, String pass, String countryIso,
+                               String city, String region, Double latitude, Double longitude,
+                               String timezoneId) {
         String normalizedType = type == null ? "" : type.trim().toLowerCase();
         String normalizedServer = server == null ? "" : server.trim();
         if (userId < 0 || (pkg != null && !pkg.isEmpty() && !validPackage(pkg))
@@ -364,6 +377,16 @@ public class GuestProxy {
             String effectiveCountryIso = normalizeCountryIso(countryIso);
             if (effectiveCountryIso.isEmpty()) effectiveCountryIso = countryForProxy(user);
             o.put("countryIso", effectiveCountryIso);
+            String safeCity = sanitizeGeoText(city);
+            String safeRegion = sanitizeGeoText(region);
+            String safeTimezone = normalizeTimezone(timezoneId);
+            if (!safeCity.isEmpty()) o.put("city", safeCity);
+            if (!safeRegion.isEmpty()) o.put("region", safeRegion);
+            if (validLatLng(latitude, longitude)) {
+                o.put("latitude", latitude.doubleValue());
+                o.put("longitude", longitude.doubleValue());
+            }
+            if (!safeTimezone.isEmpty()) o.put("timezoneId", safeTimezone);
 
             ProxyConfigCrypto.writeText(file(userId, pkg), userId, pkg, o.toString());
             updateUnregisteredWhatsAppCountry(userId, pkg, effectiveCountryIso);
@@ -429,6 +452,7 @@ public class GuestProxy {
         // cannot be applied, callers receive a hard failure and must not start the guest.
         NativeCore.disableProxy();
         CURRENT_ROUTE_ID = null;
+        clearCurrentGeo();
         try {
             // App launches never inherit the legacy per-user proxy. That fallback could silently
             // route two apps through the same credentials and defeats deterministic isolation.
@@ -467,11 +491,12 @@ public class GuestProxy {
 
             // Make the clock + language match the exit region so a US exit IP doesn't sit on an
             // Africa/Lagos timezone (a detectable mismatch). Derived from the proxy's region/city.
-            applyGeoConsistency(user, normalizeCountryIso(o.optString("countryIso", "")), userId);
+            applyGeoConsistency(o, userId);
             return ApplyStatus.READY;
         } catch (Throwable e) {
             NativeCore.disableProxy();
             CURRENT_ROUTE_ID = null;
+            clearCurrentGeo();
             Slog.w(TAG, "guest proxy apply failed: " + e.getClass().getSimpleName());
             return ApplyStatus.INVALID_CONFIG;
         }
@@ -482,15 +507,20 @@ public class GuestProxy {
      * the clone's clock and language line up with its exit IP. Best-effort process-level default
      * (TimeZone.setDefault / Locale.setDefault) — covers the Java date/locale paths apps use.
      */
-    private static void applyGeoConsistency(String proxyUser, String verifiedCountryIso, int userId) {
+    private static void applyGeoConsistency(JSONObject route, int userId) {
         try {
+            String proxyUser = route.optString("username", "");
             String u = proxyUser == null ? "" : proxyUser.toLowerCase();
+            String verifiedCountryIso = normalizeCountryIso(route.optString("countryIso", ""));
             String countryIso = verifiedCountryIso.isEmpty() ? countryForProxy(u) : verifiedCountryIso;
+            CURRENT_COUNTRY_ISO = countryIso;
             String appPkg = top.niunaijun.blackbox.app.BActivityThread.getAppPackageName();
-            String tz = timezoneFor(u, countryIso);
+            String tz = normalizeTimezone(route.optString("timezoneId", ""));
+            if (tz.isEmpty()) tz = timezoneFor(u, countryIso);
             java.util.Locale loc = localeFor(u, countryIso);
-            if (tz != null) {
+            if (tz != null && !tz.isEmpty()) {
                 java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(tz));
+                CURRENT_TIMEZONE_ID = java.util.TimeZone.getDefault().getID();
             }
             if (loc != null) {
                 java.util.Locale.setDefault(loc);
@@ -499,7 +529,11 @@ public class GuestProxy {
             // GPS location — set the fake location to the proxy's city so Maps/apps that read GPS
             // agree with the exit IP (a US IP with a Lagos GPS fix is a hard mismatch). Per-clone
             // jitter so two clones in the same city aren't at the identical point.
-            double[] ll = latLngForProxy(u);
+            Double verifiedLat = route.has("latitude") ? route.optDouble("latitude") : null;
+            Double verifiedLng = route.has("longitude") ? route.optDouble("longitude") : null;
+            double[] ll = validLatLng(verifiedLat, verifiedLng)
+                    ? new double[]{verifiedLat.doubleValue(), verifiedLng.doubleValue()}
+                    : latLngForProxy(u);
             if (ll != null) {
                 try {
                     double jLat = ll[0] + ((userId * 37 % 100) - 50) / 10000.0;   // ±0.005°
@@ -509,6 +543,8 @@ public class GuestProxy {
                     lm.setPattern(userId, appPkg, top.niunaijun.blackbox.fake.frameworks.BLocationManager.OWN_MODE);
                     lm.setLocation(userId, appPkg,
                             new top.niunaijun.blackbox.entity.location.BLocation(jLat, jLng));
+                    CURRENT_LATITUDE = jLat;
+                    CURRENT_LONGITUDE = jLng;
                     Slog.d(TAG, "geo location profile applied for " + appPkg);
                 } catch (Throwable t) {
                     Slog.w(TAG, "set fake location failed: " + t.getMessage());
@@ -538,6 +574,13 @@ public class GuestProxy {
         } catch (Throwable e) {
             Slog.w(TAG, "geo consistency failed: " + e.getMessage());
         }
+    }
+
+    private static void clearCurrentGeo() {
+        CURRENT_COUNTRY_ISO = "";
+        CURRENT_TIMEZONE_ID = "";
+        CURRENT_LATITUDE = null;
+        CURRENT_LONGITUDE = null;
     }
 
     /**
@@ -634,6 +677,28 @@ public class GuestProxy {
         return value.matches("[a-z]{2}") ? value : "";
     }
 
+    private static String sanitizeGeoText(String value) {
+        if (value == null) return "";
+        String cleaned = value.replaceAll("[\\p{Cntrl}]", " ").trim();
+        return cleaned.length() <= 100 ? cleaned : cleaned.substring(0, 100);
+    }
+
+    private static boolean validLatLng(Double latitude, Double longitude) {
+        return latitude != null && longitude != null
+                && !latitude.isNaN() && !latitude.isInfinite()
+                && !longitude.isNaN() && !longitude.isInfinite()
+                && latitude >= -90.0 && latitude <= 90.0
+                && longitude >= -180.0 && longitude <= 180.0;
+    }
+
+    private static String normalizeTimezone(String timezoneId) {
+        if (timezoneId == null || timezoneId.isEmpty() || timezoneId.length() > 80) return "";
+        for (String id : java.util.TimeZone.getAvailableIDs()) {
+            if (id.equals(timezoneId)) return id;
+        }
+        return "";
+    }
+
     /** Physical phone country used after an app route is explicitly removed. */
     private static String physicalCountryIso() {
         try {
@@ -682,7 +747,10 @@ public class GuestProxy {
         if (u.equals("za")) return new String[]{"65501", "za", "Vodacom"};
         if (u.equals("in")) return new String[]{"40445", "in", "Airtel"};
         if (u.equals("jp")) return new String[]{"44010", "jp", "NTT DOCOMO"};
-        return null; // unknown → keep the profile default (US)
+        // Unknown carriers use a coherent no-service/eSIM identity instead of exposing the
+        // physical phone's MCC/MNC. Country-aware apps still receive the verified proxy ISO.
+        if (u.matches("[a-z]{2}")) return new String[]{"", u, ""};
+        return null;
     }
 
     /** Map a SOAX-style proxy username (…country-us-region-texas-city-dallas…) to a timezone. */

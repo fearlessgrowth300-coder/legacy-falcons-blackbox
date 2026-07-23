@@ -94,6 +94,13 @@ class AuthActivity : AppCompatActivity() {
 
     private fun migrateExistingSession() {
         if (!Supabase.hasStoredSession(this)) return
+        val localOwner = Supabase.email(this)
+        if (localOwner != null && VaultKeyStore.isReady(this) &&
+            VaultKeyStore.belongsTo(this, localOwner)) {
+            Thread { runCatching { Supabase.validateStoredSession(this) } }.start()
+            openMain()
+            return
+        }
         // Already unlocked on this device → straight in, no network (works offline). The session
         // never expires; only an explicit Log out ends it.
         // Stored session but the local key isn't set up yet: fetch it. NEVER log out on failure.
@@ -111,7 +118,7 @@ class AuthActivity : AppCompatActivity() {
                         primary.text = "Retry"
                         primary.setOnClickListener { migrateExistingSession() }
                     } else {
-                        status.text = "Your session expired. Enter your email to get a new 6-digit code."
+                        status.text = "No saved login was found. Enter your email to get a new 6-digit code."
                         primary.text = "Send code"
                         primary.setOnClickListener { onPrimary() }
                     }
