@@ -1291,7 +1291,7 @@ public class BActivityThread extends IBActivityThread.Stub {
             } else if (!geoGuardReady) {
                 out.putBoolean("ok", false);
                 out.putString("state", "GEO_GUARD_FAILED");
-                out.putString("err", "The clone country, SIM, timezone, or GPS profile did not apply");
+                out.putString("err", "Geo guard failed: " + out.getString("geoFailures", "unknown"));
             } else {
                 // Mobile/residential pools may rotate the public exit while retaining the exact
                 // authenticated proxy session. Route identity + in-guest exit + leak guards are
@@ -1310,6 +1310,16 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
 
     private boolean verifyGeoConsistency(Bundle out) {
+        boolean ready = verifyGeoConsistencyOnce(out);
+        if (!ready && top.niunaijun.blackbox.core.GuestProxy.refreshGeoConsistency(
+                getUserId(), getAppPackageName())) {
+            out.putBoolean("geoRefreshed", true);
+            ready = verifyGeoConsistencyOnce(out);
+        }
+        return ready;
+    }
+
+    private boolean verifyGeoConsistencyOnce(Bundle out) {
         String expectedCountry = top.niunaijun.blackbox.core.GuestProxy.CURRENT_COUNTRY_ISO;
         String expectedTimezone = top.niunaijun.blackbox.core.GuestProxy.CURRENT_TIMEZONE_ID;
         Double expectedLatitude = top.niunaijun.blackbox.core.GuestProxy.CURRENT_LATITUDE;
@@ -1354,6 +1364,21 @@ public class BActivityThread extends IBActivityThread.Stub {
         out.putBoolean("timezoneGuard", timezoneReady);
         out.putBoolean("locationGuard", locationReady);
         boolean ready = simReady && localeReady && timezoneReady && locationReady;
+        StringBuilder failures = new StringBuilder();
+        if (!simReady) failures.append("SIM");
+        if (!localeReady) {
+            if (failures.length() > 0) failures.append(',');
+            failures.append("locale");
+        }
+        if (!timezoneReady) {
+            if (failures.length() > 0) failures.append(',');
+            failures.append("timezone");
+        }
+        if (!locationReady) {
+            if (failures.length() > 0) failures.append(',');
+            failures.append("location");
+        }
+        out.putString("geoFailures", failures.toString());
         out.putBoolean("geoGuard", ready);
         return ready;
     }

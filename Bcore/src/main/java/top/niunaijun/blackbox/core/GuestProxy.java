@@ -576,6 +576,30 @@ public class GuestProxy {
         }
     }
 
+    /**
+     * Re-apply the already authenticated app route's non-network geo profile.
+     *
+     * Some Android builds reset the process default locale or timezone after the guest starts.
+     * Route verification may call this once before declaring a geo-guard violation. It never
+     * changes proxy credentials or enables direct networking.
+     */
+    public static boolean refreshGeoConsistency(int userId, String pkg) {
+        if (userId < 0 || pkg == null || !validPackage(pkg)) return false;
+        try {
+            File f = file(userId, pkg);
+            if (!f.isFile()) return false;
+            String expectedRouteId = routeIdFor(userId, pkg);
+            if (expectedRouteId == null || !expectedRouteId.equals(CURRENT_ROUTE_ID)) return false;
+            JSONObject route = new JSONObject(ProxyConfigCrypto.readText(f, userId, pkg));
+            if (!route.optBoolean("enabled", false)) return false;
+            applyGeoConsistency(route, userId);
+            return true;
+        } catch (Throwable error) {
+            Slog.w(TAG, "geo consistency refresh failed: " + error.getClass().getSimpleName());
+            return false;
+        }
+    }
+
     private static void clearCurrentGeo() {
         CURRENT_COUNTRY_ISO = "";
         CURRENT_TIMEZONE_ID = "";

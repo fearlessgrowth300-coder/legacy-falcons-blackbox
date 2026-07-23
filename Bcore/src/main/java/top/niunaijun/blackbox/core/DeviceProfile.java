@@ -17,8 +17,11 @@ import top.niunaijun.blackbox.utils.Slog;
 /**
  * Per-clone device identity. Each virtual user (userId) gets a coherent device
  * profile plus persistent random identifiers (android_id / imei / serial / MAC),
- * so "5 clones = 5 different phones" and the identity is STABLE across restarts
- * (unstable IDs are themselves a ban signal).
+ * so separate users do not reuse the same exposed identifier set and the identity
+ * remains stable across restarts (unstable IDs are themselves a risk signal).
+ *
+ * This is virtual identity separation, not a claim that one physical kernel, GPU,
+ * sensor set, or hardware timing surface becomes multiple independent handsets.
  *
  * The profile is applied inside the guest process, as early as possible, by:
  *   1) pushing the ro.* properties into the native __system_property_get hook

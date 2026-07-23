@@ -7,8 +7,11 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.Parcel;
+import android.os.RemoteException;
 import android.util.Log;
 
 import java.lang.reflect.Field;
@@ -21,6 +24,7 @@ import java.util.Set;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.core.NativeCore;
 import top.niunaijun.blackbox.entity.ServiceRecord;
 import top.niunaijun.blackbox.entity.UnbindRecord;
 import top.niunaijun.blackbox.proxy.record.ProxyServiceRecord;
@@ -153,11 +157,38 @@ public class AppServiceDispatcher {
             }
             Slog.d(TAG, "Enabled isolated account-authenticator bridge for "
                     + (serviceInfo == null ? service.getClass().getName() : serviceInfo.name));
+            if (!(binder instanceof AccountAuthenticatorBinderBridge)) {
+                binder = new AccountAuthenticatorBinderBridge(binder);
+            }
         } catch (Throwable e) {
             Slog.w(TAG, "Unable to prepare account-authenticator binder: "
                     + e.getClass().getSimpleName() + ": " + e.getMessage());
         }
         return binder;
+    }
+
+    /**
+     * Marks only actual IAccountAuthenticator transactions. NativeCore's Binder UID hook can then
+     * normalize this trusted BlackBox account-manager call without attempting an ART stack walk
+     * and without granting the same identity to unrelated GMS binder traffic.
+     */
+    private static final class AccountAuthenticatorBinderBridge extends Binder {
+        private final IBinder target;
+
+        AccountAuthenticatorBinderBridge(IBinder target) {
+            this.target = target;
+        }
+
+        @Override
+        protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
+                throws RemoteException {
+            NativeCore.enterAccountAuthenticatorCall();
+            try {
+                return target.transact(code, data, reply, flags);
+            } finally {
+                NativeCore.exitAccountAuthenticatorCall();
+            }
+        }
     }
 
     /** GMS 25.x wraps AbstractAccountAuthenticator.Transport in private Binder delegates. Follow

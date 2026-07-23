@@ -21,6 +21,37 @@ import top.niunaijun.blackbox.utils.Slog;
 public class NativeCore {
     public static final String TAG = "NativeCore";
 
+    /**
+     * Binder.getCallingUid() is hooked natively. Never walk the Java stack from that callback:
+     * Android 16 ART can be in the middle of resolving an oat method and recursively walking the
+     * mixed native/managed stack crashes the whole guest process. The account-authenticator
+     * dispatcher marks only the exact binder transaction that needs host-UID normalization.
+     */
+    private static final ThreadLocal<Integer> ACCOUNT_AUTH_CALL_DEPTH =
+            new ThreadLocal<Integer>() {
+                @Override
+                protected Integer initialValue() {
+                    return 0;
+                }
+            };
+
+    public static void enterAccountAuthenticatorCall() {
+        ACCOUNT_AUTH_CALL_DEPTH.set(ACCOUNT_AUTH_CALL_DEPTH.get() + 1);
+    }
+
+    public static void exitAccountAuthenticatorCall() {
+        int depth = ACCOUNT_AUTH_CALL_DEPTH.get() - 1;
+        if (depth <= 0) {
+            ACCOUNT_AUTH_CALL_DEPTH.remove();
+        } else {
+            ACCOUNT_AUTH_CALL_DEPTH.set(depth);
+        }
+    }
+
+    private static boolean isAccountAuthenticatorTransportCall() {
+        return ACCOUNT_AUTH_CALL_DEPTH.get() > 0;
+    }
+
     static {
         // Per-variant engine lib name (lib<name>.so) so the 4 variants don't all load an
         // identically-named "libblackbox.so". VariantConfig.tag is set in App.attachBaseContext,
@@ -120,29 +151,9 @@ public class NativeCore {
                 } catch (Exception e) {
                     Log.w(TAG, "Error getting calling BUid: " + e.getMessage());
                 }
-                
-                
-                try {
-                    StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-                    for (StackTraceElement element : stackTrace) {
-                        String className = element.getClassName();
-                        String methodName = element.getMethodName();
-                        
-                        
-                        if ((className.contains("Settings") || className.contains("FeatureFlag")) &&
-                            (methodName.contains("getString") || methodName.contains("getInt") || 
-                             methodName.contains("getLong") || methodName.contains("getFloat"))) {
-                            
-                            Log.d(TAG, "System settings access detected, using system UID to prevent mismatch");
-                            
-                            return Process.SYSTEM_UID; 
-                        }
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "Error analyzing stack trace for UID resolution: " + e.getMessage());
-                }
-                
-                
+                // Do not infer privileged callers from class or method names. Apart from being
+                // unsafe inside this native callback on Android 16, that let arbitrary guest code
+                // with matching stack-frame names receive the system UID.
                 return BlackBoxCore.getHostUid();
             }
             return origCallingUid;
@@ -151,21 +162,6 @@ public class NativeCore {
             
             return Process.myUid();
         }
-    }
-
-    private static boolean isAccountAuthenticatorTransportCall() {
-        try {
-            for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
-                String className = element.getClassName();
-                if ("android.accounts.AbstractAccountAuthenticator$Transport".equals(className)
-                        || className.startsWith("android.accounts.IAccountAuthenticator$Stub")) {
-                    return true;
-                }
-            }
-        } catch (Throwable e) {
-            Log.w(TAG, "Unable to identify account-authenticator caller", e);
-        }
-        return false;
     }
 
     @Keep
