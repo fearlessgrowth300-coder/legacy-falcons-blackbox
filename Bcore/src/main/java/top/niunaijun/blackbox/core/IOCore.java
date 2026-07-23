@@ -118,6 +118,12 @@ public class IOCore {
             rule.put(String.format("/data/data/%s", packageName), packageInfo.dataDir);
             rule.put(String.format("/data/user/%d/%s", systemUserId, packageName), packageInfo.dataDir);
 
+            DeviceProfile profile = DeviceProfile.CURRENT;
+            if (profile == null || !profile.addKernelIdentityRedirects(rule)) {
+                top.niunaijun.blackbox.utils.Slog.w(
+                        TAG, "Per-clone kernel identity redirects unavailable");
+            }
+
             
             File profilesRoot = new File(BEnvironment.getVirtualRoot(), "profiles");
             FileUtils.mkdirs(profilesRoot.getAbsolutePath());

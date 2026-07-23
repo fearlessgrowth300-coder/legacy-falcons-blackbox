@@ -2,14 +2,20 @@ package top.niunaijun.blackbox.core;
 
 import android.os.Build;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.lang.reflect.Field;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Random;
+import java.util.UUID;
 
 import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.utils.Slog;
@@ -120,7 +126,7 @@ public class DeviceProfile {
     };
 
     public String label, manufacturer, brand, model, device, product, board, fingerprint;
-    public String androidId, imei, imsi, serial, macWifi, gaid;
+    public String androidId, imei, imsi, serial, macWifi, gaid, kernelSeed;
     public String buildId, incremental, securityPatch;   // dynamic per-clone build variance
     public String widevineId;                             // per-clone Widevine deviceUniqueId (hex)
     // SIM / carrier identity — drives the country picker in WhatsApp/Instagram (they read
@@ -131,6 +137,10 @@ public class DeviceProfile {
     public String simCountryIso = "us";
     public String simOperatorName = "T-Mobile";
     public volatile boolean simSpoofed = false;
+    public volatile boolean sensorIsolationActive = false;
+    private int userId;
+    private volatile String appliedKernelBootId;
+    private String baseKernelBootId;
 
     /**
      * The profile applied to the CURRENT process (guest). Set by apply(); read by the
@@ -142,6 +152,8 @@ public class DeviceProfile {
     /** Load the persisted profile for this clone, or generate+persist a fresh one. */
     public static DeviceProfile forUser(int userId) {
         DeviceProfile p = new DeviceProfile();
+        p.userId = userId;
+        p.baseKernelBootId = readText(new File("/proc/sys/kernel/random/boot_id"));
         File dir = BEnvironment.getUserDir(userId);
         if (dir != null && !dir.exists()) dir.mkdirs();
         File conf = new File(dir, "device_profile.properties");
@@ -171,6 +183,7 @@ public class DeviceProfile {
             p.securityPatch = props.getProperty("securityPatch");
             p.fingerprint = props.getProperty("fingerprint");
             p.widevineId = props.getProperty("widevineId");
+            p.kernelSeed = props.getProperty("kernelSeed");
         } else {
             // First run for this clone: TRUE randomness (SecureRandom), NOT a userId-derived
             // seed — otherwise every user's "User 0" would be identical across all phones.
@@ -193,6 +206,7 @@ public class DeviceProfile {
             // Widevine deviceUniqueId: 32 bytes (64 hex chars) on real devices; Meta reads it
             // as a stable hardware ID. Give each clone its own so it can't link clones on one phone.
             p.widevineId = hex(r, 64);
+            p.kernelSeed = uuid(r);
         }
 
         String[] pr = PROFILES[idx];
@@ -205,6 +219,7 @@ public class DeviceProfile {
         if (p.imsi == null) { p.imsi = "310260" + digits(bf, 9); needsSave = true; }
         if (p.gaid == null) { p.gaid = uuid(bf); needsSave = true; }
         if (p.widevineId == null) { p.widevineId = hex(bf, 64); needsSave = true; }
+        if (p.kernelSeed == null) { p.kernelSeed = uuid(bf); needsSave = true; }
         if (p.fingerprint == null) {
             Fp fp = genFingerprint(pr[7], bf);
             p.buildId = fp.buildId; p.incremental = fp.incremental;
@@ -225,6 +240,7 @@ public class DeviceProfile {
             props.setProperty("securityPatch", p.securityPatch);
             props.setProperty("fingerprint", p.fingerprint);
             props.setProperty("widevineId", p.widevineId);
+            props.setProperty("kernelSeed", p.kernelSeed);
             try (FileOutputStream out = new FileOutputStream(conf)) {
                 props.store(out, "per-clone device identity");
             } catch (Exception e) {
@@ -379,10 +395,11 @@ public class DeviceProfile {
     public void apply() {
         if (isBlank(androidId) || isBlank(imei) || isBlank(imsi) || isBlank(serial)
                 || isBlank(macWifi) || isBlank(gaid) || isBlank(fingerprint)
-                || isBlank(widevineId)) {
+                || isBlank(widevineId) || isBlank(kernelSeed)) {
             throw new SecurityException("Incomplete clone identity profile");
         }
         CURRENT = this;   // make it visible to the framework proxies
+        sensorIsolationActive = SensorSignalIsolation.install(this);
         if (!hookAndroidId()) throw new SecurityException("android_id isolation unavailable");
         hookGaid();
         if (!hookMediaDrm()) throw new SecurityException("Widevine isolation unavailable");
@@ -455,6 +472,101 @@ public class DeviceProfile {
             throw new SecurityException("Build identity isolation incomplete");
         }
         Slog.d(TAG, "per-user device identity applied");
+    }
+
+    /**
+     * Add path redirects for instance-specific kernel/SoC identifiers that ordinary apps can
+     * read without a permission. The virtual boot ID changes when the real phone reboots, just as
+     * a real boot ID does, but is different for every BlackBox user.
+     */
+    public boolean addKernelIdentityRedirects(Map<String, String> rules) {
+        if (rules == null || userId < 0 || isBlank(kernelSeed) || isBlank(serial)) return false;
+        try {
+            File dir = new File(BEnvironment.getUserDir(userId), "kernel_identity");
+            if (!dir.isDirectory() && !dir.mkdirs()) return false;
+
+            File boot = new File(dir, "boot_id");
+            File socSerial = new File(dir, "soc_serial");
+            File deviceTreeSerial = new File(dir, "device_tree_serial");
+            appliedKernelBootId = deriveKernelBootId();
+            writeText(boot, appliedKernelBootId + "\n");
+            writeText(socSerial, serial + "\n");
+            writeText(deviceTreeSerial, serial + "\0");
+
+            rules.put("/proc/sys/kernel/random/boot_id", boot.getAbsolutePath());
+            rules.put("/sys/devices/soc0/serial_number", socSerial.getAbsolutePath());
+            rules.put("/sys/devices/system/soc/soc0/serial_number", socSerial.getAbsolutePath());
+            rules.put("/sys/class/android_usb/android0/iSerial", socSerial.getAbsolutePath());
+            rules.put("/sys/class/dmi/id/product_uuid", boot.getAbsolutePath());
+            rules.put("/sys/class/dmi/id/product_serial", socSerial.getAbsolutePath());
+            rules.put("/proc/device-tree/serial-number", deviceTreeSerial.getAbsolutePath());
+
+            // Older ARM devices sometimes publish a unique handset serial in /proc/cpuinfo.
+            // Preserve every CPU capability line and replace only that instance identifier.
+            String cpuInfo = readText(new File("/proc/cpuinfo"));
+            if (cpuInfo != null && cpuInfo.matches("(?s).*\\nSerial\\s*:.*")) {
+                File sanitizedCpuInfo = new File(dir, "cpuinfo");
+                writeText(sanitizedCpuInfo, cpuInfo.replaceAll(
+                        "(?m)^Serial\\s*:.*$", "Serial\\t\\t: " + serial));
+                rules.put("/proc/cpuinfo", sanitizedCpuInfo.getAbsolutePath());
+            }
+            return true;
+        } catch (Throwable error) {
+            Slog.w(TAG, "kernel identity files unavailable: "
+                    + error.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    public String virtualKernelBootId() {
+        String applied = appliedKernelBootId;
+        return applied == null ? deriveKernelBootId() : applied;
+    }
+
+    private String deriveKernelBootId() {
+        try {
+            String realBoot = baseKernelBootId;
+            if (realBoot == null || realBoot.trim().isEmpty()) {
+                realBoot = readText(new File("/proc/sys/kernel/random/boot_id"));
+            }
+            if (realBoot == null || realBoot.trim().isEmpty()) realBoot = "unknown-boot";
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(
+                    (kernelSeed + "|" + realBoot.trim()).getBytes(StandardCharsets.UTF_8));
+            digest[6] = (byte) ((digest[6] & 0x0f) | 0x40);
+            digest[8] = (byte) ((digest[8] & 0x3f) | 0x80);
+            ByteBuffer bytes = ByteBuffer.wrap(digest);
+            return new UUID(bytes.getLong(), bytes.getLong()).toString();
+        } catch (Throwable error) {
+            return kernelSeed;
+        }
+    }
+
+    private static String readText(File file) {
+        if (file == null || !file.isFile()) return null;
+        try (FileInputStream input = new FileInputStream(file);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] chunk = new byte[8192];
+            int total = 0;
+            int count;
+            while ((count = input.read(chunk)) >= 0) {
+                if (count == 0) continue;
+                int accepted = Math.min(count, 1024 * 1024 - total);
+                if (accepted <= 0) break;
+                output.write(chunk, 0, accepted);
+                total += accepted;
+                if (total >= 1024 * 1024) break;
+            }
+            return output.toString(StandardCharsets.UTF_8.name());
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static void writeText(File file, String value) throws java.io.IOException {
+        try (FileOutputStream output = new FileOutputStream(file, false)) {
+            output.write(value.getBytes(StandardCharsets.UTF_8));
+            output.flush();
+        }
     }
 
     private static boolean isBlank(String value) {

@@ -314,7 +314,8 @@ class BlackBoxBridgeProvider : ContentProvider() {
                         val p = top.niunaijun.blackbox.core.DeviceProfile.forUser(userId)
                         val fields = listOf(
                             p.androidId, p.imei, p.imsi, p.serial, p.macWifi,
-                            p.gaid, p.buildId, p.incremental, p.fingerprint, p.widevineId
+                            p.gaid, p.buildId, p.incremental, p.fingerprint, p.widevineId,
+                            p.kernelSeed
                         )
                         val complete = fields.none { it.isNullOrBlank() }
                         val digest = if (complete) {

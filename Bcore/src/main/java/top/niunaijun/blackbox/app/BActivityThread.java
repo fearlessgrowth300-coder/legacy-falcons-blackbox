@@ -1287,7 +1287,8 @@ public class BActivityThread extends IBActivityThread.Stub {
             if (!leakGuardsReady) {
                 out.putBoolean("ok", false);
                 out.putString("state", "LEAK_GUARD_FAILED");
-                out.putString("err", "DNS or UDP fail-closed guard did not verify");
+                out.putString("err", "Isolation guard failed: "
+                        + out.getString("leakFailures", "unknown"));
             } else if (!geoGuardReady) {
                 out.putBoolean("ok", false);
                 out.putString("state", "GEO_GUARD_FAILED");
@@ -1386,6 +1387,8 @@ public class BActivityThread extends IBActivityThread.Stub {
     private boolean verifyLeakGuards(Bundle out) {
         boolean dnsGuard = false;
         boolean udpGuard = false;
+        boolean kernelGuard = false;
+        boolean sensorGuard = false;
         try {
             String probe = "route-" + android.os.Process.myPid() + "-"
                     + SystemClock.elapsedRealtime() + ".invalid";
@@ -1412,9 +1415,41 @@ public class BActivityThread extends IBActivityThread.Stub {
         } finally {
             if (socket != null) socket.close();
         }
+        try {
+            top.niunaijun.blackbox.core.DeviceProfile profile =
+                    top.niunaijun.blackbox.core.DeviceProfile.CURRENT;
+            String observed;
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.FileReader("/proc/sys/kernel/random/boot_id"))) {
+                String line = reader.readLine();
+                observed = line == null ? "" : line.trim();
+            }
+            kernelGuard = profile != null
+                    && observed.equalsIgnoreCase(profile.virtualKernelBootId());
+            sensorGuard = profile != null && profile.sensorIsolationActive
+                    && top.niunaijun.blackbox.core.SensorSignalIsolation.isActive();
+        } catch (Throwable ignored) {
+        }
         out.putBoolean("dnsGuard", dnsGuard);
         out.putBoolean("udpGuard", udpGuard);
-        return dnsGuard && udpGuard;
+        out.putBoolean("kernelGuard", kernelGuard);
+        out.putBoolean("sensorGuard", sensorGuard);
+        StringBuilder failures = new StringBuilder();
+        if (!dnsGuard) failures.append("dns");
+        if (!udpGuard) {
+            if (failures.length() > 0) failures.append(',');
+            failures.append("udp");
+        }
+        if (!kernelGuard) {
+            if (failures.length() > 0) failures.append(',');
+            failures.append("kernel");
+        }
+        if (!sensorGuard) {
+            if (failures.length() > 0) failures.append(',');
+            failures.append("sensor");
+        }
+        out.putString("leakFailures", failures.toString());
+        return dnsGuard && udpGuard && kernelGuard && sensorGuard;
     }
 
     public static Activity getActivityByToken(IBinder token) {
