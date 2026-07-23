@@ -236,6 +236,12 @@ public class BActivityThread extends IBActivityThread.Stub {
         if (!BActivityThread.currentActivityThread().isInit()) {
             BActivityThread.currentActivityThread().bindApplication(serviceInfo.packageName, serviceInfo.processName);
         }
+        if (!BActivityThread.currentActivityThread().isInit() || mBoundApplication == null
+                || mBoundApplication.info == null) {
+            Slog.w(TAG, "Skipping stale service because its virtual application is unavailable: "
+                    + serviceInfo.packageName + "/" + serviceInfo.name);
+            return null;
+        }
         ClassLoader classLoader = BRLoadedApk.get(mBoundApplication.info).getClassLoader();
         Service service;
         try {
@@ -290,6 +296,12 @@ public class BActivityThread extends IBActivityThread.Stub {
     public JobService createJobService(ServiceInfo serviceInfo) {
         if (!BActivityThread.currentActivityThread().isInit()) {
             BActivityThread.currentActivityThread().bindApplication(serviceInfo.packageName, serviceInfo.processName);
+        }
+        if (!BActivityThread.currentActivityThread().isInit() || mBoundApplication == null
+                || mBoundApplication.info == null) {
+            Slog.w(TAG, "Skipping stale job service because its virtual application is unavailable: "
+                    + serviceInfo.packageName + "/" + serviceInfo.name);
+            return null;
         }
         ClassLoader classLoader = BRLoadedApk.get(mBoundApplication.info).getClassLoader();
         JobService service;
@@ -408,6 +420,11 @@ public class BActivityThread extends IBActivityThread.Stub {
         }
 
         PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(packageName, PackageManager.GET_PROVIDERS, BActivityThread.getUserId());
+        if (packageInfo == null || packageInfo.applicationInfo == null) {
+            Slog.w(TAG, "Ignoring stale bind request for missing virtual package: " + packageName
+                    + " user=" + BActivityThread.getUserId());
+            return;
+        }
         ApplicationInfo applicationInfo = packageInfo.applicationInfo;
         if (packageInfo.providers == null) {
             packageInfo.providers = new ProviderInfo[]{};
@@ -1039,6 +1056,10 @@ public class BActivityThread extends IBActivityThread.Stub {
         try {
             for (ProviderInfo providerInfo : provider) {
                 try {
+                    if (isUnsupportedPlayStoreProvider(providerInfo)) {
+                        Slog.w(TAG, "Skipping incompatible virtual Play provider: " + providerInfo.name);
+                        continue;
+                    }
                     if (processName.equals(providerInfo.processName) ||
                             providerInfo.processName.equals(context.getPackageName()) || providerInfo.multiprocess) {
                         installProvider(BlackBoxCore.mainThread(), context, providerInfo, null);
@@ -1050,6 +1071,17 @@ public class BActivityThread extends IBActivityThread.Stub {
             Binder.restoreCallingIdentity(origId);
             ContentProviderDelegate.init();
         }
+    }
+
+    /**
+     * These two recent Finsky providers cast process-global dependency objects that Android's
+     * virtual package loader cannot safely share. They are optional Security Hub / peer-to-peer
+     * cache features, not Play sign-in, installation, billing or GMS notification providers.
+     */
+    private static boolean isUnsupportedPlayStoreProvider(ProviderInfo info) {
+        if (info == null || !"com.android.vending".equals(info.packageName)) return false;
+        return "com.google.android.finsky.securityhub.SecurityHubContentProvider".equals(info.name)
+                || "com.google.android.finsky.setup.p2p.CachedPackageContentProvider".equals(info.name);
     }
 
     public Object getPackageInfo() {
@@ -1250,10 +1282,16 @@ public class BActivityThread extends IBActivityThread.Stub {
             boolean exitChanged = expectedExitIp != null && !expectedExitIp.trim().isEmpty()
                     && !ip.equalsIgnoreCase(expectedExitIp.trim());
             out.putBoolean("exitChanged", exitChanged);
-            if (!verifyLeakGuards(out)) {
+            boolean leakGuardsReady = verifyLeakGuards(out);
+            boolean geoGuardReady = verifyGeoConsistency(out);
+            if (!leakGuardsReady) {
                 out.putBoolean("ok", false);
                 out.putString("state", "LEAK_GUARD_FAILED");
                 out.putString("err", "DNS or UDP fail-closed guard did not verify");
+            } else if (!geoGuardReady) {
+                out.putBoolean("ok", false);
+                out.putString("state", "GEO_GUARD_FAILED");
+                out.putString("err", "The clone country, SIM, timezone, or GPS profile did not apply");
             } else {
                 // Mobile/residential pools may rotate the public exit while retaining the exact
                 // authenticated proxy session. Route identity + in-guest exit + leak guards are
@@ -1269,6 +1307,55 @@ public class BActivityThread extends IBActivityThread.Stub {
             out.putLong("latencyMs", SystemClock.elapsedRealtime() - started);
         }
         return out;
+    }
+
+    private boolean verifyGeoConsistency(Bundle out) {
+        String expectedCountry = top.niunaijun.blackbox.core.GuestProxy.CURRENT_COUNTRY_ISO;
+        String expectedTimezone = top.niunaijun.blackbox.core.GuestProxy.CURRENT_TIMEZONE_ID;
+        Double expectedLatitude = top.niunaijun.blackbox.core.GuestProxy.CURRENT_LATITUDE;
+        Double expectedLongitude = top.niunaijun.blackbox.core.GuestProxy.CURRENT_LONGITUDE;
+        boolean simReady = true;
+        boolean localeReady = true;
+        boolean timezoneReady = true;
+        boolean locationReady = true;
+
+        if (expectedCountry != null && !expectedCountry.isEmpty()) {
+            top.niunaijun.blackbox.core.DeviceProfile profile =
+                    top.niunaijun.blackbox.core.DeviceProfile.CURRENT;
+            simReady = profile != null && profile.simSpoofed
+                    && expectedCountry.equalsIgnoreCase(profile.simCountryIso);
+            localeReady = expectedCountry.equalsIgnoreCase(
+                    java.util.Locale.getDefault().getCountry());
+        }
+        if (expectedTimezone != null && !expectedTimezone.isEmpty()) {
+            timezoneReady = expectedTimezone.equals(java.util.TimeZone.getDefault().getID());
+        }
+        if (expectedLatitude != null && expectedLongitude != null) {
+            try {
+                top.niunaijun.blackbox.entity.location.BLocation location =
+                        top.niunaijun.blackbox.fake.frameworks.BLocationManager.get().getLocation(
+                                getUserId(), getAppPackageName());
+                locationReady = location != null
+                        && Math.abs(location.getLatitude() - expectedLatitude) < 0.000001
+                        && Math.abs(location.getLongitude() - expectedLongitude) < 0.000001;
+            } catch (Throwable ignored) {
+                locationReady = false;
+            }
+        }
+
+        out.putString("countryIso", expectedCountry == null ? "" : expectedCountry);
+        out.putString("timezoneId", expectedTimezone == null ? "" : expectedTimezone);
+        if (expectedLatitude != null && expectedLongitude != null) {
+            out.putDouble("latitude", expectedLatitude);
+            out.putDouble("longitude", expectedLongitude);
+        }
+        out.putBoolean("simGuard", simReady);
+        out.putBoolean("localeGuard", localeReady);
+        out.putBoolean("timezoneGuard", timezoneReady);
+        out.putBoolean("locationGuard", locationReady);
+        boolean ready = simReady && localeReady && timezoneReady && locationReady;
+        out.putBoolean("geoGuard", ready);
+        return ready;
     }
 
     private boolean verifyLeakGuards(Bundle out) {

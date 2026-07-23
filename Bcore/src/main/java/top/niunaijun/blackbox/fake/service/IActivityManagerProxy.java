@@ -12,6 +12,7 @@ import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
 import android.os.IBinder;
 import android.os.IInterface;
+import android.os.Process;
 import android.util.Log;
 
 import java.lang.ref.WeakReference;
@@ -512,10 +513,32 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             RunningAppProcessInfo runningAppProcesses = BActivityManager.get().getRunningAppProcesses(BActivityThread.getAppPackageName(), BActivityThread.getUserId());
-            if (runningAppProcesses == null) {
-                return new ArrayList<>();
+            ArrayList<ActivityManager.RunningAppProcessInfo> result = new ArrayList<>();
+            if (runningAppProcesses != null && runningAppProcesses.mAppProcessInfoList != null) {
+                result.addAll(runningAppProcesses.mAppProcessInfoList);
             }
-            return runningAppProcesses.mAppProcessInfoList;
+            // Android can recreate a ProxyService process before the host-side process registry has
+            // finished attaching its new PID. Modern Instagram resolves its own process name by
+            // scanning this list during Application.onCreate and crashes if the current PID is
+            // missing. Always expose the already-validated local AppConfig as the current process.
+            boolean containsCurrentPid = false;
+            for (ActivityManager.RunningAppProcessInfo info : result) {
+                if (info != null && info.pid == Process.myPid()) {
+                    containsCurrentPid = true;
+                    break;
+                }
+            }
+            String processName = BActivityThread.getAppProcessName();
+            String packageName = BActivityThread.getAppPackageName();
+            if (!containsCurrentPid && processName != null && packageName != null) {
+                ActivityManager.RunningAppProcessInfo current =
+                        new ActivityManager.RunningAppProcessInfo(processName, Process.myPid(),
+                                new String[]{packageName});
+                current.uid = Process.myUid();
+                current.importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND;
+                result.add(current);
+            }
+            return result;
         }
     }
 

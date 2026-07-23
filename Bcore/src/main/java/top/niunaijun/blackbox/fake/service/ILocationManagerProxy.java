@@ -53,7 +53,7 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         
         String packageName = BActivityThread.getAppPackageName();
         if (packageName != null && packageName.equals("com.google.android.gms")) {
-            
+
             if (method.getName().equals("getLastLocation") || 
                 method.getName().equals("getLastKnownLocation") ||
                 method.getName().equals("requestLocationUpdates")) {
@@ -81,7 +81,9 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             if (BLocationManager.isFakeLocationEnable()) {
-                return BLocationManager.get().getLocation(BActivityThread.getUserId(), BActivityThread.getAppPackageName()).convert2SystemLocation();
+                BLocation location = BLocationManager.get().getLocation(
+                        BActivityThread.getUserId(), BActivityThread.getAppPackageName());
+                if (location != null) return location.convert2SystemLocation();
             }
             
             
@@ -103,7 +105,9 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             if (BLocationManager.isFakeLocationEnable()) {
-                return BLocationManager.get().getLocation(BActivityThread.getUserId(), BActivityThread.getAppPackageName()).convert2SystemLocation();
+                BLocation location = BLocationManager.get().getLocation(
+                        BActivityThread.getUserId(), BActivityThread.getAppPackageName());
+                if (location != null) return location.convert2SystemLocation();
             }
             
             

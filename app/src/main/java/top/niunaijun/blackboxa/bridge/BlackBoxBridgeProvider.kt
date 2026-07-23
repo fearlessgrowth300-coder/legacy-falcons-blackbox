@@ -25,6 +25,9 @@ class BlackBoxBridgeProvider : ContentProvider() {
 
     override fun onCreate(): Boolean = true
 
+    private fun accountReady(ctx: android.content.Context): Boolean =
+        VaultKeyStore.isReady(ctx) && Supabase.isSignedIn(ctx)
+
     override fun query(
         uri: Uri, projection: Array<out String>?, selection: String?,
         selectionArgs: Array<out String>?, sortOrder: String?
@@ -32,7 +35,7 @@ class BlackBoxBridgeProvider : ContentProvider() {
         if (uri.lastPathSegment == "routes") {
             val routes = MatrixCursor(arrayOf("userId", "packageName", "routeId"))
             val ctx = context ?: return routes
-            if (!Supabase.isSignedIn(ctx) || !VaultKeyStore.isReady(ctx)) return routes
+            if (!accountReady(ctx)) return routes
             try {
                 for (u in BlackBoxCore.get().users) {
                     for (pkg in GuestProxy.configuredPackagesForUser(u.id)) {
@@ -45,7 +48,7 @@ class BlackBoxBridgeProvider : ContentProvider() {
         }
         val c = MatrixCursor(arrayOf("userId", "packageName", "label"))
         val ctx = context ?: return c
-        if (!Supabase.isSignedIn(ctx) || !VaultKeyStore.isReady(ctx)) return c
+        if (!accountReady(ctx)) return c
         try {
             val core = BlackBoxCore.get()
             val pm = BlackBoxCore.getPackageManager()
@@ -88,7 +91,7 @@ class BlackBoxBridgeProvider : ContentProvider() {
             if (!signedIn || !vaultReady) res.putString("err", "BlackBox account is locked")
             return res
         }
-        if (ctx == null || !Supabase.isSignedIn(ctx) || !VaultKeyStore.isReady(ctx)) {
+        if (ctx == null || !accountReady(ctx)) {
             res.putBoolean("ok", false)
             res.putString("err", "BlackBox account is locked")
             return res
@@ -143,6 +146,11 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     val username = e.getString("username", "")
                     val password = e.getString("password", "")
                     val countryIso = e.getString("countryIso", "")
+                    val city = e.getString("city", "")
+                    val region = e.getString("region", "")
+                    val latitude = if (e.containsKey("latitude")) e.getDouble("latitude") else null
+                    val longitude = if (e.containsKey("longitude")) e.getDouble("longitude") else null
+                    val timezoneId = e.getString("timezoneId", "")
                     // Repeat the profile editor's read-only checks at the atomic launch boundary.
                     // A restored profile can outlive a deleted or moved clone, so an earlier
                     // successful preflight must not authorize a later write for the wrong user.
@@ -155,7 +163,8 @@ class BlackBoxBridgeProvider : ContentProvider() {
                         userId, pkg, type, server, port, username, password, countryIso
                     )
                     val saved = validNode && knownApp && validExitIp && !conflict && GuestProxy.save(
-                        userId, pkg, type, server, port, username, password, countryIso
+                        userId, pkg, type, server, port, username, password, countryIso,
+                        city, region, latitude, longitude, timezoneId
                     )
                     val gmsRoute = if (saved && GuestProxy.isSharedGmsActive(userId)) {
                         GuestProxy.syncGmsRouteForUser(userId)
@@ -225,6 +234,11 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     val username = e.getString("username", "")
                     val password = e.getString("password", "")
                     val countryIso = e.getString("countryIso", "")
+                    val city = e.getString("city", "")
+                    val region = e.getString("region", "")
+                    val latitude = if (e.containsKey("latitude")) e.getDouble("latitude") else null
+                    val longitude = if (e.containsKey("longitude")) e.getDouble("longitude") else null
+                    val timezoneId = e.getString("timezoneId", "")
                     val validNode = server.isNotBlank() && port in 1..65535 &&
                         type in setOf("http", "https", "socks", "socks5")
                     val knownUser = userId >= 0 && BlackBoxCore.get().users.any { it.id == userId }
@@ -233,7 +247,8 @@ class BlackBoxBridgeProvider : ContentProvider() {
                         userId, pkg, type, server, port, username, password, countryIso
                     )
                     val saved = validNode && knownUser && knownApp && !conflict && GuestProxy.save(
-                        userId, pkg, type, server, port, username, password, countryIso
+                        userId, pkg, type, server, port, username, password, countryIso,
+                        city, region, latitude, longitude, timezoneId
                     )
                     val gmsRoute = if (saved && GuestProxy.isSharedGmsActive(userId)) {
                         GuestProxy.syncGmsRouteForUser(userId)

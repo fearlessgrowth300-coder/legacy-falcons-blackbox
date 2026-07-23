@@ -37,8 +37,10 @@ object Supabase {
             ?: prefs(ctx).getString(name, null)
     // Persistent session: signed in as long as tokens are stored. No expiry / no auto-logout;
     // only an explicit signOut() clears it.
-    /** Unlock only after this process has verified the stored session with GoTrue recently. */
-    fun isSignedIn(ctx: Context): Boolean {
+    /** Local unlock persists until the user explicitly logs out. */
+    fun isSignedIn(ctx: Context): Boolean = hasStoredSession(ctx)
+
+    private fun hasRecentlyValidatedSession(ctx: Context): Boolean {
         if (!hasStoredSession(ctx) || !validatedThisProcess.get() || !tokenIsFresh(accessToken(ctx))) {
             return false
         }
@@ -47,6 +49,13 @@ object Supabase {
     }
     fun hasStoredSession(ctx: Context): Boolean =
         !accessToken(ctx).isNullOrBlank() && !refreshToken(ctx).isNullOrBlank()
+
+    /** Best-effort cloud validation; an outage never locks the local BlackBox workspace. */
+    fun ensureValidatedSession(ctx: Context): Boolean {
+        if (!hasStoredSession(ctx)) return false
+        if (hasRecentlyValidatedSession(ctx)) return true
+        return validateStoredSession(ctx) || hasStoredSession(ctx)
+    }
     fun email(ctx: Context): String? = secret(ctx, "email")
     fun userId(ctx: Context): String? = secret(ctx, "user_id")
     private fun accessToken(ctx: Context): String? = secret(ctx, "access_token")
@@ -122,6 +131,7 @@ object Supabase {
         saveSession(ctx, o)
     }
 
+    /** Best-effort server check used to refresh cloud credentials without changing local unlock. */
     @Synchronized
     fun validateStoredSession(ctx: Context): Boolean {
         if (!hasStoredSession(ctx)) return false
@@ -133,10 +143,16 @@ object Supabase {
             if (valid) {
                 validatedThisProcess.set(true)
                 validatedAtMs.set(System.currentTimeMillis())
-            } else clearLocalSession(ctx)
+            } else {
+                validatedThisProcess.set(false)
+                validatedAtMs.set(0L)
+            }
             valid
-        } catch (e: HttpError) {
-            if (e.code == 401 || e.code == 403) clearLocalSession(ctx)
+        } catch (_: HttpError) {
+            // Keep the sealed local workspace. Cloud access can recover when refresh/network does;
+            // only the explicit Log out action removes the session.
+            validatedThisProcess.set(false)
+            validatedAtMs.set(0L)
             false
         } catch (_: Exception) {
             false

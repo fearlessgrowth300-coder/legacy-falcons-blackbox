@@ -419,8 +419,70 @@ public class IPackageManagerProxy extends BinderInvocationStub {
     public static class GetInstallerPackageName extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            
+
             return "com.android.vending";
+        }
+    }
+
+    /**
+     * Android 11+ apps (e.g. WhatsApp's "official app" check) read getInstallSourceInfo() instead of
+     * the deprecated getInstallerPackageName(). Without spoofing it, the container app looks
+     * sideloaded and WhatsApp blocks registration ("Download the official WhatsApp"). Report the
+     * Play Store as the installing/initiating source, matching getInstallerPackageName above.
+     */
+    @ProxyMethod("getInstallSourceInfo")
+    public static class GetInstallSourceInfo extends MethodHook {
+        private static final String VENDING = "com.android.vending";
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            Object result = null;
+            try {
+                result = method.invoke(who, args);
+            } catch (Throwable ignored) {
+                // Real system doesn't know the virtualized package — build a fresh source below.
+            }
+            if (result != null) {
+                setField(result, "mInstallingPackageName", VENDING);
+                setField(result, "mInitiatingPackageName", VENDING);
+                return result;
+            }
+            return build();
+        }
+
+        private static void setField(Object obj, String name, String value) {
+            try {
+                java.lang.reflect.Field f = obj.getClass().getDeclaredField(name);
+                f.setAccessible(true);
+                f.set(obj, value);
+            } catch (Throwable ignored) {
+            }
+        }
+
+        /** Construct an InstallSourceInfo reporting the Play Store, tolerant of the field/arg layout
+         *  across Android 11–16 (use the widest constructor, fill Strings with the store package). */
+        private static Object build() {
+            try {
+                Class<?> cls = Class.forName("android.content.pm.InstallSourceInfo");
+                java.lang.reflect.Constructor<?> widest = null;
+                for (java.lang.reflect.Constructor<?> c : cls.getDeclaredConstructors()) {
+                    if (widest == null || c.getParameterTypes().length > widest.getParameterTypes().length) {
+                        widest = c;
+                    }
+                }
+                if (widest == null) return null;
+                widest.setAccessible(true);
+                Class<?>[] pt = widest.getParameterTypes();
+                Object[] a = new Object[pt.length];
+                for (int i = 0; i < pt.length; i++) {
+                    if (pt[i] == String.class) a[i] = VENDING;
+                    else if (pt[i] == int.class) a[i] = 0;
+                    else a[i] = null;
+                }
+                return widest.newInstance(a);
+            } catch (Throwable t) {
+                return null;
+            }
         }
     }
 
