@@ -1,6 +1,7 @@
 name: BlackBox CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, private-main]
   pull_request:
