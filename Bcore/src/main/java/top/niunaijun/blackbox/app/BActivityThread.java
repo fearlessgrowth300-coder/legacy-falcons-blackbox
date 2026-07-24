@@ -187,6 +187,10 @@ public class BActivityThread extends IBActivityThread.Stub {
             // possible (before the guest app loads / references Build.*).
             try {
                 top.niunaijun.blackbox.core.DeviceProfile.forUser(appConfig.userId).apply();
+                if (!top.niunaijun.blackbox.core.IOCore.get()
+                        .enableKernelIdentityRedirects()) {
+                    throw new SecurityException("Per-clone kernel identity redirect unavailable");
+                }
             } catch (Throwable t) {
                 top.niunaijun.blackbox.utils.Slog.w("DeviceProfile", "apply failed: " + t.getMessage());
                 throw new RuntimeException("Refusing to start guest without complete identity isolation", t);
