@@ -1418,16 +1418,28 @@ public class BActivityThread extends IBActivityThread.Stub {
         try {
             top.niunaijun.blackbox.core.DeviceProfile profile =
                     top.niunaijun.blackbox.core.DeviceProfile.CURRENT;
-            String observed;
-            try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                    new java.io.FileReader("/proc/sys/kernel/random/boot_id"))) {
-                String line = reader.readLine();
-                observed = line == null ? "" : line.trim();
-            }
-            kernelGuard = profile != null
-                    && observed.equalsIgnoreCase(profile.virtualKernelBootId());
+            String bootPath = "/proc/sys/kernel/random/boot_id";
+            String expected = profile == null ? "" : profile.virtualKernelBootId();
+            String observed = readFirstLine(bootPath);
+            String redirectedPath =
+                    top.niunaijun.blackbox.core.IOCore.get().redirectPath(bootPath);
+            String redirectedObserved = readFirstLine(redirectedPath);
+            boolean redirectRegistered = !bootPath.equals(redirectedPath);
+            kernelGuard = profile != null && redirectRegistered
+                    && observed.equalsIgnoreCase(expected);
             sensorGuard = profile != null && profile.sensorIsolationActive
                     && top.niunaijun.blackbox.core.SensorSignalIsolation.isActive();
+            out.putBoolean("kernelRedirectRegistered", redirectRegistered);
+            out.putBoolean("kernelRedirectFileMatch",
+                    redirectedObserved.equalsIgnoreCase(expected));
+            out.putString("kernelObservedHash", shortDigest(observed));
+            out.putString("kernelExpectedHash", shortDigest(expected));
+            out.putString("kernelRedirectHash", shortDigest(redirectedObserved));
+            top.niunaijun.blackbox.utils.Slog.d(TAG,
+                    "kernel guard registered=" + redirectRegistered
+                            + " observed=" + shortDigest(observed)
+                            + " expected=" + shortDigest(expected)
+                            + " target=" + shortDigest(redirectedObserved));
         } catch (Throwable ignored) {
         }
         out.putBoolean("dnsGuard", dnsGuard);
@@ -1450,6 +1462,32 @@ public class BActivityThread extends IBActivityThread.Stub {
         }
         out.putString("leakFailures", failures.toString());
         return dnsGuard && udpGuard && kernelGuard && sensorGuard;
+    }
+
+    private static String readFirstLine(String path) {
+        if (path == null || path.trim().isEmpty()) return "";
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.FileReader(path))) {
+            String line = reader.readLine();
+            return line == null ? "" : line.trim();
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    private static String shortDigest(String value) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(
+                    (value == null ? "" : value).getBytes(
+                            java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(12);
+            for (int i = 0; i < 6; i++) {
+                result.append(String.format(java.util.Locale.US, "%02x", digest[i] & 0xff));
+            }
+            return result.toString();
+        } catch (Throwable ignored) {
+            return "unavailable";
+        }
     }
 
     public static Activity getActivityByToken(IBinder token) {
