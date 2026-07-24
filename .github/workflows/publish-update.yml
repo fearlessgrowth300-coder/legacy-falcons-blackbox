@@ -185,7 +185,8 @@ jobs:
               --title "BlackBox latest ($VERSION_NAME)" \
               --notes-file "$RUNNER_TEMP/latest-notes.txt"
           fi
-          gh release upload latest "$APK#BlackBox.apk" --clobber
+          cp "$APK" "$RUNNER_TEMP/BlackBox.apk"
+          gh release upload latest "$RUNNER_TEMP/BlackBox.apk" --clobber
           gh release upload latest version.json --clobber
 
       - name: Publish metadata only after the APK passed every check
