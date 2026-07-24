@@ -5,14 +5,24 @@ alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
 }
 
+def requestedVersionCode = providers.gradleProperty("buildVersionCode")
+        .orElse(providers.environmentVariable("BUILD_VERSION_CODE")).orNull
+def generatedVersionCode = requestedVersionCode != null
+        ? Integer.parseInt(requestedVersionCode)
+        : (int) ((System.currentTimeMillis() / 1000L) - 1577836800L)
+if (generatedVersionCode < 1 || generatedVersionCode > 2100000000) {
+    throw new GradleException('buildVersionCode must be between 1 and 2100000000')
+}
+
 ext {
     compileSdkVersion = 35
     targetSdkVersion = 28 
 
     // Authenticated local encryption and crash-safe Drive restore require API 24.
     minSdk = 24
-    versionCode = 411
-    versionName = "4.0.11"
+    // Seconds since 2020-01-01. CI may pin one value with BUILD_VERSION_CODE.
+    versionCode = generatedVersionCode
+    versionName = "4.1.0"
     xVersion = '1.1.0'
     hiddenApiBypass = '4.3'
 }
