@@ -11,6 +11,7 @@ import androidx.annotation.Nullable;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.R;
+import top.niunaijun.blackbox.entity.AppConfig;
 import top.niunaijun.blackbox.utils.Slog;
 import android.util.Log;
 import android.widget.ImageView;
@@ -182,6 +183,13 @@ public class LauncherActivity extends Activity {
                 Thread.sleep(100);
                 
                 
+                AppConfig prepared = BlackBoxCore.getBActivityManager()
+                        .initProcess(launchIntent.getPackage(), launchIntent.getPackage(), userId);
+                if (prepared == null) {
+                    throw new IllegalStateException(
+                            "The isolated app process could not be prepared safely");
+                }
+
                 BlackBoxCore.getBActivityManager().startActivity(launchIntent, userId);
                 
                 Slog.d(TAG, "App launch initiated successfully");

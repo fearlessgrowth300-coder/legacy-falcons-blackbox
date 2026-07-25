@@ -34,6 +34,29 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
     @Override
     public void systemReady() {
         scanUserL();
+        migrateExistingUsersToIsolatedKeystore();
+    }
+
+    /**
+     * Older builds allowed virtual users to share the host AndroidKeyStore namespace. Apps such as
+     * Instagram keep login-encryption keys there, so signing in to one clone could replace another
+     * clone's key and make that account appear logged out later.
+     *
+     * Hardware-backed keys cannot be exported or renamed. The safe migration is therefore to give
+     * every existing virtual user its own namespace before any guest process can start. A legacy
+     * account may require one final login after this upgrade, but subsequent keys cannot collide.
+     */
+    private void migrateExistingUsersToIsolatedKeystore() {
+        synchronized (mUserLock) {
+            synchronized (mUsers) {
+                for (BUserInfo user : mUsers.values()) {
+                    if (user.id >= 0 && !KeystoreIsolation.enableForUser(user.id)) {
+                        throw new IllegalStateException(
+                                "Could not enable encrypted-login isolation for User " + user.id);
+                    }
+                }
+            }
+        }
     }
 
     @Override
@@ -105,8 +128,7 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
         synchronized (mUsers) {
             saveUserInfoLocked();
         }
-        // New users are safe from their first app launch. Existing users loaded from user.conf
-        // retain legacy non-exportable keys until the owner chooses the explicit upgrade.
+        // New users are safe from their first app launch.
         if (!KeystoreIsolation.markNewUser(userId)) {
             mUsers.remove(userId);
             synchronized (mUsers) { saveUserInfoLocked(); }

@@ -369,6 +369,18 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
         ProcessRecord processRecord = BProcessManagerService.get().startProcessLocked(packageName, processName, userId, -1, Binder.getCallingPid());
         if (processRecord == null)
             return null;
+        try {
+            // Fully create the guest Application before its first Activity receives focus. Modern
+            // split-heavy apps (TikTok and Chrome in particular) can spend more than Android's
+            // five-second input deadline loading code, providers and native libraries. Doing that
+            // work in the already-routed background process keeps the launcher responsive and
+            // prevents a false "BlackBox isn't responding" ANR on the first screen.
+            processRecord.bActivityThread.bindApplication();
+        } catch (Throwable error) {
+            Slog.e(TAG, "Could not prewarm " + packageName + " for User " + userId, error);
+            BProcessManagerService.get().killPackageAsUser(packageName, userId);
+            return null;
+        }
         return processRecord.getClientConfig();
     }
 
