@@ -391,18 +391,21 @@ public class DeviceProfile {
         }
     }
 
-    /** Apply this profile to the current (guest) process. Call as early as possible. */
-    public void apply() {
+    /**
+     * Apply the parts of the profile that do not require Pine method hooks.
+     *
+     * This method runs inside the virtual process ContentProvider handshake. Android 16 gives
+     * that handshake a short deadline, while Pine's first native initialization can legitimately
+     * take longer on split-heavy apps. Keep the handshake bounded and install runtime hooks on the
+     * guarded worker before any guest Application is created.
+     */
+    public void prepareEarly() {
         if (isBlank(androidId) || isBlank(imei) || isBlank(imsi) || isBlank(serial)
                 || isBlank(macWifi) || isBlank(gaid) || isBlank(fingerprint)
                 || isBlank(widevineId) || isBlank(kernelSeed)) {
             throw new SecurityException("Incomplete clone identity profile");
         }
         CURRENT = this;   // make it visible to the framework proxies
-        sensorIsolationActive = SensorSignalIsolation.install(this);
-        if (!hookAndroidId()) throw new SecurityException("android_id isolation unavailable");
-        hookGaid();
-        if (!hookMediaDrm()) throw new SecurityException("Widevine isolation unavailable");
         List<String> keys = new ArrayList<>();
         List<String> vals = new ArrayList<>();
         add(keys, vals, "ro.product.model", model);
@@ -472,6 +475,24 @@ public class DeviceProfile {
             throw new SecurityException("Build identity isolation incomplete");
         }
         Slog.d(TAG, "per-user device identity applied");
+    }
+
+    /** Install all Pine-backed hooks before guest Application.onCreate is permitted to run. */
+    public synchronized boolean installRuntimeHooks() {
+        CURRENT = this;
+        sensorIsolationActive = SensorSignalIsolation.install(this);
+        boolean androidIdReady = hookAndroidId();
+        hookGaid();
+        boolean mediaDrmReady = hookMediaDrm();
+        return sensorIsolationActive && androidIdReady && mediaDrmReady;
+    }
+
+    /** Compatibility entry point for callers that are not inside the provider handshake. */
+    public void apply() {
+        prepareEarly();
+        if (!installRuntimeHooks()) {
+            throw new SecurityException("Runtime identity isolation unavailable");
+        }
     }
 
     /**

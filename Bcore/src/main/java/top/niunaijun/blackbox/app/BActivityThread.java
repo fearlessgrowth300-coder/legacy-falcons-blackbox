@@ -102,6 +102,10 @@ public class BActivityThread extends IBActivityThread.Stub {
     private final List<ProviderInfo> mProviders = new ArrayList<>();
     private final Handler mH = BlackBoxCore.get().getHandler();
     private static final Object mConfigLock = new Object();
+    private volatile boolean mRuntimeIsolationReady;
+    private volatile Throwable mRuntimeIsolationError;
+    private volatile java.util.concurrent.CountDownLatch mRuntimeIsolationLatch =
+            new java.util.concurrent.CountDownLatch(0);
 
     public static boolean isThreadInit() {
         return sBActivityThread != null;
@@ -178,15 +182,20 @@ public class BActivityThread extends IBActivityThread.Stub {
 
     public void initProcess(AppConfig appConfig) {
         synchronized (mConfigLock) {
-            if (this.mAppConfig != null && !this.mAppConfig.packageName.equals(appConfig.packageName)) {
-                
-                throw new RuntimeException("reject init process: " + appConfig.processName + ", this process is : " + this.mAppConfig.processName);
+            if (this.mAppConfig != null) {
+                if (!this.mAppConfig.packageName.equals(appConfig.packageName)) {
+                    throw new RuntimeException("reject init process: " + appConfig.processName
+                            + ", this process is : " + this.mAppConfig.processName);
+                }
+                return;
             }
             this.mAppConfig = appConfig;
             // Apply this clone's unique, persistent device identity as early as
             // possible (before the guest app loads / references Build.*).
+            final top.niunaijun.blackbox.core.DeviceProfile profile;
             try {
-                top.niunaijun.blackbox.core.DeviceProfile.forUser(appConfig.userId).apply();
+                profile = top.niunaijun.blackbox.core.DeviceProfile.forUser(appConfig.userId);
+                profile.prepareEarly();
                 if (!top.niunaijun.blackbox.core.IOCore.get()
                         .enableKernelIdentityRedirects()) {
                     throw new SecurityException("Per-clone kernel identity redirect unavailable");
@@ -203,15 +212,42 @@ public class BActivityThread extends IBActivityThread.Stub {
                         && proxyStatus != top.niunaijun.blackbox.core.GuestProxy.ApplyStatus.NOT_CONFIGURED) {
                     throw new SecurityException("Assigned proxy is not ready: " + proxyStatus);
                 }
-                // Install after GuestProxy has read BlackBox's host key, but before any guest
-                // Application class can touch its own login-encryption aliases.
-                if (!top.niunaijun.blackbox.core.KeystoreIsolation.installForCurrentProcess()) {
-                    throw new SecurityException("Per-clone AndroidKeyStore isolation unavailable");
-                }
             } catch (Throwable t) {
                 top.niunaijun.blackbox.utils.Slog.w("GuestProxy", "apply failed: " + t.getMessage());
                 throw new RuntimeException("Refusing to start guest with a broken proxy assignment", t);
             }
+
+            // Pine's first native initialization can exceed Android 16's ContentProvider startup
+            // deadline. Return the process binder promptly, but keep guest Application creation
+            // blocked on this latch so no app code can run before identity and keystore isolation.
+            mRuntimeIsolationReady = false;
+            mRuntimeIsolationError = null;
+            final java.util.concurrent.CountDownLatch isolationLatch =
+                    new java.util.concurrent.CountDownLatch(1);
+            mRuntimeIsolationLatch = isolationLatch;
+            Thread isolationWorker = new Thread(() -> {
+                try {
+                    boolean identityReady = profile.installRuntimeHooks();
+                    // Install after GuestProxy has read BlackBox's host key, but before any guest
+                    // Application class can touch its own login-encryption aliases.
+                    boolean keystoreReady =
+                            top.niunaijun.blackbox.core.KeystoreIsolation.installForCurrentProcess();
+                    if (!identityReady || !keystoreReady) {
+                        throw new SecurityException("Incomplete runtime identity isolation");
+                    }
+                    mRuntimeIsolationReady = true;
+                    top.niunaijun.blackbox.utils.Slog.d(
+                            TAG, "Runtime isolation ready for " + appConfig.packageName);
+                } catch (Throwable error) {
+                    mRuntimeIsolationError = error;
+                    top.niunaijun.blackbox.utils.Slog.e(
+                            TAG, "Runtime isolation failed for " + appConfig.packageName, error);
+                } finally {
+                    isolationLatch.countDown();
+                }
+            }, "GuestRuntimeIsolation");
+            isolationWorker.setDaemon(true);
+            isolationWorker.start();
             IBinder iBinder = asBinder();
             try {
                 iBinder.linkToDeath(new DeathRecipient() {
@@ -418,6 +454,17 @@ public class BActivityThread extends IBActivityThread.Stub {
     public synchronized void handleBindApplication(String packageName, String processName) {
         if (isInit())
             return;
+        try {
+            if (!mRuntimeIsolationLatch.await(45, java.util.concurrent.TimeUnit.SECONDS)
+                    || !mRuntimeIsolationReady) {
+                Throwable error = mRuntimeIsolationError;
+                throw new SecurityException("Runtime isolation was not ready"
+                        + (error == null ? "" : ": " + error.getClass().getSimpleName()), error);
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new SecurityException("Interrupted while preparing runtime isolation", interrupted);
+        }
         try {
             CrashHandler.create();
         } catch (Throwable ignored) {
@@ -1230,6 +1277,16 @@ public class BActivityThread extends IBActivityThread.Stub {
     @Override
     public Bundle verifyProxyRoute(String expectedRouteId, String expectedExitIp) {
         Bundle out = new Bundle();
+        if (!mRuntimeIsolationReady) {
+            Throwable isolationError = mRuntimeIsolationError;
+            out.putBoolean("ok", false);
+            out.putString("state",
+                    isolationError == null ? "ISOLATION_STARTING" : "ISOLATION_FAILED");
+            out.putString("err", isolationError == null
+                    ? "Runtime isolation is still starting"
+                    : "Runtime isolation failed: " + isolationError.getClass().getSimpleName());
+            return out;
+        }
         String applied = top.niunaijun.blackbox.core.GuestProxy.CURRENT_ROUTE_ID;
         out.putString("routeId", applied);
         out.putInt("pid", android.os.Process.myPid());

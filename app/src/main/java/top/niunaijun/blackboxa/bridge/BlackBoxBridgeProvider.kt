@@ -491,19 +491,23 @@ class BlackBoxBridgeProvider : ContentProvider() {
             putString("state", "NOT_RUNNING")
             putString("err", "The routed guest process did not become ready")
         }
-        repeat(30) { attempt ->
+        // Android 16 may need several seconds for the first Pine-backed identity hooks on an OEM
+        // build. The provider handshake now returns immediately and reports ISOLATION_STARTING;
+        // keep this gate closed until those hooks are ready rather than killing a healthy process.
+        repeat(300) { attempt ->
             last = BlackBoxCore.getBActivityManager()
                 .verifyProxyRoute(pkg, userId, routeId, expectedExitIp)
-            if (last.getString("state") != "NOT_RUNNING") return last
+            val state = last.getString("state")
+            if (state != "NOT_RUNNING" && state != "ISOLATION_STARTING") return last
             // WhatsApp can tear down its empty warm-up process while Android is resolving its
             // registration/permission activities. Re-request the same guarded process during the
             // bounded gate instead of treating that transient teardown as a permanent failure.
-            if (attempt == 7 || attempt == 15 || attempt == 23) {
+            if (attempt == 75 || attempt == 150 || attempt == 225) {
                 runCatching {
                     BlackBoxCore.getBActivityManager().initProcess(pkg, pkg, userId)
                 }
             }
-            if (attempt < 29) {
+            if (attempt < 299) {
                 try {
                     Thread.sleep(100)
                 } catch (_: InterruptedException) {
