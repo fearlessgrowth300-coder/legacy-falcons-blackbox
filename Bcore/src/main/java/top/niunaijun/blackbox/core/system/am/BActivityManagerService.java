@@ -369,19 +369,32 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
         ProcessRecord processRecord = BProcessManagerService.get().startProcessLocked(packageName, processName, userId, -1, Binder.getCallingPid());
         if (processRecord == null)
             return null;
+        return processRecord.getClientConfig();
+    }
+
+    @Override
+    public boolean prewarmProcess(String packageName, String processName, int userId) throws RemoteException {
+        ProcessRecord processRecord = BProcessManagerService.get().startProcessLocked(
+                packageName, processName, userId, -1, Binder.getCallingPid());
+        if (processRecord == null) {
+            return false;
+        }
         try {
             // Fully create the guest Application before its first Activity receives focus. Modern
             // split-heavy apps (TikTok and Chrome in particular) can spend more than Android's
             // five-second input deadline loading code, providers and native libraries. Doing that
-            // work in the already-routed background process keeps the launcher responsive and
-            // prevents a false "BlackBox isn't responding" ANR on the first screen.
+            // work only from the foreground launcher's worker thread keeps the launcher responsive
+            // and prevents a false "BlackBox isn't responding" ANR on the first screen. This must
+            // stay separate from initProcess(): ShieldProxy uses that fast call while atomically
+            // assigning and verifying a route, and blocking its ContentProvider bridge on a full
+            // TikTok/Chrome startup can invalidate the bridge Binder.
             processRecord.bActivityThread.bindApplication();
         } catch (Throwable error) {
             Slog.e(TAG, "Could not prewarm " + packageName + " for User " + userId, error);
             BProcessManagerService.get().killPackageAsUser(packageName, userId);
-            return null;
+            return false;
         }
-        return processRecord.getClientConfig();
+        return true;
     }
 
     @Override
