@@ -162,6 +162,41 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         });
     }
 
+    private java.util.concurrent.atomic.AtomicBoolean watchSlowActivityCreate(Activity activity) {
+        java.util.concurrent.atomic.AtomicBoolean finished =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        if (android.os.Build.VERSION.SDK_INT < 35) {
+            return finished;
+        }
+        Thread watchdog = new Thread(() -> {
+            try {
+                Thread.sleep(4000L);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            if (finished.get()) {
+                return;
+            }
+            StringBuilder stack = new StringBuilder();
+            for (StackTraceElement frame : android.os.Looper.getMainLooper()
+                    .getThread().getStackTrace()) {
+                stack.append("\n  at ").append(frame);
+            }
+            Log.w(TAG, "Slow guest Activity.onCreate after 4s: "
+                    + activity.getClass().getName() + stack);
+        }, "GuestActivityCreateWatchdog");
+        watchdog.setDaemon(true);
+        watchdog.start();
+        return finished;
+    }
+
+    private void releaseDeferredInputFocus(Activity activity) {
+        if (android.os.Build.VERSION.SDK_INT >= 35 && activity.getWindow() != null) {
+            activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        }
+    }
+
     @Override
     public Application newApplication(ClassLoader cl, String className, Context context) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
         ContextCompat.fix(context);
@@ -174,7 +209,13 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         checkActivity(activity);
         fixActivityStateClassLoader(activity, icicle);
         deferInputFocusUntilActivityReady(activity);
-        super.callActivityOnCreate(activity, icicle, persistentState);
+        java.util.concurrent.atomic.AtomicBoolean finished = watchSlowActivityCreate(activity);
+        try {
+            super.callActivityOnCreate(activity, icicle, persistentState);
+        } finally {
+            finished.set(true);
+            releaseDeferredInputFocus(activity);
+        }
     }
 
     @Override
@@ -182,7 +223,13 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         checkActivity(activity);
         fixActivityStateClassLoader(activity, icicle);
         deferInputFocusUntilActivityReady(activity);
-        super.callActivityOnCreate(activity, icicle);
+        java.util.concurrent.atomic.AtomicBoolean finished = watchSlowActivityCreate(activity);
+        try {
+            super.callActivityOnCreate(activity, icicle);
+        } finally {
+            finished.set(true);
+            releaseDeferredInputFocus(activity);
+        }
     }
 
     @Override
