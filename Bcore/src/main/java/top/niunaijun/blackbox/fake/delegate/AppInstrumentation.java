@@ -9,6 +9,8 @@ import android.content.pm.ActivityInfo;
 import android.os.Bundle;
 import android.os.PersistableBundle;
 import android.util.Log;
+import android.view.Window;
+import android.view.WindowManager;
 
 import java.lang.reflect.Field;
 
@@ -135,6 +137,31 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         }
     }
 
+    /**
+     * Android 15/16 starts the input-focus timeout as soon as a newly drawn guest window becomes
+     * focusable. Split-heavy apps such as TikTok can still be completing synchronous Activity
+     * startup at that point, so their main thread cannot acknowledge FocusEvent within five
+     * seconds even though the app is healthy. Keep only the first launch transaction temporarily
+     * non-focusable and release it on the next main-loop turn, after onCreate/resume and the first
+     * window attach have completed. The flag affects input focus only; rendering and the
+     * fail-closed proxy route remain active throughout.
+     */
+    private void deferInputFocusUntilActivityReady(Activity activity) {
+        if (android.os.Build.VERSION.SDK_INT < 35) {
+            return;
+        }
+        final Window window = activity.getWindow();
+        if (window == null) {
+            return;
+        }
+        window.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        window.getDecorView().post(() -> {
+            if (!activity.isFinishing() && !activity.isDestroyed()) {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+            }
+        });
+    }
+
     @Override
     public Application newApplication(ClassLoader cl, String className, Context context) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
         ContextCompat.fix(context);
@@ -146,6 +173,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
     public void callActivityOnCreate(Activity activity, Bundle icicle, PersistableBundle persistentState) {
         checkActivity(activity);
         fixActivityStateClassLoader(activity, icicle);
+        deferInputFocusUntilActivityReady(activity);
         super.callActivityOnCreate(activity, icicle, persistentState);
     }
 
@@ -153,6 +181,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
     public void callActivityOnCreate(Activity activity, Bundle icicle) {
         checkActivity(activity);
         fixActivityStateClassLoader(activity, icicle);
+        deferInputFocusUntilActivityReady(activity);
         super.callActivityOnCreate(activity, icicle);
     }
 
