@@ -6,6 +6,7 @@ import android.content.Context
 import android.util.Log
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackboxa.cloud.CloudSync
+import top.niunaijun.blackboxa.cloud.CrashReporter
 import top.niunaijun.blackboxa.cloud.Supabase
 
 
@@ -78,6 +79,8 @@ class App : Application() {
     override fun onCreate() {
         try {
             super.onCreate()
+            CrashReporter.install(this)
+            CrashReporter.flushAsync(this)
             Supabase.retryPendingLogoutAsync(this)
             AppManager.doOnCreate(mContext)
         } catch (e: Exception) {
