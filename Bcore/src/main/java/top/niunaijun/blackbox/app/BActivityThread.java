@@ -748,7 +748,16 @@ public class BActivityThread extends IBActivityThread.Stub {
             
             String sourceDir = appInfo.sourceDir;
             if (sourceDir != null) {
-                return new dalvik.system.PathClassLoader(sourceDir, ClassLoader.getSystemClassLoader());
+                StringBuilder dexPath = new StringBuilder(sourceDir);
+                if (appInfo.splitSourceDirs != null) {
+                    for (String splitSourceDir : appInfo.splitSourceDirs) {
+                        if (!TextUtils.isEmpty(splitSourceDir)) {
+                            dexPath.append(File.pathSeparator).append(splitSourceDir);
+                        }
+                    }
+                }
+                return new dalvik.system.PathClassLoader(
+                        dexPath.toString(), ClassLoader.getSystemClassLoader());
             }
             
             

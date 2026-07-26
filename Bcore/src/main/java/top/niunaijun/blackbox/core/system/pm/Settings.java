@@ -208,8 +208,12 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
             if (bPackageSettings.installOption.isFlag(InstallOption.FLAG_SYSTEM)) {
                 PackageInfo packageInfo = BlackBoxCore.getPackageManager().getPackageInfo(packageName, PackageManager.GET_META_DATA);
                 String currPackageSourcePath = packageInfo.applicationInfo.sourceDir;
-                if (!currPackageSourcePath.equals(bPackageSettings.pkg.baseCodePath)) {
-                    
+                String[] splitSourceDirs = packageInfo.applicationInfo.splitSourceDirs;
+                boolean installedAsSplitPackage =
+                        splitSourceDirs != null && splitSourceDirs.length > 0;
+                if (!currPackageSourcePath.equals(bPackageSettings.pkg.baseCodePath)
+                        || installedAsSplitPackage) {
+
                     BProcessManagerService.get().killAllByPackageName(bPackageSettings.pkg.packageName);
                     BPackageSettings newPkg = reInstallBySystem(packageInfo, bPackageSettings.installOption);
                     bPackageSettings.pkg = newPkg.pkg;
@@ -235,11 +239,13 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
 
     private BPackageSettings reInstallBySystem(PackageInfo systemPackageInfo, InstallOption option) throws Exception {
         Slog.d(TAG, "reInstallBySystem: " + systemPackageInfo.packageName);
-        PackageParser.Package aPackage = parserApk(systemPackageInfo.applicationInfo.sourceDir);
+        File parseTarget = PackageParserCompat.getInstalledPackageParseTarget(
+                systemPackageInfo.applicationInfo);
+        PackageParser.Package aPackage = parserApk(parseTarget.getAbsolutePath());
         if (aPackage == null) {
             throw new RuntimeException("parser apk error.");
         }
-        aPackage.applicationInfo = BlackBoxCore.getPackageManager().getPackageInfo(aPackage.packageName, 0).applicationInfo;
+        aPackage.applicationInfo = systemPackageInfo.applicationInfo;
         return getPackageLPw(aPackage.packageName, aPackage, option);
     }
 

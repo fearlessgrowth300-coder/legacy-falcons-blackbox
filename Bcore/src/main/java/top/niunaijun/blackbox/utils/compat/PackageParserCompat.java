@@ -1,11 +1,13 @@
 package top.niunaijun.blackbox.utils.compat;
 
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageParser;
 import android.content.pm.PackageParser.Package;
 import android.os.Build;
 import android.util.DisplayMetrics;
 
 import java.io.File;
+import java.io.IOException;
 
 import black.android.content.pm.BRPackageParser;
 import black.android.content.pm.BRPackageParserLollipop;
@@ -24,6 +26,38 @@ public class PackageParserCompat {
     public static final int[] GIDS = new int[]{};
     private static final int API_LEVEL = Build.VERSION.SDK_INT;
     private static final int myUserId = 0;
+
+    /**
+     * PackageParser only merges feature manifests when it receives the installed package
+     * directory. Passing base.apk alone silently drops activities, services and dex files that
+     * live in feature splits (modern Chrome keeps its launcher in split_chrome.apk).
+     */
+    public static File getInstalledPackageParseTarget(ApplicationInfo applicationInfo)
+            throws IOException {
+        if (applicationInfo == null || applicationInfo.sourceDir == null) {
+            throw new IOException("Installed package has no base APK");
+        }
+        File baseApk = new File(applicationInfo.sourceDir).getCanonicalFile();
+        String[] splitSourceDirs = applicationInfo.splitSourceDirs;
+        if (splitSourceDirs == null || splitSourceDirs.length == 0) {
+            return baseApk;
+        }
+
+        File packageDir = baseApk.getParentFile();
+        if (packageDir == null || !baseApk.isFile()) {
+            throw new IOException("Installed package base APK is unavailable");
+        }
+        for (String splitPath : splitSourceDirs) {
+            if (splitPath == null) {
+                throw new IOException("Installed package advertises an empty split path");
+            }
+            File splitApk = new File(splitPath).getCanonicalFile();
+            if (!splitApk.isFile() || !packageDir.equals(splitApk.getParentFile())) {
+                throw new IOException("Installed package split is missing or outside its package directory");
+            }
+        }
+        return packageDir;
+    }
 
 
     public static PackageParser createParser(File packageFile) {

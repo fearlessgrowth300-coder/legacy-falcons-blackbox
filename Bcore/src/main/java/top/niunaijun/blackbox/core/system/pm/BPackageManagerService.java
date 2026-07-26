@@ -699,20 +699,33 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
                 Slog.w(TAG, "Installing potentially BlackBox-related app: " + packageName + ". Proceed with caution.");
             }
 
+            ApplicationInfo installedApplicationInfo = null;
+            File packageParseTarget = apkFile;
+            if (option.isFlag(InstallOption.FLAG_SYSTEM)) {
+                PackageInfo installedPackage = BlackBoxCore.getPackageManager().getPackageInfo(
+                        packageName, PackageManager.GET_META_DATA);
+                installedApplicationInfo = installedPackage.applicationInfo;
+                packageParseTarget = PackageParserCompat.getInstalledPackageParseTarget(
+                        installedApplicationInfo);
+                if (!packageParseTarget.equals(apkFile)) {
+                    Slog.i(TAG, "Parsing installed split package cluster for " + packageName);
+                }
+            }
+
             boolean support = AbiUtils.isSupport(apkFile);
             if (!support) {
                 String msg = packageArchiveInfo.applicationInfo.loadLabel(BlackBoxCore.getPackageManager()) + "[" + packageArchiveInfo.packageName + "]";
                 return result.installError(packageArchiveInfo.packageName,
                         msg + "\n" + (BlackBoxCore.is64Bit() ? "The box does not support 32-bit Application" : "The box does not support 64-bit Application"));
             }
-            PackageParser.Package aPackage = parserApk(apkFile.getAbsolutePath());
+            PackageParser.Package aPackage = parserApk(packageParseTarget.getAbsolutePath());
             if (aPackage == null) {
                 return result.installError("parser apk error.");
             }
             result.packageName = aPackage.packageName;
 
             if (option.isFlag(InstallOption.FLAG_SYSTEM)) {
-                aPackage.applicationInfo = BlackBoxCore.getPackageManager().getPackageInfo(aPackage.packageName, 0).applicationInfo;
+                aPackage.applicationInfo = installedApplicationInfo;
             }
             BPackageSettings bPackageSettings = mSettings.getPackageLPw(aPackage.packageName, aPackage, option);
 
