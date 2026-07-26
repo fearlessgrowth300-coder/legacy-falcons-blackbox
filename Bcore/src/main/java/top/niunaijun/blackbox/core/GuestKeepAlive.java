@@ -3,7 +3,7 @@ package top.niunaijun.blackbox.core;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.os.Handler;
-import android.os.Looper;
+import android.os.HandlerThread;
 import android.util.AtomicFile;
 
 import java.io.File;
@@ -30,12 +30,9 @@ import top.niunaijun.blackbox.utils.Slog;
 public class GuestKeepAlive {
     private static final String TAG = "GuestKeepAlive";
     private static final Set<Integer> sUsers = ConcurrentHashMap.newKeySet();
-    private static final Set<Integer> sGmsBootstrapped = ConcurrentHashMap.newKeySet();
     private static volatile boolean sStarted = false;
     private static Handler sHandler;
-    private static final long INTERVAL = 60 * 1000L; // re-ensure routed push service every minute
-    private static final String GMS_PERSISTENT_PROCESS = GmsCore.GMS_PKG + ".persistent";
-    private static final String GMS_PUSH_SERVICE = "com.google.android.gms.gcm.GcmService";
+    private static final long INTERVAL = 60 * 1000L; // re-ensure the foreground daemon every minute
 
     private static File file() {
         File dir = BEnvironment.getSystemDir();
@@ -56,20 +53,8 @@ public class GuestKeepAlive {
         if (sStarted) return;
         sStarted = true;
         reload();
-        boolean changed = false;
-        for (int userId : new java.util.HashSet<>(sUsers)) {
-            GuestProxy.GmsRouteStatus route = GuestProxy.syncGmsRouteForUser(userId);
-            if (route == GuestProxy.GmsRouteStatus.CONFLICT || route == GuestProxy.GmsRouteStatus.INVALID) {
-                sUsers.remove(userId);
-                changed = true;
-            }
-        }
-        if (changed) persist();
         ensureDaemon();
         scheduleWatchdog();
-        sHandler.postDelayed(() -> new Thread(() -> {
-            for (int userId : new java.util.HashSet<>(sUsers)) ensureGms(userId);
-        }, "BlackBox-GMS-restore").start(), 2_000L);
         Slog.d(TAG, "started, kept-alive users=" + sUsers);
     }
 
@@ -88,32 +73,20 @@ public class GuestKeepAlive {
         } catch (Throwable ignored) {}
     }
 
-    /** Turn background push keep-alive on/off for a User.
-     *  NOTE: GMS is intentionally NOT installed — it doesn't actually run in a no-root container
-     *  and only floods "FirebaseInstanceId: Failed to find package com.google.android.gms" and
-     *  hangs jobs (ANR). Keep-alive is just the foreground daemon now. */
+    /** Turn background keep-alive on/off for a User.
+     *  Keep-alive is ONLY the foreground {@link DaemonService} that keeps the container process
+     *  group alive so a running clone (or its own push socket, e.g. WhatsApp) can still deliver
+     *  notifications. GMS is deliberately NOT installed or started here — it does not actually run
+     *  in a no-root container, delivers no FCM push, and its per-minute install/spawn only wasted
+     *  battery and froze the main thread ("BlackBox isn't responding"). */
     public static synchronized boolean setEnabled(int userId, boolean on) {
         if (on) {
-            GuestProxy.GmsRouteStatus route = GuestProxy.syncGmsRouteForUser(userId);
-            if (route == GuestProxy.GmsRouteStatus.CONFLICT || route == GuestProxy.GmsRouteStatus.INVALID) {
-                sUsers.remove(userId);
-                persist();
-                Slog.w(TAG, "refusing keep-alive for user with conflicting or invalid routes: " + userId);
-                return false;
-            }
-            if (GmsCore.isSupportGms() && !GmsCore.isInstalledGoogleService(userId)) {
-                if (!GmsCore.installGApps(userId).success) return false;
-            }
-            route = GuestProxy.syncGmsRouteForUser(userId);
-            if (route == GuestProxy.GmsRouteStatus.CONFLICT || route == GuestProxy.GmsRouteStatus.INVALID) return false;
-            if (route == GuestProxy.GmsRouteStatus.READY && !startGmsProcess(userId)) return false;
             sUsers.add(userId);
+            ensureDaemon();
         } else {
             sUsers.remove(userId);
-            sGmsBootstrapped.remove(userId);
         }
         persist();
-        if (on) ensureDaemon();
         Slog.d(TAG, "setEnabled user " + userId + " = " + on);
         return true;
     }
@@ -139,50 +112,6 @@ public class GuestKeepAlive {
         }
     }
 
-    private static void ensureGms(int userId) {
-        try {
-            GuestProxy.GmsRouteStatus route = GuestProxy.syncGmsRouteForUser(userId);
-            if (route == GuestProxy.GmsRouteStatus.CONFLICT || route == GuestProxy.GmsRouteStatus.INVALID) {
-                sUsers.remove(userId);
-                persist();
-                return;
-            }
-            if (GmsCore.isSupportGms() && !GmsCore.isInstalledGoogleService(userId)) {
-                Slog.d(TAG, "installing GMS into user " + userId + " for push");
-                if (!GmsCore.installGApps(userId).success) return;
-            }
-            route = GuestProxy.syncGmsRouteForUser(userId);
-            if (route == GuestProxy.GmsRouteStatus.READY) startGmsProcess(userId);
-        } catch (Throwable t) {
-            Slog.w(TAG, "ensureGms failed: " + t.getClass().getSimpleName());
-        }
-    }
-
-    /** Keep the routed GMS persistent process present and deliver its boot receiver once per
-     * BlackBox server lifetime. This is the process that receives FCM for closed guest apps. */
-    private static boolean startGmsProcess(int userId) {
-        try {
-            if (!GmsCore.isInstalledGoogleService(userId)) return false;
-            if (BlackBoxCore.getBActivityManager().initProcess(GmsCore.GMS_PKG,
-                    GMS_PERSISTENT_PROCESS, userId) == null) {
-                return false;
-            }
-            if (sGmsBootstrapped.add(userId)) {
-                Intent boot = new Intent(Intent.ACTION_BOOT_COMPLETED).setPackage(GmsCore.GMS_PKG);
-                BlackBoxCore.getBActivityManager().sendBroadcast(boot, null, userId);
-            }
-            // initProcess only attaches the guest runtime. Without a live component Android may
-            // reclaim the empty proxy process immediately, which drops FCM for closed clones.
-            Intent push = new Intent().setComponent(
-                    new ComponentName(GmsCore.GMS_PKG, GMS_PUSH_SERVICE));
-            BlackBoxCore.getBActivityManager().startService(push, null, false, userId);
-            return true;
-        } catch (Throwable error) {
-            Slog.w(TAG, "GMS process start failed: " + error.getClass().getSimpleName());
-            return false;
-        }
-    }
-
     private static void ensureDaemon() {
         try {
             Intent i = new Intent(BlackBoxCore.getContext(), DaemonService.class);
@@ -196,17 +125,28 @@ public class GuestKeepAlive {
         }
     }
 
+    /** Watchdog handler backed by a dedicated background thread. Re-ensuring the foreground service
+     *  is a blocking Context/binder call and MUST NOT run on the server process main thread, or it
+     *  can ANR the container ("BlackBox isn't responding") when the timer fires. */
+    private static synchronized Handler bgHandler() {
+        if (sHandler == null) {
+            HandlerThread thread = new HandlerThread("BlackBox-KeepAlive");
+            thread.start();
+            sHandler = new Handler(thread.getLooper());
+        }
+        return sHandler;
+    }
+
     private static void scheduleWatchdog() {
-        if (sHandler == null) sHandler = new Handler(Looper.getMainLooper());
-        sHandler.removeCallbacksAndMessages(null);
-        sHandler.postDelayed(new Runnable() {
+        Handler handler = bgHandler();
+        handler.removeCallbacksAndMessages(null);
+        handler.postDelayed(new Runnable() {
             @Override public void run() {
                 try {
                     reload();
-                    for (int userId : sUsers) ensureGms(userId);
                     ensureDaemon();
                 } catch (Throwable ignored) {}
-                sHandler.postDelayed(this, INTERVAL);
+                bgHandler().postDelayed(this, INTERVAL);
             }
         }, INTERVAL);
     }
