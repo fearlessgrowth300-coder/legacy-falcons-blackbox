@@ -10,6 +10,7 @@ import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
+import android.os.Bundle;
 import android.util.Log;
 
 import java.lang.reflect.Method;
@@ -216,8 +217,32 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             ComponentName componentName = (ComponentName) args[0];
             int flags = MethodParameterUtils.toInt(args[1]);
             ProviderInfo providerInfo = BlackBoxCore.getBPackageManager().getProviderInfo(componentName, flags, BlackBoxCore.getUserId());
-            if (providerInfo != null)
+            boolean needsMetaData = (flags & android.content.pm.PackageManager.GET_META_DATA) != 0;
+            if (providerInfo != null && (!needsMetaData || providerInfo.metaData != null))
                 return providerInfo;
+            Bundle hostMetaData = null;
+            // The source APK remains installed on the physical phone. Ask Android only for this
+            // provider's immutable manifest metadata, then merge that Bundle into the virtual
+            // ProviderInfo below. Do not return the host ProviderInfo: it contains the physical
+            // UID and filesystem paths, which must never cross into a clone.
+            if (needsMetaData && componentName != null) {
+                try {
+                    Object hostResult = method.invoke(who, args);
+                    if (hostResult instanceof ProviderInfo) {
+                        ProviderInfo hostInfo = (ProviderInfo) hostResult;
+                        if (hostInfo.metaData != null) {
+                            hostMetaData = new Bundle(hostInfo.metaData);
+                        }
+                    }
+                } catch (Throwable t) {
+                    Slog.w(TAG, "host provider metadata lookup failed: " + t);
+                }
+            }
+            if (providerInfo != null && hostMetaData != null) {
+                ProviderInfo merged = new ProviderInfo(providerInfo);
+                merged.metaData = hostMetaData;
+                return merged;
+            }
             // A package may legally declare more than one provider with the same authority.
             // Instagram does this for AndroidX startup: its custom provider is declared first,
             // while androidx.startup.InitializationProvider owns the initializer meta-data.
@@ -236,7 +261,14 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                         for (ProviderInfo candidate : packageInfo.providers) {
                             if (candidate != null
                                     && componentName.getClassName().equals(candidate.name)) {
-                                return candidate;
+                                if (!needsMetaData || candidate.metaData != null) {
+                                    return candidate;
+                                }
+                                if (hostMetaData != null) {
+                                    ProviderInfo merged = new ProviderInfo(candidate);
+                                    merged.metaData = hostMetaData;
+                                    return merged;
+                                }
                             }
                         }
                     }
