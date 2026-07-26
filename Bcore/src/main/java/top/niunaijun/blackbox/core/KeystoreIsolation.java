@@ -77,6 +77,14 @@ public final class KeystoreIsolation {
         int userId = BActivityThread.getUserId();
         if (!isEnabled(userId)) return true;
         if (sInstalled) return true;
+        // Android 12+ routes all AndroidKeyStore operations through stable Keystore2 AIDL.
+        // Namespace there instead of hooking boot-class methods: Pine 0.3.0's ARM64 object bridge
+        // is not compatible with Android 16 ART and can native-crash apps such as Instagram.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            String namespace = prefix();
+            sInstalled = Keystore2ServiceIsolation.install(namespace);
+            return sInstalled;
+        }
         try {
             int operationHooks = 0;
             for (Method method : KeyStore.class.getDeclaredMethods()) {
