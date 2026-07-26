@@ -162,10 +162,22 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     val conflict = validNode && knownApp && GuestProxy.wouldConflictWithSharedGms(
                         userId, pkg, type, server, port, username, password, countryIso
                     )
-                    val saved = validNode && knownApp && validExitIp && !conflict && GuestProxy.save(
-                        userId, pkg, type, server, port, username, password, countryIso,
-                        city, region, latitude, longitude, timezoneId
-                    )
+                    val candidateRouteId = if (validNode && knownApp && !conflict) {
+                        GuestProxy.routeIdForConfig(
+                            type, server, port, username, password, countryIso
+                        )
+                    } else null
+                    val reuseRunningRoute = candidateRouteId != null &&
+                        candidateRouteId == GuestProxy.routeIdFor(userId, pkg) &&
+                        BlackBoxCore.getBActivityManager().isAppProcessRunning(pkg, userId)
+                    // Reopening an already-running clone on the exact same encrypted assignment
+                    // must not rewrite its config and force-stop it. That caused unnecessary cold
+                    // starts, delayed ShieldProxy launches, and interrupted active social sessions.
+                    val saved = validNode && knownApp && validExitIp && !conflict &&
+                        (reuseRunningRoute || GuestProxy.save(
+                            userId, pkg, type, server, port, username, password, countryIso,
+                            city, region, latitude, longitude, timezoneId
+                        ))
                     val gmsRoute = if (saved && GuestProxy.isSharedGmsActive(userId)) {
                         GuestProxy.syncGmsRouteForUser(userId)
                     } else null
@@ -197,12 +209,17 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     } else {
                         val installedPkg = pkg!!
                         val confirmedExitIp = expectedExitIp!!
-                        try { BlackBoxCore.get().stopPackage(installedPkg, userId) } catch (_: Throwable) {}
                         val expectedRouteId = GuestProxy.routeIdFor(userId, installedPkg)
-                        val config = if (expectedRouteId != null) {
-                            BlackBoxCore.getBActivityManager().initProcess(installedPkg, installedPkg, userId)
-                        } else null
-                        if (config == null || expectedRouteId == null) {
+                        val processPrepared = if (reuseRunningRoute) {
+                            true
+                        } else {
+                            try { BlackBoxCore.get().stopPackage(installedPkg, userId) } catch (_: Throwable) {}
+                            if (expectedRouteId != null) {
+                                BlackBoxCore.getBActivityManager()
+                                    .initProcess(installedPkg, installedPkg, userId) != null
+                            } else false
+                        }
+                        if (!processPrepared || expectedRouteId == null) {
                             try { BlackBoxCore.get().stopPackage(installedPkg, userId) } catch (_: Throwable) {}
                             res.putBoolean("ok", false)
                             res.putString("state", "PREPARE_FAILED")
@@ -218,7 +235,7 @@ class BlackBoxBridgeProvider : ContentProvider() {
                             res.putAll(probe)
                             res.putBoolean("configured", true)
                             res.putString("expectedRouteId", expectedRouteId)
-                            if (!probe.getBoolean("ok")) {
+                            if (!probe.getBoolean("ok") && !reuseRunningRoute) {
                                 try { BlackBoxCore.get().stopPackage(installedPkg, userId) } catch (_: Throwable) {}
                             }
                         }

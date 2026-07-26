@@ -335,6 +335,33 @@ public class GuestProxy {
         return hex.toString();
     }
 
+    /** Build the same non-secret route identity as a persisted config, without writing it. */
+    public static String routeIdForConfig(String type, String server, int port,
+                                          String user, String pass, String countryIso) {
+        try {
+            String normalizedType = type == null ? "" : type.trim().toLowerCase();
+            String normalizedServer = server == null ? "" : server.trim();
+            if (normalizedServer.isEmpty() || port <= 0 || port > 65535
+                    || !(normalizedType.equals("http") || normalizedType.equals("https")
+                    || normalizedType.equals("socks") || normalizedType.equals("socks5"))) {
+                return null;
+            }
+            JSONObject candidate = new JSONObject();
+            candidate.put("enabled", true);
+            candidate.put("type", normalizedType);
+            candidate.put("server", normalizedServer);
+            candidate.put("port", port);
+            candidate.put("username", user == null ? "" : user);
+            candidate.put("password", pass == null ? "" : pass);
+            String effectiveCountryIso = normalizeCountryIso(countryIso);
+            if (effectiveCountryIso.isEmpty()) effectiveCountryIso = countryForProxy(user);
+            candidate.put("countryIso", effectiveCountryIso);
+            return routeId(candidate);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     /** Save (and enable) a proxy for a specific app in a User. Called from the host bridge. */
     public static boolean save(int userId, String pkg, String type, String server, int port, String user, String pass) {
         return save(userId, pkg, type, server, port, user, pass, null);
