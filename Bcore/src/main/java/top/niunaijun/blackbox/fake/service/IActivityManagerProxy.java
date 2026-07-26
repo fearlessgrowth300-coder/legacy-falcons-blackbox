@@ -701,6 +701,19 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         }
     }
 
+    @ProxyMethod("updateServiceGroup")
+    public static class UpdateServiceGroup extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) {
+            // Chrome uses this only as a child-process priority hint. Its IServiceConnection
+            // belongs to the virtual service dispatcher, so system_server cannot find it in the
+            // host connection table and throws IllegalArgumentException on Android 16. Ignoring
+            // the hint matches platforms where service grouping is unavailable and prevents the
+            // network/renderer launcher thread from repeatedly crossing a rejected Binder call.
+            return null;
+        }
+    }
+
     @ProxyMethod("publishService")
     public static class PublishService extends MethodHook {
 
