@@ -26,6 +26,10 @@
 #include <poll.h>
 #include <sys/time.h>
 #include <thread>
+#include <memory>
+#include <new>
+#include <utility>
+#include <pthread.h>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -63,6 +67,8 @@ static std::unordered_map<uint32_t, std::string> g_syntheticToHost;
 static std::atomic<uint64_t> g_routeGeneration{1};
 static std::atomic<int> g_relayStarts{0};
 static std::atomic<int> g_relayFailures{0};
+static std::atomic<int> g_activeRelayWorkers{0};
+static std::atomic<int> g_peakRelayWorkers{0};
 
 struct ProxySnapshot {
     int type = PROXY_HTTP;
@@ -520,6 +526,46 @@ static void relayWorker(int listener, ProxyTarget target, ProxySnapshot proxy) {
     relayBidirectional(client, upstream, proxy.generation);
 }
 
+struct RelayTask {
+    int listener;
+    ProxyTarget target;
+    ProxySnapshot proxy;
+};
+
+static void *relayThreadMain(void *opaque) {
+    std::unique_ptr<RelayTask> task((RelayTask *) opaque);
+    int active = g_activeRelayWorkers.fetch_add(1, std::memory_order_relaxed) + 1;
+    int peak = g_peakRelayWorkers.load(std::memory_order_relaxed);
+    while (active > peak && !g_peakRelayWorkers.compare_exchange_weak(
+            peak, active, std::memory_order_relaxed)) {
+    }
+    relayWorker(task->listener, std::move(task->target), std::move(task->proxy));
+    g_activeRelayWorkers.fetch_sub(1, std::memory_order_relaxed);
+    return nullptr;
+}
+
+static bool startRelayWorker(int listener, const ProxyTarget &target,
+                             const ProxySnapshot &proxy) {
+    std::unique_ptr<RelayTask> task(new (std::nothrow) RelayTask{listener, target, proxy});
+    if (!task) return false;
+
+    pthread_attr_t attr;
+    if (pthread_attr_init(&attr) != 0) return false;
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    // Android's default native-thread stack is much larger than this relay requires. Social apps
+    // routinely open dozens of parallel sockets; a bounded stack prevents those short-lived
+    // relays from exhausting a low-memory phone while retaining one independent fail-closed
+    // tunnel per connection.
+    size_t stackSize = std::max((size_t) PTHREAD_STACK_MIN, (size_t) 512 * 1024);
+    pthread_attr_setstacksize(&attr, stackSize);
+    pthread_t thread;
+    int created = pthread_create(&thread, &attr, relayThreadMain, task.get());
+    pthread_attr_destroy(&attr);
+    if (created != 0) return false;
+    task.release();
+    return true;
+}
+
 static int startLoopbackRelay(int fd, const sockaddr *destination,
                               const ProxyTarget &target, const ProxySnapshot &proxy) {
     int family = destination->sa_family;
@@ -561,9 +607,7 @@ static int startLoopbackRelay(int fd, const sockaddr *destination,
         errno = connectErrno;
         return -1;
     }
-    try {
-        std::thread(relayWorker, listener, target, proxy).detach();
-    } catch (...) {
+    if (!startRelayWorker(listener, target, proxy)) {
         close(listener);
         errno = EAGAIN;
         return -1;
