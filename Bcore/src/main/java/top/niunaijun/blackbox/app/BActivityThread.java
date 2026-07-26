@@ -80,6 +80,7 @@ import top.niunaijun.blackbox.fake.delegate.AppInstrumentation;
 import top.niunaijun.blackbox.fake.delegate.ContentProviderDelegate;
 
 import top.niunaijun.blackbox.fake.hook.HookManager;
+import top.niunaijun.blackbox.fake.service.IAppOpsManagerProxy;
 import top.niunaijun.blackbox.fake.service.HCallbackProxy;
 import top.niunaijun.blackbox.utils.Reflector;
 import top.niunaijun.blackbox.utils.SafeContextWrapper;
@@ -102,6 +103,10 @@ public class BActivityThread extends IBActivityThread.Stub {
     private final List<ProviderInfo> mProviders = new ArrayList<>();
     private final Handler mH = BlackBoxCore.get().getHandler();
     private static final Object mConfigLock = new Object();
+    private volatile boolean mRuntimeIsolationReady;
+    private volatile Throwable mRuntimeIsolationError;
+    private volatile java.util.concurrent.CountDownLatch mRuntimeIsolationLatch =
+            new java.util.concurrent.CountDownLatch(0);
 
     public static boolean isThreadInit() {
         return sBActivityThread != null;
@@ -178,15 +183,24 @@ public class BActivityThread extends IBActivityThread.Stub {
 
     public void initProcess(AppConfig appConfig) {
         synchronized (mConfigLock) {
-            if (this.mAppConfig != null && !this.mAppConfig.packageName.equals(appConfig.packageName)) {
-                
-                throw new RuntimeException("reject init process: " + appConfig.processName + ", this process is : " + this.mAppConfig.processName);
+            if (this.mAppConfig != null) {
+                if (!this.mAppConfig.packageName.equals(appConfig.packageName)) {
+                    throw new RuntimeException("reject init process: " + appConfig.processName
+                            + ", this process is : " + this.mAppConfig.processName);
+                }
+                return;
             }
             this.mAppConfig = appConfig;
             // Apply this clone's unique, persistent device identity as early as
             // possible (before the guest app loads / references Build.*).
+            final top.niunaijun.blackbox.core.DeviceProfile profile;
             try {
-                top.niunaijun.blackbox.core.DeviceProfile.forUser(appConfig.userId).apply();
+                profile = top.niunaijun.blackbox.core.DeviceProfile.forUser(appConfig.userId);
+                profile.prepareEarly();
+                if (!top.niunaijun.blackbox.core.IOCore.get()
+                        .enableKernelIdentityRedirects()) {
+                    throw new SecurityException("Per-clone kernel identity redirect unavailable");
+                }
             } catch (Throwable t) {
                 top.niunaijun.blackbox.utils.Slog.w("DeviceProfile", "apply failed: " + t.getMessage());
                 throw new RuntimeException("Refusing to start guest without complete identity isolation", t);
@@ -199,15 +213,42 @@ public class BActivityThread extends IBActivityThread.Stub {
                         && proxyStatus != top.niunaijun.blackbox.core.GuestProxy.ApplyStatus.NOT_CONFIGURED) {
                     throw new SecurityException("Assigned proxy is not ready: " + proxyStatus);
                 }
-                // Install after GuestProxy has read BlackBox's host key, but before any guest
-                // Application class can touch its own login-encryption aliases.
-                if (!top.niunaijun.blackbox.core.KeystoreIsolation.installForCurrentProcess()) {
-                    throw new SecurityException("Per-clone AndroidKeyStore isolation unavailable");
-                }
             } catch (Throwable t) {
                 top.niunaijun.blackbox.utils.Slog.w("GuestProxy", "apply failed: " + t.getMessage());
                 throw new RuntimeException("Refusing to start guest with a broken proxy assignment", t);
             }
+
+            // Pine's first native initialization can exceed Android 16's ContentProvider startup
+            // deadline. Return the process binder promptly, but keep guest Application creation
+            // blocked on this latch so no app code can run before identity and keystore isolation.
+            mRuntimeIsolationReady = false;
+            mRuntimeIsolationError = null;
+            final java.util.concurrent.CountDownLatch isolationLatch =
+                    new java.util.concurrent.CountDownLatch(1);
+            mRuntimeIsolationLatch = isolationLatch;
+            Thread isolationWorker = new Thread(() -> {
+                try {
+                    boolean identityReady = profile.installRuntimeHooks();
+                    // Install after GuestProxy has read BlackBox's host key, but before any guest
+                    // Application class can touch its own login-encryption aliases.
+                    boolean keystoreReady =
+                            top.niunaijun.blackbox.core.KeystoreIsolation.installForCurrentProcess();
+                    if (!identityReady || !keystoreReady) {
+                        throw new SecurityException("Incomplete runtime identity isolation");
+                    }
+                    mRuntimeIsolationReady = true;
+                    top.niunaijun.blackbox.utils.Slog.d(
+                            TAG, "Runtime isolation ready for " + appConfig.packageName);
+                } catch (Throwable error) {
+                    mRuntimeIsolationError = error;
+                    top.niunaijun.blackbox.utils.Slog.e(
+                            TAG, "Runtime isolation failed for " + appConfig.packageName, error);
+                } finally {
+                    isolationLatch.countDown();
+                }
+            }, "GuestRuntimeIsolation");
+            isolationWorker.setDaemon(true);
+            isolationWorker.start();
             IBinder iBinder = asBinder();
             try {
                 iBinder.linkToDeath(new DeathRecipient() {
@@ -415,6 +456,17 @@ public class BActivityThread extends IBActivityThread.Stub {
         if (isInit())
             return;
         try {
+            if (!mRuntimeIsolationLatch.await(45, java.util.concurrent.TimeUnit.SECONDS)
+                    || !mRuntimeIsolationReady) {
+                Throwable error = mRuntimeIsolationError;
+                throw new SecurityException("Runtime isolation was not ready"
+                        + (error == null ? "" : ": " + error.getClass().getSimpleName()), error);
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new SecurityException("Interrupted while preparing runtime isolation", interrupted);
+        }
+        try {
             CrashHandler.create();
         } catch (Throwable ignored) {
         }
@@ -434,6 +486,7 @@ public class BActivityThread extends IBActivityThread.Stub {
         Object boundApplication = BRActivityThread.get(BlackBoxCore.mainThread()).mBoundApplication();
 
         Context packageContext = createPackageContext(applicationInfo);
+        IAppOpsManagerProxy.bindToGuestContext(packageContext);
         Object loadedApk = BRContextImpl.get(packageContext).mPackageInfo();
         BRLoadedApk.get(loadedApk)._set_mSecurityViolation(false);
         
@@ -697,7 +750,16 @@ public class BActivityThread extends IBActivityThread.Stub {
             
             String sourceDir = appInfo.sourceDir;
             if (sourceDir != null) {
-                return new dalvik.system.PathClassLoader(sourceDir, ClassLoader.getSystemClassLoader());
+                StringBuilder dexPath = new StringBuilder(sourceDir);
+                if (appInfo.splitSourceDirs != null) {
+                    for (String splitSourceDir : appInfo.splitSourceDirs) {
+                        if (!TextUtils.isEmpty(splitSourceDir)) {
+                            dexPath.append(File.pathSeparator).append(splitSourceDir);
+                        }
+                    }
+                }
+                return new dalvik.system.PathClassLoader(
+                        dexPath.toString(), ClassLoader.getSystemClassLoader());
             }
             
             
@@ -1226,6 +1288,16 @@ public class BActivityThread extends IBActivityThread.Stub {
     @Override
     public Bundle verifyProxyRoute(String expectedRouteId, String expectedExitIp) {
         Bundle out = new Bundle();
+        if (!mRuntimeIsolationReady) {
+            Throwable isolationError = mRuntimeIsolationError;
+            out.putBoolean("ok", false);
+            out.putString("state",
+                    isolationError == null ? "ISOLATION_STARTING" : "ISOLATION_FAILED");
+            out.putString("err", isolationError == null
+                    ? "Runtime isolation is still starting"
+                    : "Runtime isolation failed: " + isolationError.getClass().getSimpleName());
+            return out;
+        }
         String applied = top.niunaijun.blackbox.core.GuestProxy.CURRENT_ROUTE_ID;
         out.putString("routeId", applied);
         out.putInt("pid", android.os.Process.myPid());
@@ -1287,11 +1359,12 @@ public class BActivityThread extends IBActivityThread.Stub {
             if (!leakGuardsReady) {
                 out.putBoolean("ok", false);
                 out.putString("state", "LEAK_GUARD_FAILED");
-                out.putString("err", "DNS or UDP fail-closed guard did not verify");
+                out.putString("err", "Isolation guard failed: "
+                        + out.getString("leakFailures", "unknown"));
             } else if (!geoGuardReady) {
                 out.putBoolean("ok", false);
                 out.putString("state", "GEO_GUARD_FAILED");
-                out.putString("err", "The clone country, SIM, timezone, or GPS profile did not apply");
+                out.putString("err", "Geo guard failed: " + out.getString("geoFailures", "unknown"));
             } else {
                 // Mobile/residential pools may rotate the public exit while retaining the exact
                 // authenticated proxy session. Route identity + in-guest exit + leak guards are
@@ -1310,6 +1383,16 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
 
     private boolean verifyGeoConsistency(Bundle out) {
+        boolean ready = verifyGeoConsistencyOnce(out);
+        if (!ready && top.niunaijun.blackbox.core.GuestProxy.refreshGeoConsistency(
+                getUserId(), getAppPackageName())) {
+            out.putBoolean("geoRefreshed", true);
+            ready = verifyGeoConsistencyOnce(out);
+        }
+        return ready;
+    }
+
+    private boolean verifyGeoConsistencyOnce(Bundle out) {
         String expectedCountry = top.niunaijun.blackbox.core.GuestProxy.CURRENT_COUNTRY_ISO;
         String expectedTimezone = top.niunaijun.blackbox.core.GuestProxy.CURRENT_TIMEZONE_ID;
         Double expectedLatitude = top.niunaijun.blackbox.core.GuestProxy.CURRENT_LATITUDE;
@@ -1354,6 +1437,21 @@ public class BActivityThread extends IBActivityThread.Stub {
         out.putBoolean("timezoneGuard", timezoneReady);
         out.putBoolean("locationGuard", locationReady);
         boolean ready = simReady && localeReady && timezoneReady && locationReady;
+        StringBuilder failures = new StringBuilder();
+        if (!simReady) failures.append("SIM");
+        if (!localeReady) {
+            if (failures.length() > 0) failures.append(',');
+            failures.append("locale");
+        }
+        if (!timezoneReady) {
+            if (failures.length() > 0) failures.append(',');
+            failures.append("timezone");
+        }
+        if (!locationReady) {
+            if (failures.length() > 0) failures.append(',');
+            failures.append("location");
+        }
+        out.putString("geoFailures", failures.toString());
         out.putBoolean("geoGuard", ready);
         return ready;
     }
@@ -1361,6 +1459,8 @@ public class BActivityThread extends IBActivityThread.Stub {
     private boolean verifyLeakGuards(Bundle out) {
         boolean dnsGuard = false;
         boolean udpGuard = false;
+        boolean kernelGuard = false;
+        boolean sensorGuard = false;
         try {
             String probe = "route-" + android.os.Process.myPid() + "-"
                     + SystemClock.elapsedRealtime() + ".invalid";
@@ -1387,9 +1487,79 @@ public class BActivityThread extends IBActivityThread.Stub {
         } finally {
             if (socket != null) socket.close();
         }
+        try {
+            top.niunaijun.blackbox.core.DeviceProfile profile =
+                    top.niunaijun.blackbox.core.DeviceProfile.CURRENT;
+            String bootPath = "/proc/sys/kernel/random/boot_id";
+            String expected = profile == null ? "" : profile.virtualKernelBootId();
+            String observed = readFirstLine(bootPath);
+            String redirectedPath =
+                    top.niunaijun.blackbox.core.IOCore.get().redirectPath(bootPath);
+            String redirectedObserved = readFirstLine(redirectedPath);
+            boolean redirectRegistered = !bootPath.equals(redirectedPath);
+            kernelGuard = profile != null && redirectRegistered
+                    && observed.equalsIgnoreCase(expected);
+            sensorGuard = profile != null && profile.sensorIsolationActive
+                    && top.niunaijun.blackbox.core.SensorSignalIsolation.isActive();
+            out.putBoolean("kernelRedirectRegistered", redirectRegistered);
+            out.putBoolean("kernelRedirectFileMatch",
+                    redirectedObserved.equalsIgnoreCase(expected));
+            out.putString("kernelObservedHash", shortDigest(observed));
+            out.putString("kernelExpectedHash", shortDigest(expected));
+            out.putString("kernelRedirectHash", shortDigest(redirectedObserved));
+            top.niunaijun.blackbox.utils.Slog.d(TAG,
+                    "kernel guard registered=" + redirectRegistered
+                            + " observed=" + shortDigest(observed)
+                            + " expected=" + shortDigest(expected)
+                            + " target=" + shortDigest(redirectedObserved));
+        } catch (Throwable ignored) {
+        }
         out.putBoolean("dnsGuard", dnsGuard);
         out.putBoolean("udpGuard", udpGuard);
-        return dnsGuard && udpGuard;
+        out.putBoolean("kernelGuard", kernelGuard);
+        out.putBoolean("sensorGuard", sensorGuard);
+        StringBuilder failures = new StringBuilder();
+        if (!dnsGuard) failures.append("dns");
+        if (!udpGuard) {
+            if (failures.length() > 0) failures.append(',');
+            failures.append("udp");
+        }
+        if (!kernelGuard) {
+            if (failures.length() > 0) failures.append(',');
+            failures.append("kernel");
+        }
+        if (!sensorGuard) {
+            if (failures.length() > 0) failures.append(',');
+            failures.append("sensor");
+        }
+        out.putString("leakFailures", failures.toString());
+        return dnsGuard && udpGuard && kernelGuard && sensorGuard;
+    }
+
+    private static String readFirstLine(String path) {
+        if (path == null || path.trim().isEmpty()) return "";
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.FileReader(path))) {
+            String line = reader.readLine();
+            return line == null ? "" : line.trim();
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    private static String shortDigest(String value) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(
+                    (value == null ? "" : value).getBytes(
+                            java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(12);
+            for (int i = 0; i < 6; i++) {
+                result.append(String.format(java.util.Locale.US, "%02x", digest[i] & 0xff));
+            }
+            return result.toString();
+        } catch (Throwable ignored) {
+            return "unavailable";
+        }
     }
 
     public static Activity getActivityByToken(IBinder token) {

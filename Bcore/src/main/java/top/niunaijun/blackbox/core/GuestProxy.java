@@ -335,6 +335,33 @@ public class GuestProxy {
         return hex.toString();
     }
 
+    /** Build the same non-secret route identity as a persisted config, without writing it. */
+    public static String routeIdForConfig(String type, String server, int port,
+                                          String user, String pass, String countryIso) {
+        try {
+            String normalizedType = type == null ? "" : type.trim().toLowerCase();
+            String normalizedServer = server == null ? "" : server.trim();
+            if (normalizedServer.isEmpty() || port <= 0 || port > 65535
+                    || !(normalizedType.equals("http") || normalizedType.equals("https")
+                    || normalizedType.equals("socks") || normalizedType.equals("socks5"))) {
+                return null;
+            }
+            JSONObject candidate = new JSONObject();
+            candidate.put("enabled", true);
+            candidate.put("type", normalizedType);
+            candidate.put("server", normalizedServer);
+            candidate.put("port", port);
+            candidate.put("username", user == null ? "" : user);
+            candidate.put("password", pass == null ? "" : pass);
+            String effectiveCountryIso = normalizeCountryIso(countryIso);
+            if (effectiveCountryIso.isEmpty()) effectiveCountryIso = countryForProxy(user);
+            candidate.put("countryIso", effectiveCountryIso);
+            return routeId(candidate);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     /** Save (and enable) a proxy for a specific app in a User. Called from the host bridge. */
     public static boolean save(int userId, String pkg, String type, String server, int port, String user, String pass) {
         return save(userId, pkg, type, server, port, user, pass, null);
@@ -573,6 +600,30 @@ public class GuestProxy {
             }
         } catch (Throwable e) {
             Slog.w(TAG, "geo consistency failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Re-apply the already authenticated app route's non-network geo profile.
+     *
+     * Some Android builds reset the process default locale or timezone after the guest starts.
+     * Route verification may call this once before declaring a geo-guard violation. It never
+     * changes proxy credentials or enables direct networking.
+     */
+    public static boolean refreshGeoConsistency(int userId, String pkg) {
+        if (userId < 0 || pkg == null || !validPackage(pkg)) return false;
+        try {
+            File f = file(userId, pkg);
+            if (!f.isFile()) return false;
+            String expectedRouteId = routeIdFor(userId, pkg);
+            if (expectedRouteId == null || !expectedRouteId.equals(CURRENT_ROUTE_ID)) return false;
+            JSONObject route = new JSONObject(ProxyConfigCrypto.readText(f, userId, pkg));
+            if (!route.optBoolean("enabled", false)) return false;
+            applyGeoConsistency(route, userId);
+            return true;
+        } catch (Throwable error) {
+            Slog.w(TAG, "geo consistency refresh failed: " + error.getClass().getSimpleName());
+            return false;
         }
     }
 

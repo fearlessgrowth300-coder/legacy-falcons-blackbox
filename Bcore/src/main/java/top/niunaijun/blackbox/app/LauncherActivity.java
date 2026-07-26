@@ -182,6 +182,13 @@ public class LauncherActivity extends Activity {
                 Thread.sleep(100);
                 
                 
+                boolean prepared = BlackBoxCore.getBActivityManager()
+                        .prewarmProcess(launchIntent.getPackage(), launchIntent.getPackage(), userId);
+                if (!prepared) {
+                    throw new IllegalStateException(
+                            "The isolated app process could not be prepared safely");
+                }
+
                 BlackBoxCore.getBActivityManager().startActivity(launchIntent, userId);
                 
                 Slog.d(TAG, "App launch initiated successfully");

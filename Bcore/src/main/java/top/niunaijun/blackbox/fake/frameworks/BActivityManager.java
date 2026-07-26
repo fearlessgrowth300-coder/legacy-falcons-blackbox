@@ -73,6 +73,20 @@ public class BActivityManager extends BlackManager<IBActivityManagerService> {
         return null;
     }
 
+    public boolean prewarmProcess(String packageName, String processName, int userId) {
+        try {
+            IBActivityManagerService service = getService();
+            return service != null && service.prewarmProcess(packageName, processName, userId);
+        } catch (DeadObjectException e) {
+            Slog.w(TAG, "ActivityManager service died during prewarmProcess", e);
+            clearServiceCache();
+            return false;
+        } catch (RemoteException e) {
+            Slog.e(TAG, "RemoteException in prewarmProcess", e);
+            return false;
+        }
+    }
+
     public void restartProcess(String packageName, String processName, int userId) {
         try {
             IBActivityManagerService service = getService();

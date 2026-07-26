@@ -102,6 +102,22 @@ public class IOCore {
         return new File(redirectPath(pathStr, rule));
     }
 
+    /**
+     * Kernel identity must be registered during process initialization, before ShieldProxy runs
+     * its fail-closed pre-launch verification. The remaining package/storage redirects still wait
+     * for bindApplication(), where the guest package Context is available.
+     */
+    public synchronized boolean enableKernelIdentityRedirects() {
+        DeviceProfile profile = DeviceProfile.CURRENT;
+        Map<String, String> kernelRules = new LinkedHashMap<>();
+        if (profile == null || !profile.addKernelIdentityRedirects(kernelRules)) return false;
+        for (Map.Entry<String, String> entry : kernelRules.entrySet()) {
+            addRedirect(entry.getKey(), entry.getValue());
+        }
+        String bootPath = "/proc/sys/kernel/random/boot_id";
+        return !bootPath.equals(redirectPath(bootPath));
+    }
+
     
 
     public void enableRedirect(Context context) {
@@ -117,6 +133,11 @@ public class IOCore {
 
             rule.put(String.format("/data/data/%s", packageName), packageInfo.dataDir);
             rule.put(String.format("/data/user/%d/%s", systemUserId, packageName), packageInfo.dataDir);
+
+            if (!enableKernelIdentityRedirects()) {
+                top.niunaijun.blackbox.utils.Slog.w(
+                        TAG, "Per-clone kernel identity redirects unavailable");
+            }
 
             
             File profilesRoot = new File(BEnvironment.getVirtualRoot(), "profiles");

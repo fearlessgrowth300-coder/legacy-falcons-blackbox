@@ -89,6 +89,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Never let Gradle create/use its machine-specific debug keystore.
+            signingConfig signingConfigs.suiteRelease
+        }
         release {
             signingConfig signingConfigs.suiteRelease
             minifyEnabled true
@@ -183,12 +187,20 @@ dependencies {
 }
 
 gradle.taskGraph.whenReady { graph ->
-    def packagesRelease = graph.allTasks.any { task ->
-        task.project == project && task.name ==~ /(?i).*(assemble|bundle|package|install|publish).*release.*/
+    def packagesApplication = gradle.startParameter.taskNames.any { requested ->
+        def task = requested.substring(requested.lastIndexOf(':') + 1).toLowerCase(Locale.ROOT)
+        task.startsWith('assemble') ||
+                task.startsWith('bundle') ||
+                task.startsWith('package') ||
+                task.startsWith('install') ||
+                task.startsWith('publish') ||
+                task == 'build' ||
+                task.startsWith('buildneeded') ||
+                task.startsWith('builddependents')
     }
-    if (packagesRelease) {
+    if (packagesApplication) {
         if (!suiteSigningReady) {
-            throw new GradleException('Release signing is locked. Set SHIELD_SUITE_KEYSTORE, ' +
+            throw new GradleException('Debug and release signing are locked to the permanent suite key. Set SHIELD_SUITE_KEYSTORE, ' +
                     'SHIELD_SUITE_STORE_PASSWORD, SHIELD_SUITE_KEY_ALIAS, and ' +
                     'SHIELD_SUITE_KEY_PASSWORD (or the matching shieldSuite* Gradle properties).')
         }

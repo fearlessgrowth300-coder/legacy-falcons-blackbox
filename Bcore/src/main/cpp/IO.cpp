@@ -17,9 +17,15 @@ char *replace(const char *str, const char *src, const char *dst) {
         pos += strlen(src);
     }
 
-    size_t result_len = strlen(str) + (strlen(dst) - strlen(src)) * count + 1;
+    size_t source_len = strlen(src);
+    size_t destination_len = strlen(dst);
+    size_t result_len = strlen(str) - (source_len * count)
+            + (destination_len * count) + 1;
     char *result = (char *) malloc(result_len);
-    memset(result, 0, strlen(result));
+    if (result == nullptr) {
+        return nullptr;
+    }
+    memset(result, 0, result_len);
 
     const char *left = str;
     const char *right = nullptr;

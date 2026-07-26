@@ -256,6 +256,24 @@ object Supabase {
         return arr.getJSONObject(0).optJSONObject("data")?.toString()
     }
 
+    /**
+     * Best-effort upload of already-scrubbed diagnostics. If the optional table or network is
+     * unavailable the caller retains its encrypted queue for a later retry.
+     */
+    fun uploadCrashes(ctx: Context, reports: org.json.JSONArray): Boolean {
+        if (reports.length() == 0) return true
+        val rows = org.json.JSONArray()
+        for (index in 0 until reports.length()) {
+            rows.put(JSONObject()
+                .put("app", "blackbox")
+                .put("report", reports.getJSONObject(index)))
+        }
+        return runCatching {
+            restWrite(ctx, "$URL/rest/v1/crash_reports", rows.toString())
+            true
+        }.getOrDefault(false)
+    }
+
     private fun restWrite(ctx: Context, url: String, body: String) {
         val token = accessToken(ctx) ?: throw AuthException("Not signed in")
         try {

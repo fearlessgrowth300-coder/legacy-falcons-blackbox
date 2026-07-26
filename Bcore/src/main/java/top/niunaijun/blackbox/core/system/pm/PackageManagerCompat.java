@@ -17,7 +17,7 @@ import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.os.Build;
 
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 import black.android.content.pm.BRApplicationInfoL;
@@ -346,7 +346,14 @@ public class PackageManagerCompat {
     private static void fixJar(ApplicationInfo info) {
         String APACHE_LEGACY_JAR = "/system/framework/org.apache.http.legacy.boot.jar";
         String APACHE_LEGACY_JAR_Q = "/system/framework/org.apache.http.legacy.jar";
-        Set<String> sharedLibraryFileList = new HashSet<>();
+        Set<String> sharedLibraryFileList = new LinkedHashSet<>();
+        if (info.sharedLibraryFiles != null) {
+            for (String sharedLibraryFile : info.sharedLibraryFiles) {
+                if (sharedLibraryFile != null) {
+                    sharedLibraryFileList.add(sharedLibraryFile);
+                }
+            }
+        }
         if (BuildCompat.isQ()) {
             if (!FileUtils.isExist(APACHE_LEGACY_JAR_Q)) {
                 sharedLibraryFileList.add(APACHE_LEGACY_JAR);
@@ -369,6 +376,15 @@ public class PackageManagerCompat {
         if (ps != null) {
             AssetManager assets = BRAssetManager.get()._new();
             BRAssetManager.get(assets).addAssetPath(ps.pkg.baseCodePath);
+            String[] splitSourceDirs = ps.pkg.applicationInfo == null
+                    ? null : ps.pkg.applicationInfo.splitSourceDirs;
+            if (splitSourceDirs != null) {
+                for (String splitSourceDir : splitSourceDirs) {
+                    if (splitSourceDir != null) {
+                        BRAssetManager.get(assets).addAssetPath(splitSourceDir);
+                    }
+                }
+            }
             Resources hostRes = context.getResources();
             return new Resources(assets, hostRes.getDisplayMetrics(), hostRes.getConfiguration());
         }

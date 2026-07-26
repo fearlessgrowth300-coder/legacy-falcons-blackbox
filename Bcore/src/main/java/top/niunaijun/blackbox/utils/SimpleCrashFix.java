@@ -25,7 +25,8 @@ public class SimpleCrashFix {
             Slog.d(TAG, "Installing essential crash fix...");
 
 
-            installGlobalExceptionHandler();
+            // Never swallow uncaught failures. Continuing with partially-created framework state
+            // produces a blank guest window and eventually an ANR instead of a recoverable crash.
 
             // Main-thread crash SURVIVAL. An UncaughtExceptionHandler is too late — once the main
             // Looper's dispatch throws, the loop has already unwound and the app dies silently
@@ -33,7 +34,8 @@ public class SimpleCrashFix {
             // throwing message is dropped and the loop CONTINUES — the app keeps running. Covers
             // the intermittent Instagram androidx-startup NPE (AndroidXAppInitializer) + the other
             // known swallowable crashes.
-            installMainLoopGuard();
+            // Never run a nested main Looper. Android must be allowed to terminate a damaged guest
+            // so ApplicationExitInfo can report the real failure and the process can restart cleanly.
 
 
             installContextWrapperHook();

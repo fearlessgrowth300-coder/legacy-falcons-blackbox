@@ -19,6 +19,7 @@ import top.niunaijun.blackbox.entity.am.RunningServiceInfo;
 
 interface IBActivityManagerService {
     AppConfig initProcess(String packageName, String processName, int userId);
+    boolean prewarmProcess(String packageName, String processName, int userId);
     void restartProcess(String packageName, String processName, int userId);
     boolean isAppProcessRunning(String packageName, int userId);
     Bundle verifyProxyRoute(String packageName, int userId, String expectedRouteId, String expectedExitIp);

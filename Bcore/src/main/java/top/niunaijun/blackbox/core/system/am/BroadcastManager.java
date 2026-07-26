@@ -44,6 +44,9 @@ public class BroadcastManager implements PackageMonitor {
                 case MSG_TIME_OUT:
                     try {
                         PendingResultData data = (PendingResultData) msg.obj;
+                        synchronized (mReceiversData) {
+                            mReceiversData.remove(data.mBToken);
+                        }
                         data.build().finish();
                         Slog.d(TAG, "Timeout Receiver: " + data);
                     } catch (Throwable ignore) {
@@ -107,8 +110,11 @@ public class BroadcastManager implements PackageMonitor {
 
     public void sendBroadcast(PendingResultData pendingResultData) {
         synchronized (mReceiversData) {
-            
-            mReceiversData.put(pendingResultData.mBToken, pendingResultData);
+            PendingResultData previous =
+                    mReceiversData.put(pendingResultData.mBToken, pendingResultData);
+            if (previous != null) {
+                mHandler.removeMessages(MSG_TIME_OUT, previous);
+            }
             Message obtain = Message.obtain(mHandler, MSG_TIME_OUT, pendingResultData);
             mHandler.sendMessageDelayed(obtain, TIMEOUT);
         }
@@ -116,8 +122,10 @@ public class BroadcastManager implements PackageMonitor {
 
     public void finishBroadcast(PendingResultData data) {
         synchronized (mReceiversData) {
-            
-            mHandler.removeMessages(MSG_TIME_OUT, mReceiversData.get(data.mBToken));
+            PendingResultData pending = mReceiversData.remove(data.mBToken);
+            if (pending != null) {
+                mHandler.removeMessages(MSG_TIME_OUT, pending);
+            }
         }
     }
 

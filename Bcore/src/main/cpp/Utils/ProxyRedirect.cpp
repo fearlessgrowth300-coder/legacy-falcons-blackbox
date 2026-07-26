@@ -26,6 +26,10 @@
 #include <poll.h>
 #include <sys/time.h>
 #include <thread>
+#include <memory>
+#include <new>
+#include <utility>
+#include <pthread.h>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -49,14 +53,12 @@ static sockaddr_in6 g_proxy6{};           // same proxy as a v4-mapped AF_INET6 
 static bool g_haveProxy6 = false;
 
 static int (*orig_connect)(int, const sockaddr *, socklen_t) = nullptr;
+static int (*orig_socket)(int, int, int) = nullptr;
 static int (*orig_getaddrinfo)(const char *, const char *, const addrinfo *, addrinfo **) = nullptr;
 static int (*orig_android_getaddrinfofornet)(const char *, const char *, const addrinfo *,
                                              unsigned, unsigned, addrinfo **) = nullptr;
 static int (*orig_android_getaddrinfofornetcontext)(const char *, const char *, const addrinfo *,
                                                      const void *, addrinfo **) = nullptr;
-static ssize_t (*orig_sendto)(int, const void *, size_t, int, const sockaddr *, socklen_t) = nullptr;
-static ssize_t (*orig_sendmsg)(int, const struct msghdr *, int) = nullptr;
-static int (*orig_sendmmsg)(int, struct mmsghdr *, unsigned int, int) = nullptr;
 static int g_udpBlocks = 0;
 static std::mutex g_dnsLock;
 static uint32_t g_nextSynthetic = 1;
@@ -65,6 +67,11 @@ static std::unordered_map<uint32_t, std::string> g_syntheticToHost;
 static std::atomic<uint64_t> g_routeGeneration{1};
 static std::atomic<int> g_relayStarts{0};
 static std::atomic<int> g_relayFailures{0};
+static std::atomic<int> g_activeRelayWorkers{0};
+static std::atomic<int> g_peakRelayWorkers{0};
+// 128 * 512 KiB keeps the worst-case reserved relay stack near 64 MiB. That matters on 32-bit
+// phones, while still leaving ample parallelism for Chromium and social-app connection bursts.
+static constexpr int MAX_RELAY_WORKERS = 128;
 
 struct ProxySnapshot {
     int type = PROXY_HTTP;
@@ -522,6 +529,61 @@ static void relayWorker(int listener, ProxyTarget target, ProxySnapshot proxy) {
     relayBidirectional(client, upstream, proxy.generation);
 }
 
+struct RelayTask {
+    int listener;
+    ProxyTarget target;
+    ProxySnapshot proxy;
+};
+
+static void *relayThreadMain(void *opaque) {
+    std::unique_ptr<RelayTask> task((RelayTask *) opaque);
+    int active = g_activeRelayWorkers.load(std::memory_order_relaxed);
+    int peak = g_peakRelayWorkers.load(std::memory_order_relaxed);
+    while (active > peak && !g_peakRelayWorkers.compare_exchange_weak(
+            peak, active, std::memory_order_relaxed)) {
+    }
+    relayWorker(task->listener, std::move(task->target), std::move(task->proxy));
+    g_activeRelayWorkers.fetch_sub(1, std::memory_order_relaxed);
+    return nullptr;
+}
+
+static bool startRelayWorker(int listener, const ProxyTarget &target,
+                             const ProxySnapshot &proxy) {
+    std::unique_ptr<RelayTask> task(new (std::nothrow) RelayTask{listener, target, proxy});
+    if (!task) return false;
+
+    int active = g_activeRelayWorkers.load(std::memory_order_relaxed);
+    do {
+        if (active >= MAX_RELAY_WORKERS) {
+            errno = EAGAIN;
+            return false;
+        }
+    } while (!g_activeRelayWorkers.compare_exchange_weak(
+            active, active + 1, std::memory_order_acq_rel));
+
+    pthread_attr_t attr;
+    if (pthread_attr_init(&attr) != 0) {
+        g_activeRelayWorkers.fetch_sub(1, std::memory_order_relaxed);
+        return false;
+    }
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    // Android's default native-thread stack is much larger than this relay requires. Social apps
+    // routinely open dozens of parallel sockets; a bounded stack prevents those short-lived
+    // relays from exhausting a low-memory phone while retaining one independent fail-closed
+    // tunnel per connection.
+    size_t stackSize = std::max((size_t) PTHREAD_STACK_MIN, (size_t) 512 * 1024);
+    pthread_attr_setstacksize(&attr, stackSize);
+    pthread_t thread;
+    int created = pthread_create(&thread, &attr, relayThreadMain, task.get());
+    pthread_attr_destroy(&attr);
+    if (created != 0) {
+        g_activeRelayWorkers.fetch_sub(1, std::memory_order_relaxed);
+        return false;
+    }
+    task.release();
+    return true;
+}
+
 static int startLoopbackRelay(int fd, const sockaddr *destination,
                               const ProxyTarget &target, const ProxySnapshot &proxy) {
     int family = destination->sa_family;
@@ -563,9 +625,7 @@ static int startLoopbackRelay(int fd, const sockaddr *destination,
         errno = connectErrno;
         return -1;
     }
-    try {
-        std::thread(relayWorker, listener, target, proxy).detach();
-    } catch (...) {
+    if (!startRelayWorker(listener, target, proxy)) {
         close(listener);
         errno = EAGAIN;
         return -1;
@@ -628,6 +688,34 @@ static int my_connect(int fd, const sockaddr *addr, socklen_t len) {
     return startLoopbackRelay(fd, addr, target, proxy);
 }
 
+// This proxy transports TCP only. Block Internet datagram sockets at creation time so QUIC,
+// STUN and custom UDP telemetry cannot ever acquire a direct-network file descriptor.
+//
+// Do not hook sendto/sendmsg/sendmmsg here. Android's display stack uses AF_UNIX BitTube sockets
+// through those libc entry points, and TikTok installs its own send hooks. Layering a second
+// inline send hook underneath TikTok's hook can spin inside nSignalNativeCallbacks while holding
+// DisplayManagerGlobal's lock, leaving MainActivity.onCreate permanently black and causing an ANR.
+// Filtering socket() by family/type blocks all Internet UDP earlier without touching AF_UNIX IPC.
+static int my_socket(int domain, int type, int protocol) {
+    bool enabled;
+    {
+        std::lock_guard<std::mutex> lk(g_lock);
+        enabled = g_enabled;
+    }
+    int baseType = type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
+    if (enabled
+            && (domain == AF_INET || domain == AF_INET6)
+            && baseType == SOCK_DGRAM) {
+        if (g_udpBlocks < 5) {
+            LOGD("blocked direct Internet UDP socket (#%d)", g_udpBlocks + 1);
+        }
+        g_udpBlocks++;
+        errno = EACCES;
+        return -1;
+    }
+    return orig_socket(domain, type, protocol);
+}
+
 static bool useRemoteDns(const char *node, const addrinfo *hints) {
     bool enabled;
     { std::lock_guard<std::mutex> lk(g_lock); enabled = g_enabled; }
@@ -667,60 +755,10 @@ static int my_android_getaddrinfofornet(const char *node, const char *service,
     return orig_android_getaddrinfofornet(node, service, hints, netid, mark, res);
 }
 
-// QUIC leak guard for the DATAGRAM send path. The connect() hook only blocks *connected* UDP:443;
-// but Chromium/cronet (Instagram, Chrome, etc.) send QUIC over UNCONNECTED UDP via sendmsg/sendmmsg
-// (batched with GSO) — those never call connect(), so they'd bypass the proxy and leak the real IP
-// (this is why IG showed "Lagos, Nigeria" while a TCP-only probe exited the proxy). Refuse UDP:443
-// to any public dest so the app falls back to TCP, which IS tunnelled through the proxy.
-static bool udp_leak(int fd, const sockaddr *suppliedDest) {
-    const sockaddr *dest = suppliedDest;
-    if (!dest) return false;   // connected socket → connect() hook already handled :443
-    { std::lock_guard<std::mutex> lk(g_lock); if (!g_enabled) return false; }
-    int stype = 0; socklen_t tl = sizeof(stype);
-    if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &stype, &tl) != 0 || stype != SOCK_DGRAM) return false;
-    if (dest->sa_family != AF_INET && dest->sa_family != AF_INET6) return false;
-    if (isLoopback(dest)) return false;
-    char ip[64]; int port = 0;
-    if (destToIpPort(dest, ip, sizeof(ip), &port)) {
-        if (g_udpBlocks < 5) LOGD("blocked direct UDP leak (#%d), port=%d", g_udpBlocks + 1, port);
-        g_udpBlocks++;
-    }
-    return true;
-}
-
-// Refuse QUIC datagrams with ECONNREFUSED. This makes Chromium/cronet mark the host's QUIC as
-// BROKEN immediately and use TCP (which IS proxied) for the rest of the session — fast. (Silently
-// DROPPING instead looks like packet loss, so cronet keeps retrying QUIC on every connection =
-// slow.) The androidx-startup crash this once triggered is now caught by the SimpleCrashFix
-// main-loop guard, so the app survives; net result: no leak, fast, no close.
-static ssize_t my_sendto(int fd, const void *buf, size_t n, int flags,
-                         const sockaddr *dest, socklen_t dlen) {
-    if (udp_leak(fd, dest)) { errno = ECONNREFUSED; return -1; }
-    return orig_sendto(fd, buf, n, flags, dest, dlen);
-}
-
-static ssize_t my_sendmsg(int fd, const struct msghdr *msg, int flags) {
-    if (msg && udp_leak(fd, (const sockaddr *) msg->msg_name)) {
-        errno = ECONNREFUSED; return -1;
-    }
-    return orig_sendmsg(fd, msg, flags);
-}
-
-static int my_sendmmsg(int fd, struct mmsghdr *msgs, unsigned int vlen, int flags) {
-    if (msgs) {
-        for (unsigned int i = 0; i < vlen; i++) {
-            if (udp_leak(fd, (const sockaddr *) msgs[i].msg_hdr.msg_name)) {
-                errno = ECONNREFUSED; return -1;
-            }
-        }
-    }
-    return orig_sendmmsg(fd, msgs, vlen, flags);
-}
-
 static bool install_connect_hook() {
     if (g_installed) {
-        return orig_connect && orig_getaddrinfo && orig_android_getaddrinfofornet
-                && orig_sendto && orig_sendmsg && orig_sendmmsg;
+        return orig_connect && orig_socket && orig_getaddrinfo
+                && orig_android_getaddrinfofornet;
     }
     void *h = xdl_open("libc.so", XDL_DEFAULT);
     if (h) {
@@ -729,6 +767,9 @@ static bool install_connect_hook() {
             g_installed = true;
             LOGD("connect() hook installed");
         }
+        void *s = xdl_dsym(h, "socket", nullptr);
+        if (s && DobbyHook(s, (void *) my_socket, (void **) &orig_socket) == 0)
+            LOGD("socket() hook installed (Internet UDP guard)");
         void *g = xdl_dsym(h, "getaddrinfo", nullptr);
         if (g && DobbyHook(g, (void *) my_getaddrinfo, (void **) &orig_getaddrinfo) == 0) {
             LOGD("getaddrinfo hook installed (remote DNS)");
@@ -737,20 +778,10 @@ static bool install_connect_hook() {
         if (gn && DobbyHook(gn, (void *) my_android_getaddrinfofornet,
                             (void **) &orig_android_getaddrinfofornet) == 0)
             LOGD("android_getaddrinfofornet hook installed (remote DNS)");
-        // Block unconnected-UDP QUIC (the IG leak path) by DROPPING UDP:443 datagrams.
-        void *st = xdl_dsym(h, "sendto", nullptr);
-        if (st && DobbyHook(st, (void *) my_sendto, (void **) &orig_sendto) == 0)
-            LOGD("sendto hook installed (QUIC guard)");
-        void *sm = xdl_dsym(h, "sendmsg", nullptr);
-        if (sm && DobbyHook(sm, (void *) my_sendmsg, (void **) &orig_sendmsg) == 0)
-            LOGD("sendmsg hook installed (QUIC guard)");
-        void *smm = xdl_dsym(h, "sendmmsg", nullptr);
-        if (smm && DobbyHook(smm, (void *) my_sendmmsg, (void **) &orig_sendmmsg) == 0)
-            LOGD("sendmmsg hook installed (QUIC guard)");
         xdl_close(h);
     }
-    return g_installed && orig_connect && orig_getaddrinfo && orig_android_getaddrinfofornet
-            && orig_sendto && orig_sendmsg && orig_sendmmsg;
+    return g_installed && orig_connect && orig_socket && orig_getaddrinfo
+            && orig_android_getaddrinfofornet;
 }
 
 // ---- configuration (called from BoxCore.cpp) -------------------------------

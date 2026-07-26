@@ -18,6 +18,8 @@ import top.niunaijun.blackbox.utils.Slog;
 
 
 public class IAppOpsManagerProxy extends BinderInvocationStub {
+    private static volatile Object sProxyService;
+
     public IAppOpsManagerProxy() {
         super(BRServiceManager.get().getService(Context.APP_OPS_SERVICE));
     }
@@ -30,6 +32,7 @@ public class IAppOpsManagerProxy extends BinderInvocationStub {
 
     @Override
     protected void inject(Object baseInvocation, Object proxyInvocation) {
+        sProxyService = proxyInvocation;
         if (BRAppOpsManager.get(null)._check_mService() != null) {
             AppOpsManager appOpsManager = (AppOpsManager) BlackBoxCore.getContext().getSystemService(Context.APP_OPS_SERVICE);
             try {
@@ -39,6 +42,29 @@ public class IAppOpsManagerProxy extends BinderInvocationStub {
             }
         }
         replaceSystemService(Context.APP_OPS_SERVICE);
+    }
+
+    /**
+     * ContextImpl caches framework managers per application context. A guest context created after
+     * the global hook can therefore retain the physical IAppOpsService and fail checkPackage()
+     * because the guest package name does not belong to BlackBox's real UID. Rebind the already
+     * installed proxy before the guest Application is attached.
+     */
+    public static void bindToGuestContext(Context context) {
+        Object proxyService = sProxyService;
+        if (context == null || proxyService == null
+                || BRAppOpsManager.get(null)._check_mService() == null) {
+            return;
+        }
+        try {
+            AppOpsManager appOpsManager =
+                    (AppOpsManager) context.getSystemService(Context.APP_OPS_SERVICE);
+            if (appOpsManager != null) {
+                BRAppOpsManager.get(appOpsManager)._set_mService(proxyService);
+            }
+        } catch (Throwable t) {
+            Slog.e(TAG, "Unable to bind AppOps proxy to guest context", t);
+        }
     }
 
     @Override

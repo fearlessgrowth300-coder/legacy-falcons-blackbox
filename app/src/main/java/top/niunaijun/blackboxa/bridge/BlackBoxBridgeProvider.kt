@@ -162,10 +162,22 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     val conflict = validNode && knownApp && GuestProxy.wouldConflictWithSharedGms(
                         userId, pkg, type, server, port, username, password, countryIso
                     )
-                    val saved = validNode && knownApp && validExitIp && !conflict && GuestProxy.save(
-                        userId, pkg, type, server, port, username, password, countryIso,
-                        city, region, latitude, longitude, timezoneId
-                    )
+                    val candidateRouteId = if (validNode && knownApp && !conflict) {
+                        GuestProxy.routeIdForConfig(
+                            type, server, port, username, password, countryIso
+                        )
+                    } else null
+                    val reuseRunningRoute = candidateRouteId != null &&
+                        candidateRouteId == GuestProxy.routeIdFor(userId, pkg) &&
+                        BlackBoxCore.getBActivityManager().isAppProcessRunning(pkg, userId)
+                    // Reopening an already-running clone on the exact same encrypted assignment
+                    // must not rewrite its config and force-stop it. That caused unnecessary cold
+                    // starts, delayed ShieldProxy launches, and interrupted active social sessions.
+                    val saved = validNode && knownApp && validExitIp && !conflict &&
+                        (reuseRunningRoute || GuestProxy.save(
+                            userId, pkg, type, server, port, username, password, countryIso,
+                            city, region, latitude, longitude, timezoneId
+                        ))
                     val gmsRoute = if (saved && GuestProxy.isSharedGmsActive(userId)) {
                         GuestProxy.syncGmsRouteForUser(userId)
                     } else null
@@ -197,12 +209,17 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     } else {
                         val installedPkg = pkg!!
                         val confirmedExitIp = expectedExitIp!!
-                        try { BlackBoxCore.get().stopPackage(installedPkg, userId) } catch (_: Throwable) {}
                         val expectedRouteId = GuestProxy.routeIdFor(userId, installedPkg)
-                        val config = if (expectedRouteId != null) {
-                            BlackBoxCore.getBActivityManager().initProcess(installedPkg, installedPkg, userId)
-                        } else null
-                        if (config == null || expectedRouteId == null) {
+                        val processPrepared = if (reuseRunningRoute) {
+                            true
+                        } else {
+                            try { BlackBoxCore.get().stopPackage(installedPkg, userId) } catch (_: Throwable) {}
+                            if (expectedRouteId != null) {
+                                BlackBoxCore.getBActivityManager()
+                                    .initProcess(installedPkg, installedPkg, userId) != null
+                            } else false
+                        }
+                        if (!processPrepared || expectedRouteId == null) {
                             try { BlackBoxCore.get().stopPackage(installedPkg, userId) } catch (_: Throwable) {}
                             res.putBoolean("ok", false)
                             res.putString("state", "PREPARE_FAILED")
@@ -218,7 +235,7 @@ class BlackBoxBridgeProvider : ContentProvider() {
                             res.putAll(probe)
                             res.putBoolean("configured", true)
                             res.putString("expectedRouteId", expectedRouteId)
-                            if (!probe.getBoolean("ok")) {
+                            if (!probe.getBoolean("ok") && !reuseRunningRoute) {
                                 try { BlackBoxCore.get().stopPackage(installedPkg, userId) } catch (_: Throwable) {}
                             }
                         }
@@ -314,7 +331,8 @@ class BlackBoxBridgeProvider : ContentProvider() {
                         val p = top.niunaijun.blackbox.core.DeviceProfile.forUser(userId)
                         val fields = listOf(
                             p.androidId, p.imei, p.imsi, p.serial, p.macWifi,
-                            p.gaid, p.buildId, p.incremental, p.fingerprint, p.widevineId
+                            p.gaid, p.buildId, p.incremental, p.fingerprint, p.widevineId,
+                            p.kernelSeed
                         )
                         val complete = fields.none { it.isNullOrBlank() }
                         val digest = if (complete) {
@@ -490,19 +508,23 @@ class BlackBoxBridgeProvider : ContentProvider() {
             putString("state", "NOT_RUNNING")
             putString("err", "The routed guest process did not become ready")
         }
-        repeat(30) { attempt ->
+        // Android 16 may need several seconds for the first Pine-backed identity hooks on an OEM
+        // build. The provider handshake now returns immediately and reports ISOLATION_STARTING;
+        // keep this gate closed until those hooks are ready rather than killing a healthy process.
+        repeat(300) { attempt ->
             last = BlackBoxCore.getBActivityManager()
                 .verifyProxyRoute(pkg, userId, routeId, expectedExitIp)
-            if (last.getString("state") != "NOT_RUNNING") return last
+            val state = last.getString("state")
+            if (state != "NOT_RUNNING" && state != "ISOLATION_STARTING") return last
             // WhatsApp can tear down its empty warm-up process while Android is resolving its
             // registration/permission activities. Re-request the same guarded process during the
             // bounded gate instead of treating that transient teardown as a permanent failure.
-            if (attempt == 7 || attempt == 15 || attempt == 23) {
+            if (attempt == 75 || attempt == 150 || attempt == 225) {
                 runCatching {
                     BlackBoxCore.getBActivityManager().initProcess(pkg, pkg, userId)
                 }
             }
-            if (attempt < 29) {
+            if (attempt < 299) {
                 try {
                     Thread.sleep(100)
                 } catch (_: InterruptedException) {
