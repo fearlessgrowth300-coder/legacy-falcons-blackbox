@@ -104,6 +104,29 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
                     userId);
         }
         if (ris == null || ris.size() <= 0) {
+            // Feature-split launch aliases can be present in the merged virtual package while
+            // older IntentResolver code still misses their split-owned intent filter. Use the
+            // host PackageManager only to discover the component name, then require that exact
+            // component to resolve in the virtual package before constructing a new virtual
+            // intent. Never return or start the host intent itself.
+            Intent installedLauncher =
+                    BlackBoxCore.getPackageManager().getLaunchIntentForPackage(packageName);
+            ComponentName installedComponent =
+                    installedLauncher == null ? null : installedLauncher.getComponent();
+            ActivityInfo virtualActivity = installedComponent == null
+                    ? null : getActivityInfo(installedComponent, 0, userId);
+            if (virtualActivity != null
+                    && packageName.equals(virtualActivity.packageName)) {
+                Intent virtualLaunch = new Intent(Intent.ACTION_MAIN);
+                virtualLaunch.addCategory(Intent.CATEGORY_LAUNCHER);
+                virtualLaunch.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                virtualLaunch.setComponent(new ComponentName(
+                        virtualActivity.packageName, virtualActivity.name));
+                Log.i(TAG, "Resolved split launcher through verified virtual component: "
+                        + installedComponent.flattenToShortString());
+                return virtualLaunch;
+            }
+            Log.w(TAG, "No virtual launcher component for " + packageName);
             return null;
         }
         Intent intent = new Intent(intentToResolve);

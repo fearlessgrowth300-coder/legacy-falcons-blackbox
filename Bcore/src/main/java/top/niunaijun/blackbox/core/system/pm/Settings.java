@@ -217,6 +217,7 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
                     BProcessManagerService.get().killAllByPackageName(bPackageSettings.pkg.packageName);
                     BPackageSettings newPkg = reInstallBySystem(packageInfo, bPackageSettings.installOption);
                     bPackageSettings.pkg = newPkg.pkg;
+                    bPackageSettings.pkg.mExtras = bPackageSettings;
                 }
             } else {
                 bPackageSettings.pkg.applicationInfo = PackageManagerCompat.generateApplicationInfo(bPackageSettings.pkg, 0, BPackageUserState.create(), 0);
