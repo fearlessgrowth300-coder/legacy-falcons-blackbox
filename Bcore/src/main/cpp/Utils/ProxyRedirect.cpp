@@ -69,6 +69,9 @@ static std::atomic<int> g_relayStarts{0};
 static std::atomic<int> g_relayFailures{0};
 static std::atomic<int> g_activeRelayWorkers{0};
 static std::atomic<int> g_peakRelayWorkers{0};
+// 128 * 512 KiB keeps the worst-case reserved relay stack near 64 MiB. That matters on 32-bit
+// phones, while still leaving ample parallelism for Chromium and social-app connection bursts.
+static constexpr int MAX_RELAY_WORKERS = 128;
 
 struct ProxySnapshot {
     int type = PROXY_HTTP;
@@ -534,7 +537,7 @@ struct RelayTask {
 
 static void *relayThreadMain(void *opaque) {
     std::unique_ptr<RelayTask> task((RelayTask *) opaque);
-    int active = g_activeRelayWorkers.fetch_add(1, std::memory_order_relaxed) + 1;
+    int active = g_activeRelayWorkers.load(std::memory_order_relaxed);
     int peak = g_peakRelayWorkers.load(std::memory_order_relaxed);
     while (active > peak && !g_peakRelayWorkers.compare_exchange_weak(
             peak, active, std::memory_order_relaxed)) {
@@ -549,8 +552,20 @@ static bool startRelayWorker(int listener, const ProxyTarget &target,
     std::unique_ptr<RelayTask> task(new (std::nothrow) RelayTask{listener, target, proxy});
     if (!task) return false;
 
+    int active = g_activeRelayWorkers.load(std::memory_order_relaxed);
+    do {
+        if (active >= MAX_RELAY_WORKERS) {
+            errno = EAGAIN;
+            return false;
+        }
+    } while (!g_activeRelayWorkers.compare_exchange_weak(
+            active, active + 1, std::memory_order_acq_rel));
+
     pthread_attr_t attr;
-    if (pthread_attr_init(&attr) != 0) return false;
+    if (pthread_attr_init(&attr) != 0) {
+        g_activeRelayWorkers.fetch_sub(1, std::memory_order_relaxed);
+        return false;
+    }
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     // Android's default native-thread stack is much larger than this relay requires. Social apps
     // routinely open dozens of parallel sockets; a bounded stack prevents those short-lived
@@ -561,7 +576,10 @@ static bool startRelayWorker(int listener, const ProxyTarget &target,
     pthread_t thread;
     int created = pthread_create(&thread, &attr, relayThreadMain, task.get());
     pthread_attr_destroy(&attr);
-    if (created != 0) return false;
+    if (created != 0) {
+        g_activeRelayWorkers.fetch_sub(1, std::memory_order_relaxed);
+        return false;
+    }
     task.release();
     return true;
 }
