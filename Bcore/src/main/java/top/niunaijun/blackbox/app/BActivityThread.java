@@ -80,6 +80,7 @@ import top.niunaijun.blackbox.fake.delegate.AppInstrumentation;
 import top.niunaijun.blackbox.fake.delegate.ContentProviderDelegate;
 
 import top.niunaijun.blackbox.fake.hook.HookManager;
+import top.niunaijun.blackbox.fake.service.IAppOpsManagerProxy;
 import top.niunaijun.blackbox.fake.service.HCallbackProxy;
 import top.niunaijun.blackbox.utils.Reflector;
 import top.niunaijun.blackbox.utils.SafeContextWrapper;
@@ -485,6 +486,7 @@ public class BActivityThread extends IBActivityThread.Stub {
         Object boundApplication = BRActivityThread.get(BlackBoxCore.mainThread()).mBoundApplication();
 
         Context packageContext = createPackageContext(applicationInfo);
+        IAppOpsManagerProxy.bindToGuestContext(packageContext);
         Object loadedApk = BRContextImpl.get(packageContext).mPackageInfo();
         BRLoadedApk.get(loadedApk)._set_mSecurityViolation(false);
         
