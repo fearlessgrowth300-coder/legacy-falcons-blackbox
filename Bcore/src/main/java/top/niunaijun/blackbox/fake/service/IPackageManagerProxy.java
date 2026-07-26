@@ -218,6 +218,32 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             ProviderInfo providerInfo = BlackBoxCore.getBPackageManager().getProviderInfo(componentName, flags, BlackBoxCore.getUserId());
             if (providerInfo != null)
                 return providerInfo;
+            // A package may legally declare more than one provider with the same authority.
+            // Instagram does this for AndroidX startup: its custom provider is declared first,
+            // while androidx.startup.InitializationProvider owns the initializer meta-data.
+            // ComponentResolver's authority map can only retain one of them, so resolving by
+            // authority below may return the custom provider with null metaData and crash
+            // Instagram with "INSTANCE_FIELD must not be null". PackageInfo preserves every
+            // declared provider; prefer an exact class match from that complete list.
+            if (componentName != null && componentName.getPackageName() != null) {
+                try {
+                    int providerFlags = flags
+                            | android.content.pm.PackageManager.GET_PROVIDERS
+                            | android.content.pm.PackageManager.GET_META_DATA;
+                    PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(
+                            componentName.getPackageName(), providerFlags, BlackBoxCore.getUserId());
+                    if (packageInfo != null && packageInfo.providers != null) {
+                        for (ProviderInfo candidate : packageInfo.providers) {
+                            if (candidate != null
+                                    && componentName.getClassName().equals(candidate.name)) {
+                                return candidate;
+                            }
+                        }
+                    }
+                } catch (Throwable t) {
+                    Slog.w(TAG, "provider package scan failed: " + t);
+                }
+            }
             // Fallback for a guest provider the exact-ComponentName lookup missed. IG/WhatsApp query
             // getProviderInfo(androidx.startup.InitializationProvider, GET_META_DATA) at startup; a
             // null here makes the framework throw NameNotFoundException → the whole app CRASHES
