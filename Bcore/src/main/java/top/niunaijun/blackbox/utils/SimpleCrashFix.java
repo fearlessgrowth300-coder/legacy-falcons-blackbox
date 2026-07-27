@@ -34,8 +34,15 @@ public class SimpleCrashFix {
             // throwing message is dropped and the loop CONTINUES — the app keeps running. Covers
             // the intermittent Instagram androidx-startup NPE (AndroidXAppInitializer) + the other
             // known swallowable crashes.
-            // Never run a nested main Looper. Android must be allowed to terminate a damaged guest
-            // so ApplicationExitInfo can report the real failure and the process can restart cleanly.
+            //
+            // The guard is deliberately NARROW, which is what makes a nested main Looper safe here:
+            // isSwallowable() resumes the loop only for a known-recoverable guest-init failure, and
+            // it explicitly refuses every "Unable to start/resume/pause/stop/destroy activity". A
+            // damaged activity launch therefore still dies normally and is still reported through
+            // ApplicationExitInfo — only the recoverable startup race is absorbed. Without this,
+            // Instagram closes back to the launcher a second or two after opening while apps that
+            // never touch androidx App Startup (TikTok, Fiverr) stay up.
+            installMainLoopGuard();
 
 
             installContextWrapperHook();
