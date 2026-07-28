@@ -67,31 +67,43 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
     @Override
     public boolean onTransact(int code, android.os.Parcel data, android.os.Parcel reply, int flags)
             throws RemoteException {
-        // The local compatibility AIDL has the old two-argument method, while Android 8+ sends the
-        // hidden three-argument IServiceConnection payload (ComponentName, binder, dead). Decode
-        // that payload explicitly on Android 16 so the generated two-argument Stub cannot reject or
-        // misread the trailing boolean. IBinderSession belongs to the public ServiceConnection
-        // callback layer; it is not part of this IServiceConnection Binder transaction.
+        // The local compatibility AIDL has the old two-argument method, while Android 8+ sends a
+        // wider hidden IServiceConnection payload. Rebuild it on Android 16 so the guest sees its
+        // target component and its per-user GAID binder.
+        //
+        // Only the two leading fields may be decoded. Android 16 (API 36) carries
+        // connected(ComponentName, IBinder service, IBinderSession session, boolean dead) — four
+        // arguments, not three. Consuming a trailing boolean here read `dead` out of the session's
+        // slot and dropped the session from the rebuilt parcel, so the guest's real API-36 Stub
+        // then read a null session and a garbage boolean, never delivered onServiceConnected, and
+        // every in-clone bind silently failed. Instagram's in-app browser reported "Callback
+        // service is not available" on a 3s retry loop and rendered "An unknown error occurred"
+        // instead of the page. Copy everything after the service binder through verbatim so this
+        // stays correct for API 36 and for any argument a later platform appends.
         if (code == android.os.IBinder.FIRST_CALL_TRANSACTION
                 && android.os.Build.VERSION.SDK_INT >= 36) {
             android.os.Parcel forwarded = null;
             try {
-                // API 36 payload: ComponentName, service binder, dead. Rebuild it so the guest sees
-                // its target component and its per-user GAID binder.
                 data.setDataPosition(0);
                 data.enforceInterface("android.app.IServiceConnection");
                 ComponentName name = data.readTypedObject(ComponentName.CREATOR);
                 IBinder service = data.readStrongBinder();
-                boolean dead = data.readBoolean();
+                // Whatever remains (API 36: IBinderSession + dead) is forwarded untouched.
+                final int tailPos = data.dataPosition();
+                final int tailLen = data.dataSize() - tailPos;
 
                 forwarded = android.os.Parcel.obtain();
                 forwarded.writeInterfaceToken("android.app.IServiceConnection");
                 forwarded.writeTypedObject(mComponentName != null ? mComponentName : name, 0);
                 forwarded.writeStrongBinder(maybeSpoofAdvertisingId(service));
-                forwarded.writeBoolean(dead);
+                if (tailLen > 0) {
+                    // appendFrom preserves flattened binder objects, so the session survives intact.
+                    forwarded.appendFrom(data, tailPos, tailLen);
+                }
                 top.niunaijun.blackbox.utils.Slog.d("SvcConn",
                         "Forwarding API 36 service callback for "
-                                + (mComponentName != null ? mComponentName : name));
+                                + (mComponentName != null ? mComponentName : name)
+                                + " (+" + tailLen + "B tail)");
                 return mConn.asBinder().transact(code, forwarded, reply, flags);
             } catch (Throwable t) {
                 top.niunaijun.blackbox.utils.Slog.d("SvcConn",
