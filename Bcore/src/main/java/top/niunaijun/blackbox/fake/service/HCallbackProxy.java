@@ -7,6 +7,7 @@ import android.content.pm.ServiceInfo;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
+import android.text.TextUtils;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -30,6 +31,7 @@ import black.android.app.servertransaction.LaunchActivityItemContext;
 import black.android.os.BRHandler;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.entity.AppConfig;
 import top.niunaijun.blackbox.fake.hook.IInjectHook;
 import top.niunaijun.blackbox.proxy.ProxyManifest;
 import top.niunaijun.blackbox.proxy.record.ProxyActivityRecord;
@@ -148,6 +150,26 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
             if (BActivityThread.getAppConfig() == null) {
                 BlackBoxCore.getBActivityManager().restartProcess(activityInfo.packageName, activityInfo.processName, stubRecord.mUserId);
 
+                AppConfig recoveredConfig = BActivityThread.getAppConfig();
+                if (isExpectedProcess(recoveredConfig, activityInfo, stubRecord.mUserId)
+                        && stubRecord.mTarget != null) {
+                    // Android can reclaim a background proxy process while keeping its physical
+                    // task and launch transaction. restartProcess() synchronously reattaches this
+                    // P<n> worker. Requeue the untouched transaction so ActivityThread receives
+                    // the original guest activity, intent and saved instance state. Replacing it
+                    // with the package launcher here used to send Instagram back to Home/Reels
+                    // whenever the user returned from Recents.
+                    Slog.i(TAG, "Recovered guest process; preserving activity "
+                            + activityInfo.name + " for user " + stubRecord.mUserId);
+                    return true;
+                }
+
+                // Recovery genuinely failed (or the persisted transaction is incomplete). Keep
+                // the established launcher fallback instead of allowing ProxyActivity to start a
+                // guest target directly on the host network.
+                Slog.e(TAG, "Unable to recover saved guest activity; using safe launcher fallback: "
+                        + activityInfo.packageName + "/" + activityInfo.processName
+                        + " user=" + stubRecord.mUserId);
                 Intent launchIntentForPackage = BlackBoxCore.getBPackageManager().getLaunchIntentForPackage(activityInfo.packageName, stubRecord.mUserId);
                 ActivityInfo launchActivityInfo = activityInfo;
                 if (launchIntentForPackage != null && launchIntentForPackage.getComponent() != null) {
@@ -210,6 +232,13 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
             }
         }
         return false;
+    }
+
+    private boolean isExpectedProcess(AppConfig config, ActivityInfo activityInfo, int userId) {
+        return config != null
+                && TextUtils.equals(activityInfo.packageName, config.packageName)
+                && TextUtils.equals(activityInfo.processName, config.processName)
+                && userId == config.userId;
     }
 
     private boolean handleCreateService(Object data) {
