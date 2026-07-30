@@ -9,6 +9,12 @@ import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 import android.os.RemoteException;
+import android.os.DeadObjectException;
+import android.os.TransactionTooLargeException;
+import android.os.Parcel;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.DataInputStream;
 import android.util.Log;
 
 import java.util.Collections;
@@ -326,13 +332,60 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
                 Log.w(TAG, "PackageManager service is null for getPackageInfo; failing closed");
                 return null;
             }
-            return service.getPackageInfo(packageName, flags, userId);
+            try {
+                return service.getPackageInfo(packageName, flags, userId);
+            } catch (DeadObjectException | TransactionTooLargeException tooBig) {
+                // A package with thousands of components (Instagram) marshals well past the ~1MB
+                // per-process binder buffer, and the failure surfaces as either of these. Retrying
+                // the same call cannot help, so fetch the identical payload through a file instead.
+                // Without this the guest gets no component table at all and aborts its own start-up.
+                Log.w(TAG, "getPackageInfo exceeded the binder buffer for " + packageName
+                        + "; retrying through a file handover");
+                return getPackageInfoViaBlob(service, packageName, flags, userId);
+            }
         } catch (RemoteException e) {
             Log.e(TAG, "RemoteException in getPackageInfo for " + packageName, e);
             return null;
         } catch (Exception e) {
             Log.e(TAG, "Exception in getPackageInfo for " + packageName, e);
             return null;
+        }
+    }
+
+    /** Read back a PackageInfo the server wrote to disk because it was too large to send inline. */
+    private PackageInfo getPackageInfoViaBlob(IBPackageManagerService service, String packageName,
+                                              int flags, int userId) {
+        String path;
+        try {
+            path = service.getPackageInfoBlob(packageName, flags, userId);
+        } catch (Exception e) {
+            Log.e(TAG, "File handover of package info failed for " + packageName, e);
+            return null;
+        }
+        if (path == null) {
+            return null;
+        }
+        File blob = new File(path);
+        Parcel parcel = Parcel.obtain();
+        try {
+            byte[] payload = new byte[(int) blob.length()];
+            DataInputStream in = new DataInputStream(new FileInputStream(blob));
+            try {
+                in.readFully(payload);
+            } finally {
+                in.close();
+            }
+            parcel.unmarshall(payload, 0, payload.length);
+            parcel.setDataPosition(0);
+            return PackageInfo.CREATOR.createFromParcel(parcel);
+        } catch (Throwable error) {
+            Log.e(TAG, "Could not read handed-over package info for " + packageName, error);
+            return null;
+        } finally {
+            parcel.recycle();
+            // The payload is a snapshot for this one call; leaving multi-megabyte files behind for
+            // every clone launch would quietly fill the container's storage.
+            blob.delete();
         }
     }
 

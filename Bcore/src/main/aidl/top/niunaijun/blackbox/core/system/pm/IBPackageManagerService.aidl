@@ -24,6 +24,10 @@ interface IBPackageManagerService {
 
     ApplicationInfo getApplicationInfo(String packageName, int flags, int userId);
     PackageInfo getPackageInfo(String packageName, int flags, int userId);
+    // Instagram-sized manifests marshal to several MB of component data, far past the ~1MB
+    // per-process binder buffer, so the direct call above dies. This writes the same result to
+    // a file the caller reads instead, keeping the transaction itself tiny.
+    String getPackageInfoBlob(String packageName, int flags, int userId);
     ServiceInfo getServiceInfo(in ComponentName component, int flags, int userId);
     ActivityInfo getReceiverInfo(in ComponentName componentName, int flags, int userId);
     ActivityInfo getActivityInfo(in ComponentName component, int flags, int userId);
