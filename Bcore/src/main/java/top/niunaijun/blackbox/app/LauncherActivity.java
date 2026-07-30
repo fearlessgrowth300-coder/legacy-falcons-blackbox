@@ -220,6 +220,14 @@ public class LauncherActivity extends Activity {
             // screen indefinitely - the user saw the app's logo frozen with no indication that
             // anything had gone wrong. Say so, then get out of the way.
             final Exception failure = lastFailure;
+            // Count this. A clone that will not open is the single most visible failure to a user and
+            // it produces no crash here, so without an explicit report it stays invisible until
+            // somebody complains -- which is how a package-info transaction overflowing the binder
+            // buffer went unnoticed across every install running Instagram.
+            top.niunaijun.blackbox.utils.FailureReporter.report(
+                    "clone_launch_failed",
+                    failure == null ? "unknown error" : String.valueOf(failure.getMessage()),
+                    packageName, userId);
             runOnUiThread(() -> {
                 try {
                     Slog.e(TAG, "Failed to launch app: "

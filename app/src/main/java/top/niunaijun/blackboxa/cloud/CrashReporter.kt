@@ -12,15 +12,22 @@ import java.io.StringWriter
 /**
  * Small, privacy-safe failure queue for the BlackBox host.
  *
- * It intentionally does not record account e-mail, clone/user names, package names, proxy
- * addresses or credentials. Android 11+ process-exit history lets the host report that a guest
- * process crashed/ANRed without identifying which account was running in that process.
+ * It intentionally does not record account e-mail, clone/user names, proxy addresses or
+ * credentials. Android 11+ process-exit history lets the host report that a guest process
+ * crashed/ANRed without identifying which account was running in that process.
+ *
+ * One deliberate exception: [reportFailure] carries the cloned app's package name for failures that
+ * are specific to an app, because which app failed IS the diagnosis — a launch failure affecting
+ * only Instagram has a completely different cause from one affecting every clone, and without the
+ * name the report cannot be acted on. It still never says which account or proxy was involved.
  */
 object CrashReporter {
     private const val PREFS = "privacy_safe_failure_queue"
     private const val QUEUE = "sealed_queue"
     private const val LAST_EXIT_TS = "last_exit_ts"
     private const val MAX_QUEUED = 30
+    private const val THROTTLE_MS = 30 * 60 * 1000L   // one report per failing thing per 30 min
+    private val lastReported = HashMap<String, Long>()
     @Volatile private var installed = false
 
     fun install(ctx: Context) {
@@ -77,6 +84,60 @@ object CrashReporter {
             reason == android.app.ApplicationExitInfo.REASON_CRASH_NATIVE ||
             reason == android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE ||
             reason == android.app.ApplicationExitInfo.REASON_LOW_MEMORY
+
+    /**
+     * Record a failure that is NOT a crash.
+     *
+     * A clone that refuses to open throws nothing here — the launch fails, the error is logged, and
+     * the user is left looking at a frozen logo. Crash reporting never saw it, which is why a
+     * package-info transaction overflowing the binder buffer stayed invisible across every install
+     * running Instagram until someone plugged a phone in. Counting outcomes is what makes the next
+     * one show up as a number instead of a complaint.
+     *
+     * [key] scopes the throttle only and is never uploaded.
+     */
+    fun reportFailure(
+        ctx: Context,
+        kind: String,
+        detail: String,
+        key: String = kind,
+        extras: Map<String, Any?> = emptyMap()
+    ) {
+        runCatching {
+            // Without this a clone that fails to open on every attempt would fill the queue with the
+            // same line and push out every other signal.
+            val now = System.currentTimeMillis()
+            synchronized(lastReported) {
+                val previous = lastReported["$kind|$key"]
+                if (previous != null && now - previous < THROTTLE_MS) return
+                lastReported["$kind|$key"] = now
+            }
+            val report = JSONObject()
+                .put("kind", kind)
+                .put("detail", scrub(detail))
+            // Free memory is the difference between a clone that starts and one that does not, so
+            // carry it: it is what separates "broken build" from "phone was full" in the data.
+            memoryFields(ctx).forEach { (k, v) -> report.put(k, v) }
+            // Scrub string extras too. Callers pass harmless values today, but nothing stops a
+            // future one passing an account label, and this is an upload path.
+            extras.forEach { (k, v) ->
+                report.put(k, if (v is String) scrub(v) else (v ?: JSONObject.NULL))
+            }
+            enqueue(ctx, report)
+        }
+    }
+
+    private fun memoryFields(ctx: Context): Map<String, Any> = runCatching {
+        val am = ctx.getSystemService(android.app.ActivityManager::class.java)
+            ?: return@runCatching emptyMap<String, Any>()
+        val info = android.app.ActivityManager.MemoryInfo()
+        am.getMemoryInfo(info)
+        mapOf(
+            "ramMb" to (info.totalMem / (1024 * 1024)),
+            "freeRamMb" to (info.availMem / (1024 * 1024)),
+            "lowMem" to info.lowMemory
+        )
+    }.getOrDefault(emptyMap())
 
     private fun enqueue(ctx: Context, report: JSONObject) {
         report.put("ts", System.currentTimeMillis())
