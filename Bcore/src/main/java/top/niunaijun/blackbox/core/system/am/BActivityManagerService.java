@@ -48,7 +48,18 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
 
     @Override
     public boolean isAppProcessRunning(String packageName, int userId) {
-        return BProcessManagerService.get().findProcessRecord(packageName, packageName, userId) != null;
+        ProcessRecord record = BProcessManagerService.get()
+                .findProcessRecord(packageName, packageName, userId);
+        // A ProcessRecord alone is not proof of life. It is removed by a binderDied callback, which
+        // never runs when the container itself was frozen or killed alongside the guest -- exactly
+        // what OEM power managers do on task removal. The record then outlives the process and this
+        // reports a dead clone as running, so callers skip reviving it and the user silently stops
+        // receiving that clone's messages. Confirm the pid still exists before trusting the record.
+        return record != null && isPidAlive(record.pid);
+    }
+
+    private static boolean isPidAlive(int pid) {
+        return pid > 0 && new java.io.File("/proc/" + pid).exists();
     }
 
     @Override
