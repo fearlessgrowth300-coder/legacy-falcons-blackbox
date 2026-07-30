@@ -173,38 +173,74 @@ public class LauncherActivity extends Activity {
     }
 
     
-    private void launchAppAsync(final Intent launchIntent, final int userId) {
-        new Thread(() -> {
-            try {
-                Slog.d(TAG, "Starting app launch in background thread");
-                
-                
-                Thread.sleep(100);
-                
-                
-                boolean prepared = BlackBoxCore.getBActivityManager()
-                        .prewarmProcess(launchIntent.getPackage(), launchIntent.getPackage(), userId);
-                if (!prepared) {
-                    throw new IllegalStateException(
-                            "The isolated app process could not be prepared safely");
-                }
+    /**
+     * Number of times a cold start is attempted before giving up. Heavy guests lose this race on
+     * low-memory phones: Instagram's own cold-start machine throws
+     * "Failed to set enable stage 3 ... can't resume" out of Application.onCreate when its
+     * initialisers miss their deadline, which kills the process before any of its UI exists. That is
+     * a timing failure rather than a broken clone, so a second attempt against a freshly cleaned
+     * process usually succeeds - which is why users report it working only "sometimes".
+     */
+    private static final int LAUNCH_ATTEMPTS = 2;
+    private static final long RETRY_DELAY_MS = 700L;
 
-                BlackBoxCore.getBActivityManager().startActivity(launchIntent, userId);
-                
-                Slog.d(TAG, "App launch initiated successfully");
-            } catch (Exception e) {
-                Slog.e(TAG, "Error launching app", e);
-                
-                
-                runOnUiThread(() -> {
-                    try {
-                        
-                        Slog.e(TAG, "Failed to launch app: " + e.getMessage());
-                    } catch (Exception uiException) {
-                        Slog.e(TAG, "Error showing error message", uiException);
+    private void launchAppAsync(final Intent launchIntent, final int userId) {
+        final String packageName = launchIntent.getPackage();
+        new Thread(() -> {
+            Exception lastFailure = null;
+            for (int attempt = 1; attempt <= LAUNCH_ATTEMPTS; attempt++) {
+                try {
+                    Slog.d(TAG, "Starting app launch in background thread (attempt " + attempt + ")");
+                    Thread.sleep(attempt == 1 ? 100 : RETRY_DELAY_MS);
+
+                    boolean prepared = BlackBoxCore.getBActivityManager()
+                            .prewarmProcess(packageName, packageName, userId);
+                    if (!prepared) {
+                        throw new IllegalStateException(
+                                "The isolated app process could not be prepared safely");
                     }
-                });
+
+                    BlackBoxCore.getBActivityManager().startActivity(launchIntent, userId);
+
+                    Slog.d(TAG, "App launch initiated successfully");
+                    return;
+                } catch (Exception e) {
+                    lastFailure = e;
+                    Slog.e(TAG, "App launch attempt " + attempt + " failed", e);
+                    // A half-initialised guest would fail the retry the same way, so clear it out
+                    // and let the next attempt start from a clean process.
+                    try {
+                        BlackBoxCore.get().stopPackage(packageName, userId);
+                    } catch (Throwable ignored) {
+                    }
+                }
             }
+
+            // Every attempt failed. This used to only write to the log, leaving this activity on
+            // screen indefinitely - the user saw the app's logo frozen with no indication that
+            // anything had gone wrong. Say so, then get out of the way.
+            final Exception failure = lastFailure;
+            // Count this. A clone that will not open is the single most visible failure to a user and
+            // it produces no crash here, so without an explicit report it stays invisible until
+            // somebody complains -- which is how a package-info transaction overflowing the binder
+            // buffer went unnoticed across every install running Instagram.
+            top.niunaijun.blackbox.utils.FailureReporter.report(
+                    "clone_launch_failed",
+                    failure == null ? "unknown error" : String.valueOf(failure.getMessage()),
+                    packageName, userId);
+            runOnUiThread(() -> {
+                try {
+                    Slog.e(TAG, "Failed to launch app: "
+                            + (failure == null ? "unknown error" : failure.getMessage()));
+                    android.widget.Toast.makeText(LauncherActivity.this,
+                            R.string.launch_failed_low_memory,
+                            android.widget.Toast.LENGTH_LONG).show();
+                } catch (Exception uiException) {
+                    Slog.e(TAG, "Error showing error message", uiException);
+                } finally {
+                    finish();
+                }
+            });
         }, "AppLaunchThread").start();
     }
 

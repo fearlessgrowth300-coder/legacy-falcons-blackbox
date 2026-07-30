@@ -466,6 +466,21 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     try { BlackBoxCore.get().stopPackage(pkg, userId) } catch (_: Throwable) {}
                     res.putBoolean("ok", true)
                 }
+                "warmGuest" -> {
+                    // Restart a clone's push connection with NO visible UI, so messages keep arriving
+                    // after an OEM power manager SIGKILLs the container (see GuestWarmUp for the
+                    // mechanism). ShieldProxy drives this from its foreground guard because it is a
+                    // separate package/uid and therefore survives the kill that takes this app down.
+                    // Reaching this provider is itself what restarts the container after such a kill.
+                    val e = extras!!
+                    val warm = top.niunaijun.blackbox.core.GuestWarmUp.warm(
+                        e.getInt("userId", -1), e.getString("pkg")
+                    )
+                    res.putBoolean("ok", warm.ok)
+                    res.putBoolean("alreadyRunning", warm.alreadyRunning)
+                    res.putInt("warmed", warm.warmed)
+                    if (warm.err != null) res.putString("err", warm.err)
+                }
                 "isRunning" -> {
                     // Report whether a clone process is currently alive, so the guard only kills
                     // (and only nags the user) when the app is actually in use.

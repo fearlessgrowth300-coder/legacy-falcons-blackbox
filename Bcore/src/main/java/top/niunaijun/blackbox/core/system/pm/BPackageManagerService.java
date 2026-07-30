@@ -1,5 +1,8 @@
 package top.niunaijun.blackbox.core.system.pm;
 
+import android.os.Parcel;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -286,6 +289,61 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
             return PackageManagerCompat.generatePackageInfo(ps, flags, ps.readUserState(userId), userId);
         }
         return null;
+    }
+
+    /**
+     * Same result as {@link #getPackageInfo}, handed over through a file instead of the binder
+     * transaction.
+     *
+     * A binder transaction is capped at roughly 1MB per process. Instagram declares thousands of
+     * components, so a getPackageInfo asking for them marshals to about 5.6MB and the call dies with
+     * "running out of binder buffer space". The guest then cannot obtain its own component table,
+     * falls back to parsing its APK by hand, fails that too, and aborts start-up — which the user
+     * sees as a clone frozen on its logo. Writing the payload to a file keeps the transaction itself
+     * a few bytes long, so size stops mattering.
+     *
+     * Safe to marshal here because both ends are this same app on this same device: the parcel never
+     * crosses an ABI or an Android version, which is the usual objection to Parcel.marshall().
+     */
+    @Override
+    public String getPackageInfoBlob(String packageName, int flags, int userId) {
+        PackageInfo packageInfo = getPackageInfo(packageName, flags, userId);
+        if (packageInfo == null) {
+            return null;
+        }
+        Parcel parcel = Parcel.obtain();
+        try {
+            packageInfo.writeToParcel(parcel, 0);
+            byte[] payload = parcel.marshall();
+            File dir = new File(BEnvironment.getCacheDir(), "pminfo");
+            if (!dir.exists() && !dir.mkdirs()) {
+                Slog.e(TAG, "Could not create the package-info handover directory");
+                return null;
+            }
+            // One file per request, deleted by the reader. A stale file from a killed guest is
+            // harmless: it is overwritten by the next request for the same package and flags.
+            File blob = new File(dir, packageName + "_" + userId + "_" + flags + ".parcel");
+            FileOutputStream out = null;
+            try {
+                out = new FileOutputStream(blob);
+                out.write(payload);
+                out.flush();
+                out.getFD().sync();
+            } finally {
+                if (out != null) {
+                    try {
+                        out.close();
+                    } catch (IOException ignored) {
+                    }
+                }
+            }
+            return blob.getAbsolutePath();
+        } catch (Throwable error) {
+            Slog.e(TAG, "Could not hand over package info for " + packageName, error);
+            return null;
+        } finally {
+            parcel.recycle();
+        }
     }
 
     @Override

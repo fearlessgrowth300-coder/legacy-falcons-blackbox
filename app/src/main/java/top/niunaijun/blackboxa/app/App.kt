@@ -80,6 +80,16 @@ class App : Application() {
         try {
             super.onCreate()
             CrashReporter.install(this)
+            // Let the engine report non-crash failures (a clone that will not open) through the
+            // same scrubbed, queued pipe as crashes. Bcore cannot depend on this module, so it
+            // publishes them to a sink instead.
+            top.niunaijun.blackbox.utils.FailureReporter.install { kind, detail, extras ->
+                CrashReporter.reportFailure(
+                    this, kind, detail,
+                    key = extras["pkg"]?.toString() ?: kind,
+                    extras = extras
+                )
+            }
             CrashReporter.flushAsync(this)
             Supabase.retryPendingLogoutAsync(this)
             AppManager.doOnCreate(mContext)

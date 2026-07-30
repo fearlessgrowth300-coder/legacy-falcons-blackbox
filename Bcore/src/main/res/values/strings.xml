@@ -7,4 +7,5 @@
          manifestPlaceholders[procToken]. -->
     <string name="black_box_proc_token">p</string>
     <string name="app_icon">default icon</string>
+    <string name="launch_failed_low_memory">This app could not start. Your phone may be low on memory — close some apps and open it again.</string>
 </resources>

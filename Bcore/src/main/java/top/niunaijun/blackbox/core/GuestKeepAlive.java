@@ -20,12 +20,21 @@ import top.niunaijun.blackbox.utils.Slog;
 /**
  * Keep clones receiving push in the background.
  *
- * The honest mechanism on a NO-ROOT device: (1) the container runs a foreground {@link DaemonService}
- * so Android keeps the container process group alive, and (2) each kept-alive clone gets Google Play
- * Services installed (see {@link GmsCore}) so Instagram/etc. can be woken by FCM even after their own
- * process is killed — FCM is the only reliable "wake a dead app" path without root. This class just
- * records which users opted in, makes sure the daemon is up, and a light watchdog re-ensures GMS is
- * present. It does NOT re-launch apps to the foreground (that would hijack the screen).
+ * The honest mechanism on a NO-ROOT device: the container runs a foreground {@link DaemonService} so
+ * Android keeps the container process group alive while a clone (or its own push socket) is running.
+ * This class only records which users opted in, makes sure the daemon is up, and re-ensures it on a
+ * light watchdog. It does NOT re-launch apps to the foreground (that would hijack the screen).
+ *
+ * <p>Two things this deliberately does NOT do, both learned the hard way:
+ * <ul>
+ *   <li>It does not install or start GMS for FCM. GMS does not actually run in a no-root container,
+ *       delivers no push, and the per-minute install/spawn only wasted battery and froze the main
+ *       thread ("BlackBox isn't responding"). Push works because Instagram ({@code :fbns}) and
+ *       WhatsApp keep their OWN sockets — no Google path is involved.</li>
+ *   <li>It cannot save a clone from an OEM power manager. Task removal SIGKILLs this whole process
+ *       group, daemon included, so nothing running inside this package can revive anything. That
+ *       recovery lives in {@link GuestWarmUp}, driven from ShieldProxy, which survives the kill.</li>
+ * </ul>
  */
 public class GuestKeepAlive {
     private static final String TAG = "GuestKeepAlive";
