@@ -26,6 +26,7 @@ import top.niunaijun.blackbox.entity.am.PendingResultData;
 import top.niunaijun.blackbox.entity.am.ReceiverData;
 import top.niunaijun.blackbox.entity.am.RunningAppProcessInfo;
 import top.niunaijun.blackbox.entity.am.RunningServiceInfo;
+import top.niunaijun.blackbox.proxy.ProxyManifest;
 import top.niunaijun.blackbox.utils.Slog;
 
 import static android.content.pm.PackageManager.GET_META_DATA;
@@ -50,12 +51,41 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
     public boolean isAppProcessRunning(String packageName, int userId) {
         ProcessRecord record = BProcessManagerService.get()
                 .findProcessRecord(packageName, packageName, userId);
+        if (record == null) {
+            return false;
+        }
         // A ProcessRecord alone is not proof of life. It is removed by a binderDied callback, which
         // never runs when the container itself was frozen or killed alongside the guest -- exactly
-        // what OEM power managers do on task removal. The record then outlives the process and this
-        // reports a dead clone as running, so callers skip reviving it and the user silently stops
-        // receiving that clone's messages. Confirm the pid still exists before trusting the record.
-        return record != null && isPidAlive(record.pid);
+        // what OEM power managers do on task removal -- so the record can outlive the process.
+        //
+        // Ask the guest's own binder instead of trusting record.pid. That pid is resolved ONCE, when
+        // the slot is allocated, and is stale the moment the OEM kills and respawns that process, so
+        // testing it reported a clone that was running -- foreground, on screen -- as dead. Callers
+        // then "revived" a healthy clone on every poll, and each revival consumed another proxy
+        // process slot until the pool was exhausted and nothing could start at all.
+        //
+        // The binder cannot be fooled the way a pid can: the kernel marks it dead when that specific
+        // process dies, and a recycled pid belongs to a different record entirely. isBinderAlive() is
+        // used rather than pingBinder() because it never blocks -- a merely frozen guest is still
+        // alive and must not be restarted, but a synchronous transaction to it would stall the
+        // caller's worker thread.
+        if (record.bActivityThread != null) {
+            IBinder thread = record.bActivityThread.asBinder();
+            return thread != null && thread.isBinderAlive();
+        }
+        // No guest thread attached yet: the record exists only between slot allocation and the
+        // guest's first callback. Fall back to the physical process, re-resolving it from the
+        // record's own stub slot rather than the possibly-stale cached value.
+        if (isPidAlive(record.pid)) {
+            return true;
+        }
+        int current = BProcessManagerService.getPid(BlackBoxCore.getContext(),
+                ProxyManifest.getProcessName(record.bpid));
+        if (current > 0) {
+            record.pid = current;
+            return true;
+        }
+        return false;
     }
 
     private static boolean isPidAlive(int pid) {
@@ -373,6 +403,11 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
         synchronized (userSpace.mActiveServices) {
             userSpace.mActiveServices.stopServiceToken(className, token, userId);
         }
+    }
+
+    @Override
+    public int freeProcessSlots() throws RemoteException {
+        return BProcessManagerService.get().freeProcessSlotCount();
     }
 
     @Override

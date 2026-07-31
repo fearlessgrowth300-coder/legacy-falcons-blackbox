@@ -87,6 +87,24 @@ public class BActivityManager extends BlackManager<IBActivityManagerService> {
         }
     }
 
+    /**
+     * Free proxy process slots, or -1 when the container could not be asked. Callers must treat -1 as
+     * "unknown" and carry on rather than blocking work on it.
+     */
+    public int freeProcessSlots() {
+        try {
+            IBActivityManagerService service = getService();
+            return service == null ? -1 : service.freeProcessSlots();
+        } catch (DeadObjectException e) {
+            Slog.w(TAG, "ActivityManager service died during freeProcessSlots", e);
+            clearServiceCache();
+            return -1;
+        } catch (RemoteException e) {
+            Slog.e(TAG, "RemoteException in freeProcessSlots", e);
+            return -1;
+        }
+    }
+
     public void restartProcess(String packageName, String processName, int userId) {
         try {
             IBActivityManagerService service = getService();
