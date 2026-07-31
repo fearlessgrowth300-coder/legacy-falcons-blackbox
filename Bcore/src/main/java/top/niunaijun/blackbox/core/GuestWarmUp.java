@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Set;
 
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.proxy.ProxyManifest;
 import top.niunaijun.blackbox.utils.Slog;
 
 /**
@@ -44,6 +45,14 @@ public class GuestWarmUp {
      * which matters because these devices are often 4GB and already memory-starved.
      */
     private static final int MAX_SECONDARY_PROCESSES = 2;
+
+    /**
+     * Below this many free proxy slots, warm only the clone's main process and leave its helper
+     * processes alone. Warming is speculative work on behalf of a clone nobody is looking at, so it
+     * must never be what consumes the last slots -- those belong to whatever the user actually opens
+     * next. Reviving push for one clone is worth far less than being able to launch any clone at all.
+     */
+    private static final int LOW_SLOT_MARK = 6;
 
     public static class Result {
         /** True when the clone's processes are up (whether this call started them or not). */
@@ -84,7 +93,25 @@ public class GuestWarmUp {
             return result;
         }
 
+        // Check the pool BEFORE starting anything. Slot exhaustion is not a per-clone problem: once
+        // the pool is full nothing on the device can start a process, so saying so plainly is the
+        // difference between a user closing a few clones and a user believing the app is broken.
+        int freeSlots = freeSlots();
+        if (freeSlots == 0) {
+            result.err = "No free app slots left in the container (all "
+                    + ProxyManifest.freeCount() + " are in use). Close some clones and try again.";
+            Slog.w(TAG, "warm refused, slot pool exhausted: user=" + userId + " pkg=" + packageName);
+            return result;
+        }
+        // freeSlots < 0 means the container could not be asked; carry on rather than block push.
+        boolean mainProcessOnly = freeSlots > 0 && freeSlots <= LOW_SLOT_MARK;
+
         for (String processName : warmableProcessNames(userId, packageName)) {
+            if (mainProcessOnly && !packageName.equals(processName)) {
+                Slog.w(TAG, "skipping helper process " + processName + " for User " + userId
+                        + ": only " + freeSlots + " slots free");
+                break;
+            }
             boolean started;
             try {
                 started = BlackBoxCore.getBActivityManager()
@@ -108,11 +135,27 @@ public class GuestWarmUp {
 
         result.ok = isRunning(packageName, userId);
         if (!result.ok && result.err == null) {
-            result.err = "Could not start " + packageName + " for User " + userId;
+            // Distinguish the two ways this ends. A pool that emptied while we were starting
+            // processes is a device-wide capacity problem the user can act on; anything else is a
+            // genuine per-clone failure. Reporting both as "could not start" is what made a full
+            // container look like a broken push feature.
+            result.err = freeSlots() == 0
+                    ? "No free app slots left in the container (all " + ProxyManifest.freeCount()
+                        + " are in use). Close some clones and try again."
+                    : "Could not start " + packageName + " for User " + userId;
         }
         Slog.d(TAG, "warm user=" + userId + " pkg=" + packageName
                 + " started=" + result.warmed + " ok=" + result.ok);
         return result;
+    }
+
+    /** Free proxy process slots, or -1 when the container could not be asked. */
+    private static int freeSlots() {
+        try {
+            return BlackBoxCore.getBActivityManager().freeProcessSlots();
+        } catch (Throwable ignored) {
+            return -1;
+        }
     }
 
     private static boolean isRunning(String packageName, int userId) {

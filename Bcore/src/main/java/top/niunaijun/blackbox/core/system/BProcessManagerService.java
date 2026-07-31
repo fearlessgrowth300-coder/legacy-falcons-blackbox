@@ -86,7 +86,16 @@ public class BProcessManagerService implements ISystemService {
                 Slog.d(TAG, "init bUid = " + buid + ", bPid = " + bpid);
             }
             if (bpid == -1) {
-                throw new RuntimeException("No processes available");
+                // Every proxy stub slot is occupied. This used to throw, but startProcessLocked runs
+                // inside IBActivityManagerService.onTransact and Binder cannot marshal a
+                // RuntimeException across processes: the server logged "Uncaught remote exception"
+                // and the caller read an empty reply back as a plain "false", so the real reason
+                // never left the container and every caller reported a generic "could not start".
+                // Return null like every other refusal path here -- all callers already handle it --
+                // and leave the reason somewhere it can actually be read.
+                Slog.e(TAG, "no free proxy process slot for " + packageName + ":" + processName
+                        + " user=" + userId + " (all " + ProxyManifest.freeCount() + " in use)");
+                return null;
             }
             app = new ProcessRecord(info, processName);
             app.uid = Process.myUid();
@@ -129,13 +138,7 @@ public class BProcessManagerService implements ISystemService {
     }
 
     private int getUsingBPidL() {
-        ActivityManager manager = (ActivityManager) BlackBoxCore.getContext().getSystemService(Context.ACTIVITY_SERVICE);
-        List<ActivityManager.RunningAppProcessInfo> runningAppProcesses = manager.getRunningAppProcesses();
-        Set<Integer> usingPs = new HashSet<>();
-        for (ActivityManager.RunningAppProcessInfo runningAppProcess : runningAppProcesses) {
-            int i = parseBPid(runningAppProcess.processName);
-            usingPs.add(i);
-        }
+        Set<Integer> usingPs = usedBPids();
         for (int i = 0; i < ProxyManifest.freeCount(); i++) {
             if (usingPs.contains(i)) {
                 continue;
@@ -143,6 +146,44 @@ public class BProcessManagerService implements ISystemService {
             return i;
         }
         return -1;
+    }
+
+    /**
+     * How many proxy process slots are still free.
+     *
+     * <p>Exposed so callers that start processes speculatively -- reviving a clone's push connection
+     * in particular -- can see the pool filling up and back off, instead of discovering it only when
+     * an allocation fails and every clone on the device stops being able to start anything.
+     */
+    public int freeProcessSlotCount() {
+        Set<Integer> usingPs = usedBPids();
+        int free = 0;
+        for (int i = 0; i < ProxyManifest.freeCount(); i++) {
+            if (!usingPs.contains(i)) {
+                free++;
+            }
+        }
+        return free;
+    }
+
+    /** Slot indices currently backed by a live stub process. */
+    private Set<Integer> usedBPids() {
+        Set<Integer> usingPs = new HashSet<>();
+        ActivityManager manager = (ActivityManager) BlackBoxCore.getContext().getSystemService(Context.ACTIVITY_SERVICE);
+        if (manager == null) {
+            return usingPs;
+        }
+        List<ActivityManager.RunningAppProcessInfo> runningAppProcesses = manager.getRunningAppProcesses();
+        if (runningAppProcesses == null) {
+            return usingPs;
+        }
+        for (ActivityManager.RunningAppProcessInfo runningAppProcess : runningAppProcesses) {
+            int i = parseBPid(runningAppProcess.processName);
+            if (i >= 0) {
+                usingPs.add(i);
+            }
+        }
+        return usingPs;
     }
 
     public void restartAppProcess(String packageName, String processName, int userId) {

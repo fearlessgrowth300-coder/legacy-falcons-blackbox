@@ -61,4 +61,9 @@ interface IBActivityManagerService {
     void getIntentSender(in IBinder target, String packageName, int uid, int userId);
     String getPackageForIntentSender(in IBinder target, int userId);
     int getUidForIntentSender(in IBinder target, int userId);
+
+    // Keep new methods at the END of this interface: AIDL assigns transaction codes by declaration
+    // order, so inserting one above would renumber every method below it and break any guest process
+    // still bound to an older build during an update.
+    int freeProcessSlots();
 }
