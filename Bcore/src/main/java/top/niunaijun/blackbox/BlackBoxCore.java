@@ -1147,21 +1147,23 @@ public class BlackBoxCore extends ClientConfiguration {
      * shared Google process; any conflicting or invalid route therefore fails closed.
      */
     private boolean ensureWhatsAppGoogleServices(String packageName, int userId) {
-        if (!"com.whatsapp".equals(packageName) || GmsCore.isInstalledGoogleService(userId)) {
+        if (!("com.whatsapp".equals(packageName) || "com.whatsapp.w4b".equals(packageName))
+                || GmsCore.isInstalledGoogleService(userId)) {
             return true;
         }
         if (!GmsCore.isSupportGms()) {
-            Slog.e(TAG, "Cannot launch WhatsApp for user " + userId
-                    + ": official Google Play services are unavailable on the host device");
-            return false;
+            Slog.w(TAG, "Google Play services are unavailable on the host device for WhatsApp user " + userId
+                    + "; continuing without GMS");
+            return true;
         }
         Slog.i(TAG, "Provisioning official Google services for WhatsApp user " + userId);
         InstallResult result = installGms(userId);
         if (!result.success || !GmsCore.isInstalledGoogleService(userId)) {
-            Slog.e(TAG, "Cannot launch WhatsApp for user " + userId
-                    + ": Google-services provisioning failed: "
-                    + (result.msg == null ? "unknown error" : result.msg));
-            return false;
+            Slog.w(TAG, "Google-services provisioning for WhatsApp user " + userId
+                    + " encountered an issue: "
+                    + (result.msg == null ? "unknown error" : result.msg)
+                    + "; continuing launch");
+            return true;
         }
         return true;
     }

@@ -331,22 +331,7 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
                  Slog.w(TAG, "Failed to use Active Network for fallback: " + e.getMessage());
             }
 
-            
-            try {
-                Class<?> networkClass = Class.forName("android.net.Network");
-                Object networkArray = Array.newInstance(networkClass, 1);
-                
-                
-                
-                Constructor<?> constructor = networkClass.getConstructor(int.class);
-                Object network = constructor.newInstance(1);
-                
-                Array.set(networkArray, 0, network);
-                return networkArray;
-            } catch (Exception e) {
-                 Slog.w(TAG, "Failed to create fallback Network[]: " + e.getMessage());
-                 return method.invoke(who, args);
-            }
+            return new android.net.Network[0];
         }
     }
 
@@ -410,30 +395,9 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
                     if (result != null) {
                         return result;
                     }
-
-                    
-                    
-                    android.net.Network network;
-                    try {
-                        
-                        Constructor<android.net.Network> constructor = android.net.Network.class.getConstructor(int.class);
-                        network = constructor.newInstance(1);
-                    } catch (Exception e) {
-                        
-                        try {
-                            Constructor<android.net.Network> defaultConstructor = android.net.Network.class.getDeclaredConstructor();
-                            defaultConstructor.setAccessible(true);
-                            network = defaultConstructor.newInstance();
-                        } catch (Exception e2) {
-                            
-                            Slog.w(TAG, "Could not create Network object, falling back to original method");
-                            return method.invoke(who, args);
-                        }
-                    }
-                    Slog.d(TAG, "Created mock Network object for sandboxed app (fallback)");
-                    return network;
+                    return null;
                 } catch (Exception e) {
-                    Slog.w(TAG, "Error creating Network object: " + e.getMessage());
+                    Slog.w(TAG, "Error invoking getActiveNetwork: " + e.getMessage());
                 }
             }
             return method.invoke(who, args);
@@ -729,44 +693,8 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
     public static class GetNetworkForType extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkForType for internet access");
             try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                if (android.os.Build.VERSION.SDK_INT >= 21) {
-                    try {
-                        
-                        android.net.Network network;
-                        try {
-                            
-                            Constructor<android.net.Network> constructor = android.net.Network.class.getConstructor(int.class);
-                            network = constructor.newInstance(1);
-                        } catch (Exception e) {
-                            
-                            try {
-                                Constructor<android.net.Network> defaultConstructor = android.net.Network.class.getDeclaredConstructor();
-                                defaultConstructor.setAccessible(true);
-                                network = defaultConstructor.newInstance();
-                            } catch (Exception e2) {
-                                
-                                Slog.w(TAG, "Could not create Network object, returning null");
-                                return null;
-                            }
-                        }
-                        Slog.d(TAG, "Created fallback Network for type");
-                        return network;
-                    } catch (Exception e) {
-                        Slog.w(TAG, "Failed to create fallback Network: " + e.getMessage());
-                    }
-                }
-                
-                return null;
-                
+                return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "Error in getNetworkForType: " + e.getMessage());
                 return null;
