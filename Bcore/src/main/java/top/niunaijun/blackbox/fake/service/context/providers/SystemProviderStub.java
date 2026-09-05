@@ -2,6 +2,7 @@ package top.niunaijun.blackbox.fake.service.context.providers;
 
 import android.os.IInterface;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 import black.android.content.BRAttributionSource;
@@ -43,7 +44,7 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         if ("asBinder".equals(method.getName())) {
-            return method.invoke(mBase, args);
+            return invokeBase(method, args);
         }
         
         String methodName = method.getName();
@@ -63,7 +64,7 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
                     }
                 }
             }
-            return method.invoke(mBase, args);
+            return invokeBase(method, args);
         }
         
         
@@ -83,7 +84,16 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
                 }
             }
         }
-        return method.invoke(mBase, args);
+        return invokeBase(method, args);
+    }
+
+    private Object invokeBase(Method method, Object[] args) throws Throwable {
+        try {
+            return method.invoke(mBase, args);
+        } catch (InvocationTargetException exception) {
+            Throwable cause = exception.getCause();
+            throw cause != null ? cause : exception;
+        }
     }
 
     private boolean isSystemProviderAuthority(String authority) {

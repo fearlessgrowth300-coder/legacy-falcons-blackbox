@@ -688,11 +688,28 @@ static int my_connect(int fd, const sockaddr *addr, socklen_t len) {
     return startLoopbackRelay(fd, addr, target, proxy);
 }
 
-// Allow socket creation so Java DatagramSocket and local loopback UDP probe sockets
-// can be instantiated without throwing EACCES (Permission denied).
-// Outbound Internet UDP is refused safely with ECONNREFUSED in my_connect,
-// allowing QUIC and OkHttp to gracefully negotiate fallback to TCP over proxy.
+// This redirector transports TCP only. Block Internet datagram sockets at creation
+// time: connect() cannot protect unconnected sendto()/sendmsg() traffic, which is
+// commonly used by QUIC, STUN and telemetry and would otherwise use the real route.
+// Keep the guard here instead of hooking send functions, because Android display IPC
+// and some social apps also hook those functions. AF_UNIX IPC remains unaffected.
 static int my_socket(int domain, int type, int protocol) {
+    bool enabled;
+    {
+        std::lock_guard<std::mutex> lk(g_lock);
+        enabled = g_enabled;
+    }
+    int baseType = type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
+    if (enabled
+            && (domain == AF_INET || domain == AF_INET6)
+            && baseType == SOCK_DGRAM) {
+        if (g_udpBlocks < 5) {
+            LOGD("blocked direct Internet UDP socket (#%d)", g_udpBlocks + 1);
+        }
+        g_udpBlocks++;
+        errno = ECONNREFUSED;
+        return -1;
+    }
     return orig_socket(domain, type, protocol);
 }
 
@@ -760,7 +777,7 @@ static bool install_connect_hook() {
         }
         void *s = xdl_dsym(h, "socket", nullptr);
         if (s && DobbyHook(s, (void *) my_socket, (void **) &orig_socket) == 0)
-            LOGD("socket() hook installed");
+            LOGD("socket() hook installed (Internet UDP guard)");
         void *g = xdl_dsym(h, "getaddrinfo", nullptr);
         if (g && DobbyHook(g, (void *) my_getaddrinfo, (void **) &orig_getaddrinfo) == 0) {
             LOGD("getaddrinfo hook installed (remote DNS)");
