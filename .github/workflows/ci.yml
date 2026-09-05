@@ -1,17 +1,20 @@
-name: BlackBox CI
+name: BlackBox phone diagnostics (artifact only)
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, private-main]
-  pull_request:
-    branches: [main]
+    branches: [diagnostic/twitch-gms-phone-20260905]
 
 permissions:
   contents: read
 
+concurrency:
+  group: blackbox-phone-diagnostics
+  cancel-in-progress: false
+
 jobs:
-  test-debug:
+  test-phone:
+    if: github.ref == 'refs/heads/diagnostic/twitch-gms-phone-20260905'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -19,24 +22,29 @@ jobs:
       SHIELD_SUITE_KEY_ALIAS: ${{ secrets.SHIELD_SUITE_KEY_ALIAS }}
       SHIELD_SUITE_KEY_PASSWORD: ${{ secrets.SHIELD_SUITE_KEY_PASSWORD }}
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Run identity and log-redaction regression checks
+        shell: bash
+        run: |
+          mkdir -p build/diagnostic-tests
+          javac -d build/diagnostic-tests Bcore/src/main/java/top/niunaijun/blackbox/core/CallerUidResolver.java Bcore/src/main/java/top/niunaijun/blackbox/fake/service/context/providers/ProviderCallIdentity.java tools/diagnostics/IdentityPolicyTest.java
+          java -cp build/diagnostic-tests IdentityPolicyTest
+          node --test tools/diagnostics/request-summary.test.mjs
+          node --check tools/diagnostics/capture-webview.mjs
 
-      - name: Set up Gradle cache
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Restore the permanent suite signing key
+      - name: Restore existing signing key in temporary runner storage
         shell: bash
         env:
           SUITE_KEYSTORE_BASE64: ${{ secrets.SUITE_KEYSTORE_BASE64 }}
@@ -46,8 +54,31 @@ jobs:
           chmod 600 "$RUNNER_TEMP/suite-release.jks"
           echo "SHIELD_SUITE_KEYSTORE=$RUNNER_TEMP/suite-release.jks" >> "$GITHUB_ENV"
 
-      - name: Run unit tests and build the debug APK
+      - name: Build signed diagnostic APK without publishing
         shell: bash
         run: |
           chmod +x gradlew
-          ./gradlew :app:testOrigDebugUnitTest :app:assembleOrigDebug --no-daemon --max-workers=2
+          # Match the test phone's current version to permit a same-version
+          # restoration of its release APK. This build never enters the update feed.
+          ./gradlew :app:testOrigDebugUnitTest :app:assembleOrigDebug -PbuildVersionCode=210772124 -PdiagnosticWebViewPackage=tv.twitch.android.app --no-daemon --max-workers=2
+
+      - name: Verify and stage only APK and public verification metadata
+        shell: bash
+        run: |
+          APK="$(find app/build/outputs/apk/orig/debug -type f -name '*universal-debug.apk' -print -quit)"
+          test -f "$APK"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          mkdir -p phone-artifact
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" > phone-artifact/signature.txt
+          "$BUILD_TOOLS/aapt" dump badging "$APK" > phone-artifact/apk-info.txt
+          cp "$APK" phone-artifact/BlackBox-phone-diagnostic.apk
+          sha256sum phone-artifact/BlackBox-phone-diagnostic.apk > phone-artifact/sha256.txt
+          printf 'source_commit=%s\nartifact_only=true\n' "$GITHUB_SHA" > phone-artifact/source.txt
+
+      - name: Upload test artifact only (no release or updater writes)
+        uses: actions/upload-artifact@v4
+        with:
+          name: blackbox-phone-diagnostic
+          path: phone-artifact/
+          if-no-files-found: error
+          retention-days: 1

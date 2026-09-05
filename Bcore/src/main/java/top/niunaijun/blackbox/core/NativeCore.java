@@ -111,56 +111,27 @@ public class NativeCore {
     public static native boolean disableResourceLoading();
 
 
+    private static final ThreadLocal<Boolean> RESOLVING_CALLER_UID = new ThreadLocal<>();
+
     @Keep
     public static int getCallingUid(int origCallingUid) {
-        try {
-            
-            if (origCallingUid > 0 && origCallingUid < Process.FIRST_APPLICATION_UID)
-                return origCallingUid;
-            
-            if (origCallingUid > Process.LAST_APPLICATION_UID)
-                return origCallingUid;
-
-            if (origCallingUid == BlackBoxCore.getHostUid()) {
-                
-                String appPackageName = BlackBoxCore.getAppPackageName();
-                if (appPackageName != null && appPackageName.equals("com.google.android.gms")){
-                    // Android's real AccountManager invokes an authenticator as a trusted system
-                    // caller.  BlackBox's per-user AccountManager must stay outside system_server
-                    // so accounts remain isolated, but that makes the shared host UID look like an
-                    // untrusted third-party caller to modern GMS.  Normalize only calls currently
-                    // executing through Android's account-authenticator Transport.  Do not treat
-                    // arbitrary guest-to-GMS Binder calls as GMS itself.
-                    if (isAccountAuthenticatorTransportCall()) {
-                        return Process.myUid();
-                    }
-                }
-                
-                
-                
-                if (appPackageName != null && appPackageName.equals("com.google.android.webview")){
-                    return Process.myUid();
-                }
-                
-                
-                try {
-                    int callingBUid = BlackBoxCore.getCallingBUid();
-                    if (callingBUid > 0 && callingBUid < Process.LAST_APPLICATION_UID) {
-                        return callingBUid;
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "Error getting calling BUid: " + e.getMessage());
-                }
-                // Do not infer privileged callers from class or method names. Apart from being
-                // unsafe inside this native callback on Android 16, that let arbitrary guest code
-                // with matching stack-frame names receive the system UID.
-                return BlackBoxCore.getHostUid();
-            }
+        // The original Linux UID is authoritative for system and external callers.
+        // Never use AppConfig.callingBUid here: it describes the process launcher,
+        // not the sender of the current Binder transaction.
+        if (Boolean.TRUE.equals(RESOLVING_CALLER_UID.get())
+                || BActivityThread.getAppConfig() == null) {
             return origCallingUid;
-        } catch (Exception e) {
-            Log.e(TAG, "Error in getCallingUid: " + e.getMessage());
-            
-            return Process.myUid();
+        }
+        try {
+            RESOLVING_CALLER_UID.set(true);
+            return CallerUidResolver.resolve(origCallingUid, BlackBoxCore.getHostUid(),
+                    android.os.Binder.getCallingPid(), Process.myPid(), BActivityThread.getBUid(),
+                    pid -> BlackBoxCore.getBActivityManager().getVirtualUidForPid(pid));
+        } catch (Throwable error) {
+            // Unknown senders must retain their real identity, never an assumed guest/system UID.
+            return origCallingUid;
+        } finally {
+            RESOLVING_CALLER_UID.remove();
         }
     }
 

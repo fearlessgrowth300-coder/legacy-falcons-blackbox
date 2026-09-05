@@ -506,6 +506,15 @@ public class BActivityThread extends IBActivityThread.Stub {
             WebView.setDataDirectorySuffix(getUserId() + ":" + packageName + ":" + processName);
         }
 
+        // Explicit development-only opt-in. Never enable debugging in release
+        // builds or expose WebViews belonging to other cloned applications.
+        if (top.niunaijun.blackbox.BuildConfig.DEBUG) {
+            boolean diagnose = packageName.equals(
+                    top.niunaijun.blackbox.BuildConfig.DIAGNOSTIC_WEBVIEW_PACKAGE);
+            WebView.setWebContentsDebuggingEnabled(diagnose);
+            if (diagnose) Slog.i(TAG, "WebView request diagnostics enabled for " + packageName);
+        }
+
         VirtualRuntime.setupRuntime(processName, applicationInfo);
 
         BRVMRuntime.get(BRVMRuntime.get().getRuntime()).setTargetSdkVersion(applicationInfo.targetSdkVersion);
