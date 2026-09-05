@@ -3,14 +3,15 @@
 import { open } from 'node:fs/promises';
 import { summarizeUrl, summarizeFailure } from './request-summary.mjs';
 
-const [portArg = '9223', secondsArg = '60', output = 'twitch-request-summary.jsonl'] = process.argv.slice(2);
+const [portArg = '9223', secondsArg = '60', output = 'twitch-request-summary.jsonl', targetId] = process.argv.slice(2);
 const port = Number(portArg), seconds = Number(secondsArg);
 if (!Number.isInteger(port) || port < 1024 || port > 65535 || !Number.isFinite(seconds) || seconds < 1 || seconds > 300) {
   throw new Error('Usage: node capture-webview.mjs [port 1024-65535] [seconds 1-300] [new output file]');
 }
 if (typeof WebSocket !== 'function') throw new Error('Node 22+ is required.');
 const targets = await fetch('http://127.0.0.1:' + port + '/json/list', {signal: AbortSignal.timeout(5000)}).then(r => r.json());
-const candidates = targets.filter(t => t.type === 'page' && summarizeUrl(t.url));
+const candidates = targets.filter(t => t.type === 'page' && summarizeUrl(t.url)
+  && (!targetId || t.id === targetId));
 if (candidates.length !== 1) throw new Error('Expected exactly one Twitch WebView; found ' + candidates.length + '. Open only the intended signup WebView.');
 const endpoint = new URL(candidates[0].webSocketDebuggerUrl);
 if (!['localhost', '127.0.0.1'].includes(endpoint.hostname) || endpoint.protocol !== 'ws:') throw new Error('Debugger endpoint is not local.');

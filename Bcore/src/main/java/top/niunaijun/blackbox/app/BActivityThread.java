@@ -506,15 +506,6 @@ public class BActivityThread extends IBActivityThread.Stub {
             WebView.setDataDirectorySuffix(getUserId() + ":" + packageName + ":" + processName);
         }
 
-        // Explicit development-only opt-in. Never enable debugging in release
-        // builds or expose WebViews belonging to other cloned applications.
-        if (top.niunaijun.blackbox.BuildConfig.DEBUG) {
-            boolean diagnose = packageName.equals(
-                    top.niunaijun.blackbox.BuildConfig.DIAGNOSTIC_WEBVIEW_PACKAGE);
-            WebView.setWebContentsDebuggingEnabled(diagnose);
-            if (diagnose) Slog.i(TAG, "WebView request diagnostics enabled for " + packageName);
-        }
-
         VirtualRuntime.setupRuntime(processName, applicationInfo);
 
         BRVMRuntime.get(BRVMRuntime.get().getRuntime()).setTargetSdkVersion(applicationInfo.targetSdkVersion);
@@ -600,6 +591,16 @@ public class BActivityThread extends IBActivityThread.Stub {
             onBeforeApplicationOnCreate(packageName, processName, application);
             AppInstrumentation.get().callApplicationOnCreate(application);
             onAfterApplicationOnCreate(packageName, processName, application);
+
+            // Enabling WebView debugging initializes its provider. Wait until
+            // guest contexts, native routing and Application.onCreate are ready;
+            // never initialize WebView merely to disable debugging in other guests.
+            if (top.niunaijun.blackbox.BuildConfig.DEBUG
+                    && packageName.equals(processName)
+                    && packageName.equals(top.niunaijun.blackbox.BuildConfig.DIAGNOSTIC_WEBVIEW_PACKAGE)) {
+                WebView.setWebContentsDebuggingEnabled(true);
+                Slog.i(TAG, "WebView request diagnostics enabled for " + packageName);
+            }
 
             HookManager.get().checkEnv(HCallbackProxy.class);
         } catch (Exception e) {
