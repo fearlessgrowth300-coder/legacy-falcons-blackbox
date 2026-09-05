@@ -688,31 +688,11 @@ static int my_connect(int fd, const sockaddr *addr, socklen_t len) {
     return startLoopbackRelay(fd, addr, target, proxy);
 }
 
-// This proxy transports TCP only. Block Internet datagram sockets at creation time so QUIC,
-// STUN and custom UDP telemetry cannot ever acquire a direct-network file descriptor.
-//
-// Do not hook sendto/sendmsg/sendmmsg here. Android's display stack uses AF_UNIX BitTube sockets
-// through those libc entry points, and TikTok installs its own send hooks. Layering a second
-// inline send hook underneath TikTok's hook can spin inside nSignalNativeCallbacks while holding
-// DisplayManagerGlobal's lock, leaving MainActivity.onCreate permanently black and causing an ANR.
-// Filtering socket() by family/type blocks all Internet UDP earlier without touching AF_UNIX IPC.
+// Allow socket creation so Java DatagramSocket and local loopback UDP probe sockets
+// can be instantiated without throwing EACCES (Permission denied).
+// Outbound Internet UDP is refused safely with ECONNREFUSED in my_connect,
+// allowing QUIC and OkHttp to gracefully negotiate fallback to TCP over proxy.
 static int my_socket(int domain, int type, int protocol) {
-    bool enabled;
-    {
-        std::lock_guard<std::mutex> lk(g_lock);
-        enabled = g_enabled;
-    }
-    int baseType = type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
-    if (enabled
-            && (domain == AF_INET || domain == AF_INET6)
-            && baseType == SOCK_DGRAM) {
-        if (g_udpBlocks < 5) {
-            LOGD("blocked direct Internet UDP socket (#%d)", g_udpBlocks + 1);
-        }
-        g_udpBlocks++;
-        errno = EACCES;
-        return -1;
-    }
     return orig_socket(domain, type, protocol);
 }
 
@@ -755,10 +735,21 @@ static int my_android_getaddrinfofornet(const char *node, const char *service,
     return orig_android_getaddrinfofornet(node, service, hints, netid, mark, res);
 }
 
+static int my_android_getaddrinfofornetcontext(const char *node, const char *service,
+                                               const addrinfo *hints,
+                                               const void *netcontext, addrinfo **res) {
+    if (useRemoteDns(node, hints)) {
+        std::string synthetic = syntheticForHost(node);
+        addrinfo h = syntheticHints(hints);
+        return orig_android_getaddrinfofornetcontext(
+                synthetic.c_str(), service, &h, netcontext, res);
+    }
+    return orig_android_getaddrinfofornetcontext(node, service, hints, netcontext, res);
+}
+
 static bool install_connect_hook() {
     if (g_installed) {
-        return orig_connect && orig_socket && orig_getaddrinfo
-                && orig_android_getaddrinfofornet;
+        return orig_connect && orig_getaddrinfo;
     }
     void *h = xdl_open("libc.so", XDL_DEFAULT);
     if (h) {
@@ -769,7 +760,7 @@ static bool install_connect_hook() {
         }
         void *s = xdl_dsym(h, "socket", nullptr);
         if (s && DobbyHook(s, (void *) my_socket, (void **) &orig_socket) == 0)
-            LOGD("socket() hook installed (Internet UDP guard)");
+            LOGD("socket() hook installed");
         void *g = xdl_dsym(h, "getaddrinfo", nullptr);
         if (g && DobbyHook(g, (void *) my_getaddrinfo, (void **) &orig_getaddrinfo) == 0) {
             LOGD("getaddrinfo hook installed (remote DNS)");
@@ -778,10 +769,13 @@ static bool install_connect_hook() {
         if (gn && DobbyHook(gn, (void *) my_android_getaddrinfofornet,
                             (void **) &orig_android_getaddrinfofornet) == 0)
             LOGD("android_getaddrinfofornet hook installed (remote DNS)");
+        void *gnc = xdl_dsym(h, "android_getaddrinfofornetcontext", nullptr);
+        if (gnc && DobbyHook(gnc, (void *) my_android_getaddrinfofornetcontext,
+                            (void **) &orig_android_getaddrinfofornetcontext) == 0)
+            LOGD("android_getaddrinfofornetcontext hook installed (remote DNS)");
         xdl_close(h);
     }
-    return g_installed && orig_connect && orig_socket && orig_getaddrinfo
-            && orig_android_getaddrinfofornet;
+    return g_installed && orig_connect && orig_getaddrinfo;
 }
 
 // ---- configuration (called from BoxCore.cpp) -------------------------------

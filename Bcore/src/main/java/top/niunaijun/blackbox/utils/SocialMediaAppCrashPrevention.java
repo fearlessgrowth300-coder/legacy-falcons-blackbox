@@ -38,7 +38,9 @@ public class SocialMediaAppCrashPrevention {
         "com.reddit.frontpage",          
         "com.spotify.music",             
         "com.netflix.mediaclient",       
-        "com.amazon.avod.thirdpartyclient" 
+        "com.amazon.avod.thirdpartyclient",
+        "tv.twitch.android.app",
+        "com.whatsapp.w4b"
     };
     
     

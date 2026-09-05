@@ -347,6 +347,7 @@ public class SimpleCrashFix {
                    message.contains("TikTok") ||
                    message.contains("Snapchat") ||
                    message.contains("YouTube") ||
+                   message.contains("Twitch") ||
                    message.contains("LinkedIn");
         }
         
@@ -363,6 +364,7 @@ public class SimpleCrashFix {
                     className.contains("com.zhiliaoapp.musically") ||
                     className.contains("com.snapchat") ||
                     className.contains("com.google.android.youtube") ||
+                    className.contains("tv.twitch") ||
                     className.contains("com.linkedin")) {
                     return true;
                 }

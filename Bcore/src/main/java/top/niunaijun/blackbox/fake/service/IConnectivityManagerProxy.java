@@ -47,6 +47,23 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
         return false;
     }
 
+    public static void fixArgs(Object[] args) {
+        if (args == null) return;
+        try {
+            MethodParameterUtils.replaceAllAppPkg(args);
+            MethodParameterUtils.replaceFirstUid(args);
+            AttributionSourceUtils.fixAttributionSourceInArgs(args);
+        } catch (Throwable t) {
+            Slog.w(TAG, "fixArgs failed: " + t.getMessage());
+        }
+    }
+
+    @Override
+    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        fixArgs(args);
+        return super.invoke(proxy, method, args);
+    }
+
     
     private static Object createNetworkInfo(int type, int subType, String typeName, String subTypeName) {
         try {
@@ -183,6 +200,12 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
                 setDnsServersMethod.invoke(linkProperties, dnsServers);
             } catch (Exception e) {
                 Slog.w(TAG, "Could not set DNS servers: " + e.getMessage());
+            }
+
+            try {
+                Method setInterfaceName = linkProperties.getClass().getMethod("setInterfaceName", String.class);
+                setInterfaceName.invoke(linkProperties, "wlan0");
+            } catch (Throwable ignored) {
             }
             
             return linkProperties;
@@ -449,9 +472,9 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
     public static class GetLinkProperties extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            fixArgs(args);
             if (android.os.Build.VERSION.SDK_INT >= 21) {
                 try {
-                    
                     Object result = method.invoke(who, args);
                     if (result != null) {
                         return result;
@@ -530,14 +553,13 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "Intercepting requestNetwork call for internet access");
+            fixArgs(args);
             try {
-                
                 Object result = method.invoke(who, args);
                 if (result != null) {
                     Slog.d(TAG, "requestNetwork succeeded via original method");
                     return result;
                 }
-                
                 
                 Slog.w(TAG, "requestNetwork failed, creating fallback result");
                 return createMockNetworkRequestResult();
@@ -550,10 +572,7 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
         
         private Object createMockNetworkRequestResult() {
             try {
-                
-                
                 if (android.os.Build.VERSION.SDK_INT >= 21) {
-                    
                     Class<?> networkRequestClass = Class.forName("android.net.NetworkRequest");
                     if (networkRequestClass != null) {
                         Slog.d(TAG, "Created fallback NetworkRequest for internet access");
@@ -567,52 +586,47 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
         }
     }
 
-    
     @ProxyMethod("registerNetworkCallback")
     public static class RegisterNetworkCallback extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "Intercepting registerNetworkCallback for internet access");
+            fixArgs(args);
             try {
-                
                 Object result = method.invoke(who, args);
                 Slog.d(TAG, "Network callback registration successful");
                 return result;
             } catch (Exception e) {
                 Slog.w(TAG, "Network callback registration failed: " + e.getMessage());
-                
                 return 0;
             }
         }
     }
 
-    
     @ProxyMethod("registerDefaultNetworkCallback")
     public static class RegisterDefaultNetworkCallback extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "Intercepting registerDefaultNetworkCallback for internet access");
+            fixArgs(args);
             try {
-                
                 Object result = method.invoke(who, args);
                 Slog.d(TAG, "Default network callback registration successful");
                 return result;
             } catch (Exception e) {
                 Slog.w(TAG, "Default network callback registration failed: " + e.getMessage());
-                
                 return 0;
             }
         }
     }
 
-    
     @ProxyMethod("getActiveNetworkInfoForUid")
     public static class GetActiveNetworkInfoForUid extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "Intercepting getActiveNetworkInfoForUid for internet access");
+            fixArgs(args);
             try {
-                
                 Object result = method.invoke(who, args);
                 if (result != null) {
                     
@@ -766,33 +780,30 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "Intercepting registerNetworkCallback with NetworkRequest for internet access");
+            fixArgs(args);
             try {
-                
                 Object result = method.invoke(who, args);
                 Slog.d(TAG, "Network callback registration with request successful");
                 return result;
             } catch (Exception e) {
                 Slog.w(TAG, "Network callback registration with request failed: " + e.getMessage());
-                
                 return 0;
             }
         }
     }
 
-    
     @ProxyMethod("unregisterNetworkCallback")
     public static class UnregisterNetworkCallback extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "Intercepting unregisterNetworkCallback for internet access");
+            fixArgs(args);
             try {
-                
                 Object result = method.invoke(who, args);
                 Slog.d(TAG, "Network callback unregistration successful");
                 return result;
             } catch (Exception e) {
                 Slog.w(TAG, "Network callback unregistration failed: " + e.getMessage());
-                
                 return 0;
             }
         }
@@ -879,652 +890,6 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
                 return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
             } catch (Exception e) {
                 Slog.e(TAG, "Failed to create fallback NetworkInfo for int: " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String, creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String: " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString2 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (2) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (2)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (2), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (2): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString3 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (3) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (3)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (3), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (3): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString4 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (4) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (4)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (4), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (4): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString5 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (5) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (5)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (5), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (5): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString6 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (6) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (6)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (6), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (6): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString7 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (7) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (7)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (7), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (7): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString8 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (8) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (8)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (8), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (8): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString9 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (9) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (9)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (9), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (9): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString10 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (10) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (10)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (10), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (10): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString11 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (11) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (11)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (11), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (11): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString12 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (12) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (12)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (12), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (12): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString13 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (13) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (13)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (13), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (13): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString14 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (14) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (14)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (14), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (14): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString15 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (15) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (15)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (15), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (15): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString16 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (16) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (16)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (16), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (16): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString17 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (17) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (17)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (17), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (17): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString18 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (18) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (18)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (18), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (18): " + e.getMessage());
-                return null;
-            }
-        }
-    }
-
-    
-    @ProxyMethod("getNetworkInfo")
-    public static class GetNetworkInfoWithString19 extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.d(TAG, "Intercepting getNetworkInfo with String parameter (19) for internet access");
-            try {
-                
-                Object result = method.invoke(who, args);
-                if (result != null) {
-                    return result;
-                }
-                
-                
-                Slog.d(TAG, "Creating fallback NetworkInfo for String parameter (19)");
-                return createBasicNetworkInfo();
-                
-            } catch (Exception e) {
-                Slog.w(TAG, "Error in getNetworkInfo with String (19), creating fallback: " + e.getMessage());
-                return createBasicNetworkInfo();
-            }
-        }
-        
-        private Object createBasicNetworkInfo() {
-            try {
-                
-                return createNetworkInfo(ConnectivityManager.TYPE_WIFI, 0, "WIFI", "");
-            } catch (Exception e) {
-                Slog.e(TAG, "Failed to create fallback NetworkInfo for String (19): " + e.getMessage());
                 return null;
             }
         }
