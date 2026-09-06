@@ -41,6 +41,8 @@ jobs:
           mkdir -p build/diagnostic-tests
           javac -d build/diagnostic-tests Bcore/src/main/java/top/niunaijun/blackbox/core/CallerUidResolver.java Bcore/src/main/java/top/niunaijun/blackbox/fake/service/context/providers/ProviderCallIdentity.java tools/diagnostics/IdentityPolicyTest.java
           java -cp build/diagnostic-tests IdentityPolicyTest
+          javac -d build/diagnostic-tests Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ApplicationCreationCompat.java tools/diagnostics/ApplicationCreationCompatTest.java
+          java -cp build/diagnostic-tests ApplicationCreationCompatTest
           node --test tools/diagnostics/request-summary.test.mjs
           node --check tools/diagnostics/capture-webview.mjs
 

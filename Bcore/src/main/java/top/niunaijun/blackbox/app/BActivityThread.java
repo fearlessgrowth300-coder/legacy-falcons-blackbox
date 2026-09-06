@@ -87,6 +87,7 @@ import top.niunaijun.blackbox.utils.SafeContextWrapper;
 import top.niunaijun.blackbox.utils.GlobalContextWrapper;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ActivityManagerCompat;
+import top.niunaijun.blackbox.utils.compat.ApplicationCreationCompat;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 import top.niunaijun.blackbox.utils.compat.StrictModeCompat;
@@ -540,43 +541,12 @@ public class BActivityThread extends IBActivityThread.Stub {
         Application application;
         try {
             onBeforeCreateApplication(packageName, processName, packageContext);
-            
-            
-            try {
-                application = BRLoadedApk.get(loadedApk).makeApplication(false, null);
-            } catch (Exception makeAppException) {
-                Slog.e(TAG, "Failed to makeApplication, trying fallback approach", makeAppException);
-                application = null;
-            }
-            
-            
-            if (application == null) {
-                Slog.w(TAG, "makeApplication returned null, attempting fallback creation");
-                
-                
-                try {
-                    application = BRLoadedApk.get(loadedApk).makeApplication(true, null);
-                } catch (Exception e) {
-                    Slog.e(TAG, "Fallback makeApplication also failed", e);
-                }
-                
-                
-                if (application == null) {
-                    Slog.w(TAG, "Creating minimal application context as fallback");
-                    try {
-                        
-                        application = (Application) packageContext;
-                        if (application == null) {
-                            Slog.e(TAG, "Even package context is null, this is critical");
-                            throw new RuntimeException("Unable to create application context");
-                        }
-                    } catch (Exception contextException) {
-                        Slog.e(TAG, "Failed to create fallback application context", contextException);
-                        throw new RuntimeException("Unable to makeApplication - all fallback attempts failed", contextException);
-                    }
-                }
-            }
-            
+            // Android 13+ keeps a process-wide Application cache in the internal
+            // factory. The legacy entry point deliberately skips that cache;
+            // a later activity with another LoadedApk can then run onCreate twice.
+            application = (Application) ApplicationCreationCompat.create(
+                    loadedApk, Instrumentation.class, Build.VERSION.SDK_INT >= 33);
+
             if (application == null) {
                 Slog.e(TAG, "makeApplication application Error! All attempts failed");
                 throw new RuntimeException("Unable to create application - all creation methods failed");
