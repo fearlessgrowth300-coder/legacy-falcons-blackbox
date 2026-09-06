@@ -212,6 +212,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         java.util.concurrent.atomic.AtomicBoolean finished = watchSlowActivityCreate(activity);
         try {
             super.callActivityOnCreate(activity, icicle, persistentState);
+            BActivityThread.enableActivityWebViewDiagnostics();
         } finally {
             finished.set(true);
             releaseDeferredInputFocus(activity);
@@ -226,6 +227,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         java.util.concurrent.atomic.AtomicBoolean finished = watchSlowActivityCreate(activity);
         try {
             super.callActivityOnCreate(activity, icicle);
+            BActivityThread.enableActivityWebViewDiagnostics();
         } finally {
             finished.set(true);
             releaseDeferredInputFocus(activity);

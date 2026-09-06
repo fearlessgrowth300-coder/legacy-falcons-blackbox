@@ -562,16 +562,6 @@ public class BActivityThread extends IBActivityThread.Stub {
             AppInstrumentation.get().callApplicationOnCreate(application);
             onAfterApplicationOnCreate(packageName, processName, application);
 
-            // Enabling WebView debugging initializes its provider. Wait until
-            // guest contexts, native routing and Application.onCreate are ready;
-            // never initialize WebView merely to disable debugging in other guests.
-            if (top.niunaijun.blackbox.BuildConfig.DEBUG
-                    && packageName.equals(processName)
-                    && packageName.equals(top.niunaijun.blackbox.BuildConfig.DIAGNOSTIC_WEBVIEW_PACKAGE)) {
-                WebView.setWebContentsDebuggingEnabled(true);
-                Slog.i(TAG, "WebView request diagnostics enabled for " + packageName);
-            }
-
             HookManager.get().checkEnv(HCallbackProxy.class);
         } catch (Exception e) {
             Slog.e(TAG, "Critical error in handleBindApplication", e);
@@ -580,6 +570,18 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
     
     
+    /** Test-only opt-in, applied after the guest Activity configures its WebViews. */
+    public static void enableActivityWebViewDiagnostics() {
+        String packageName = getAppPackageName();
+        if (top.niunaijun.blackbox.BuildConfig.DEBUG
+                && packageName != null
+                && packageName.equals(getAppProcessName())
+                && packageName.equals(top.niunaijun.blackbox.BuildConfig.DIAGNOSTIC_WEBVIEW_PACKAGE)) {
+            WebView.setWebContentsDebuggingEnabled(true);
+            Slog.i(TAG, "Activity WebView request diagnostics enabled for " + packageName);
+        }
+    }
+
     private void initializeJarEnvironment() {
         try {
             Slog.d(TAG, "Initializing JAR environment for DEX loading");
