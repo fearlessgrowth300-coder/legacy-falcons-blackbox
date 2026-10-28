@@ -29,6 +29,17 @@ public final class ApplicationCreationCompatTest {
             return new Object();
         }
     }
+    public static final class ThreeArgOnly {
+        static Object cached;
+        boolean allowDuplicate = true;
+        public Object makeApplicationInner(boolean forceDefault, Instrumentation instrumentation,
+                                           boolean allowDuplicateInstances) {
+            check(!forceDefault && instrumentation == null, "three-arg defer onCreate");
+            allowDuplicate = allowDuplicateInstances;
+            if (cached == null) cached = new Object();
+            return cached;
+        }
+    }
     public static final class LegacyOnly {
         int calls;
         public Object makeApplication(boolean forceDefault, Instrumentation instrumentation) {
@@ -63,6 +74,12 @@ public final class ApplicationCreationCompatTest {
         } catch (NoSuchMethodException expected) {
             check(missing.calls == 0, "missing factory must not silently allow duplicates");
         }
+        ThreeArgOnly.cached = null;
+        ThreeArgOnly onlyThree = new ThreeArgOnly();
+        Object reused = ApplicationCreationCompat.create(onlyThree, Instrumentation.class, true);
+        check(reused == ApplicationCreationCompat.create(new ThreeArgOnly(), Instrumentation.class, true),
+                "three-argument factory also reuses the cached application");
+        check(!onlyThree.allowDuplicate, "three-argument factory disables duplicate instances");
         System.out.println("Application creation compatibility checks passed.");
     }
 }

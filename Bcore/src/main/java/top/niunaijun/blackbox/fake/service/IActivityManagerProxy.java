@@ -10,14 +10,17 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
+import android.content.IntentFilter;
 import android.os.IBinder;
 import android.os.IInterface;
 import android.os.Process;
 import android.util.Log;
 
 import java.lang.ref.WeakReference;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.Objects;
 
 import black.android.app.BRActivityManagerNative;
@@ -52,13 +55,14 @@ import top.niunaijun.blackbox.proxy.record.ProxyPendingRecord;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
 import top.niunaijun.blackbox.utils.Reflector;
 import top.niunaijun.blackbox.utils.compat.ActivityManagerCompat;
+import top.niunaijun.blackbox.utils.compat.BindServiceFlagsCompat;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
+import top.niunaijun.blackbox.utils.compat.ForegroundServiceTypeCompat;
 import top.niunaijun.blackbox.utils.compat.ParceledListSliceCompat;
+import top.niunaijun.blackbox.utils.compat.ReceiverRegistrationCompat;
 import top.niunaijun.blackbox.utils.compat.TaskDescriptionCompat;
 import top.niunaijun.blackbox.utils.Slog;
 
-import static android.content.Context.RECEIVER_EXPORTED;
-import static android.content.Context.RECEIVER_NOT_EXPORTED;
 import static android.content.pm.PackageManager.GET_META_DATA;
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 
@@ -371,13 +375,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     && !AppSystemEnv.isOpenPackage(intent.getComponent())) {
                 IServiceConnection proxy = ServiceConnectionDelegate.createProxy(connection, intent);
                 args[4] = proxy;
-                try {
-                    WeakReference<?> weakReference = BRLoadedApkServiceDispatcherInnerConnection.get(connection).mDispatcher();
-                    if (weakReference != null) {
-                        BRLoadedApkServiceDispatcher.get(weakReference.get())._set_mConnection(proxy);
-                    }
-                } catch (Throwable ignored) {
-                }
+                rememberServiceDispatcher(connection, proxy);
                 return method.invoke(who, args);
             }
 
@@ -392,31 +390,30 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     }
                     IServiceConnection proxy = ServiceConnectionDelegate.createProxy(connection, intent);
                     args[4] = proxy;
-
-                    WeakReference<?> weakReference = BRLoadedApkServiceDispatcherInnerConnection.get(connection).mDispatcher();
-                    if (weakReference != null) {
-                        BRLoadedApkServiceDispatcher.get(weakReference.get())._set_mConnection(proxy);
-                    }
+                    rememberServiceDispatcher(connection, proxy);
                 }
 
                 
-                if (proxyIntent != null && proxyIntent.getComponent() != null && 
-                    proxyIntent.getComponent().getPackageName().equals(BlackBoxCore.getHostPkg())){
+                boolean hostProxy = proxyIntent != null && proxyIntent.getComponent() != null
+                        && proxyIntent.getComponent().getPackageName().equals(BlackBoxCore.getHostPkg());
+                if (hostProxy) {
+                    // ProxyService is a normal manifest service. Android 14+ rejects both the
+                    // external-service flag and a non-null isolated instance name for it, and
+                    // Chromium treats that rejection as "ChildProcessConnection.start failed".
                     int flagsIndex = getFlagsIndex(args);
                     if (flagsIndex >= 0) {
-                        int flags = MethodParameterUtils.toInt(args[flagsIndex]);
-                        flags &= ~Context.BIND_EXTERNAL_SERVICE;
-                        args[flagsIndex] = flags;
+                        args[flagsIndex] = BindServiceFlagsCompat.stripExternalServiceFlag(args[flagsIndex]);
                     }
+                    clearInstanceName(method.getName(), args);
                 }
                 args[callingPackageIndex] = BlackBoxCore.getHostPkg();
 
                 if (proxyIntent != null) {
                     args[2] = proxyIntent;
-                    return method.invoke(who, args);
+                    return invokeBind(who, method, args);
                 }
             }
-            return method.invoke(who, args);
+            return invokeBind(who, method, args);
         } catch (Exception e) {
             Slog.e(TAG, "BindServiceCommon: Unexpected error", e);
             // Do not repeat the same rejected binder call. On Android 14+ an invalid
@@ -425,6 +422,45 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             // Returning "not bound" lets the caller retry or use its in-process fallback.
             return 0;
         }
+    }
+
+    /** Chromium's own IServiceConnection is not a LoadedApk dispatcher. A failed rewrite must not abort the bind. */
+    private static void rememberServiceDispatcher(IServiceConnection connection, IServiceConnection proxy) {
+        try {
+            WeakReference<?> weakReference = BRLoadedApkServiceDispatcherInnerConnection.get(connection).mDispatcher();
+            if (weakReference != null && weakReference.get() != null) {
+                BRLoadedApkServiceDispatcher.get(weakReference.get())._set_mConnection(proxy);
+            }
+        } catch (Throwable error) {
+            Slog.w(TAG, "Service dispatcher rewrite skipped: " + error.getClass().getSimpleName());
+        }
+    }
+
+    private static void clearInstanceName(String methodName, Object[] args) {
+        int index = BindServiceFlagsCompat.instanceNameIndex(methodName, args == null ? 0 : args.length);
+        if (index >= 0) args[index] = null;
+    }
+
+    private static Object invokeBind(Object who, Method method, Object[] args) throws Exception {
+        try {
+            return method.invoke(who, args);
+        } catch (InvocationTargetException error) {
+            Throwable cause = error.getCause() == null ? error : error.getCause();
+            String message = cause.getMessage() == null ? "" : cause.getMessage();
+            // One corrected retry: drop the isolated instance name and try the host proxy again.
+            if (message.contains("instance name") && clearInstanceNameIfPresent(method.getName(), args)) {
+                return method.invoke(who, args);
+            }
+            if (cause instanceof Exception) throw (Exception) cause;
+            throw error;
+        }
+    }
+
+    private static boolean clearInstanceNameIfPresent(String methodName, Object[] args) {
+        int index = BindServiceFlagsCompat.instanceNameIndex(methodName, args == null ? 0 : args.length);
+        if (index < 0 || args[index] == null) return false;
+        args[index] = null;
+        return true;
     }
 
     private static int getFlagsIndex(Object[] args) {
@@ -456,14 +492,8 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class bindServiceInstance extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            // BlackBox redirects the guest service to ProxyService, which is intentionally a
-            // normal (non-isolated) manifest service. Android 14+ rejects a non-null instance
-            // name for such a service. The guest component remains in ProxyServiceRecord, so
-            // clearing only the system-facing instance name preserves clone dispatch while
-            // avoiding "Can't use instance name ... with non-isolated service".
-            if (args != null && args.length > 6) {
-                args[6] = null;
-            }
+            // Instance name is cleared only after the bind is known to target the host
+            // proxy. Clearing it here also broke real WebView isolated-process binds.
             return BindServiceCommon(who,method,args,7);
         }
 
@@ -478,8 +508,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class BindIsolatedService extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            
-            args[6] = null;
             return BindServiceCommon(who,method,args,7);
         }
 
@@ -756,12 +784,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             if (args[receiverIndex] != null) {
                 IIntentReceiver intentReceiver = (IIntentReceiver) args[receiverIndex];
                 IIntentReceiver proxy = InnerReceiverDelegate.createProxy(intentReceiver);
-
-                WeakReference<?> weakReference = BRLoadedApkReceiverDispatcherInnerReceiver.get(intentReceiver).mDispatcher();
-                if (weakReference != null) {
-                    BRLoadedApkReceiverDispatcher.get(weakReference.get())._set_mIIntentReceiver(proxy);
-                }
-
+                rememberReceiverDispatcher(intentReceiver, proxy);
                 args[receiverIndex] = proxy;
             }
             
@@ -770,12 +793,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             }
 
             if (BuildCompat.isU()) {
-                int flagsIndex = args.length - 1;
-                int flags = (int)args[flagsIndex];
-                if((flags & RECEIVER_NOT_EXPORTED) == 0 && (flags & RECEIVER_EXPORTED) == 0){
-                    flags |= RECEIVER_NOT_EXPORTED;
-                }
-                args[flagsIndex] = flags;
+                applyReceiverExportFlag(args, receiverIndex + 1);
             }
 
             return method.invoke(who, args);
@@ -807,21 +825,45 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             if (args[receiverIndex] != null) {
                 IIntentReceiver intentReceiver = (IIntentReceiver) args[receiverIndex];
                 IIntentReceiver proxy = InnerReceiverDelegate.createProxy(intentReceiver);
-
-                WeakReference<?> weakReference = BRLoadedApkReceiverDispatcherInnerReceiver.get(intentReceiver).mDispatcher();
-                if (weakReference != null) {
-                    BRLoadedApkReceiverDispatcher.get(weakReference.get())._set_mIIntentReceiver(proxy);
-                }
-
+                rememberReceiverDispatcher(intentReceiver, proxy);
                 args[receiverIndex] = proxy;
             }
             int permissionIndex = 4;
             
-            if (args[permissionIndex] != null) {
+            if (args.length > permissionIndex && args[permissionIndex] != null) {
                 args[permissionIndex] = null;
+            }
+            if (BuildCompat.isU()) {
+                applyReceiverExportFlag(args, receiverIndex + 1);
             }
             return method.invoke(who, args);
         }
+    }
+
+    private static void rememberReceiverDispatcher(IIntentReceiver intentReceiver, IIntentReceiver proxy) {
+        try {
+            WeakReference<?> weakReference = BRLoadedApkReceiverDispatcherInnerReceiver.get(intentReceiver).mDispatcher();
+            if (weakReference != null && weakReference.get() != null) {
+                BRLoadedApkReceiverDispatcher.get(weakReference.get())._set_mIIntentReceiver(proxy);
+            }
+        } catch (Throwable error) {
+            Slog.w(TAG, "Receiver dispatcher rewrite skipped: " + error.getClass().getSimpleName());
+        }
+    }
+
+    private static void applyReceiverExportFlag(Object[] args, int filterIndex) {
+        if (args == null || args.length == 0 || !(args[args.length - 1] instanceof Integer)) return;
+        int flagsIndex = args.length - 1;
+        boolean systemBroadcast = false;
+        if (filterIndex >= 0 && filterIndex < args.length && args[filterIndex] instanceof IntentFilter) {
+            Iterator<String> actions = ((IntentFilter) args[filterIndex]).actionsIterator();
+            ArrayList<String> names = new ArrayList<>();
+            if (actions != null) {
+                while (actions.hasNext()) names.add(actions.next());
+            }
+            systemBroadcast = ReceiverRegistrationCompat.looksLikeSystemBroadcast(names);
+        }
+        args[flagsIndex] = ReceiverRegistrationCompat.ensureExportFlag((Integer) args[flagsIndex], systemBroadcast);
     }
 
     @ProxyMethod("grantUriPermission")
@@ -837,15 +879,64 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class setServiceForeground extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            
-            
-            for (int i = args.length - 1; i >= 0; i--) {
-                if (args[i] instanceof Integer) {
-                    args[i] = 0; 
-                    break;
+            if (args == null) return null;
+            try {
+                remapForegroundToHostService(args);
+                // The type argument exists from API 29, but specialUse and the strict check
+                // arrive at API 34. Older platforms keep the guest's own type.
+                if (android.os.Build.VERSION.SDK_INT >= 34
+                        && !ForegroundServiceTypeCompat.isStopRequest(args)) {
+                    int typeIndex = ForegroundServiceTypeCompat.lastIntegerIndex(args);
+                    if (typeIndex >= 0) {
+                        args[typeIndex] = ForegroundServiceTypeCompat.supportedType((Integer) args[typeIndex]);
+                    }
                 }
+                return method.invoke(who, args);
+            } catch (Throwable error) {
+                // A missing or undeclared type used to crash the guest process. Retry once
+                // with the host's specialUse type, then report success so the clone stays up.
+                Slog.w(TAG, "setServiceForeground degraded: " + error.getClass().getSimpleName());
+                try {
+                    int typeIndex = ForegroundServiceTypeCompat.lastIntegerIndex(args);
+                    if (typeIndex >= 0 && android.os.Build.VERSION.SDK_INT >= 34
+                            && !ForegroundServiceTypeCompat.isStopRequest(args)) {
+                        args[typeIndex] = ForegroundServiceTypeCompat.SPECIAL_USE;
+                        return method.invoke(who, args);
+                    }
+                } catch (Throwable ignored) {
+                }
+                return null;
             }
-            return method.invoke(who, args);
+        }
+
+        /** Guest services are attached with a virtual token. system_server only knows the proxy service. */
+        private static void remapForegroundToHostService(Object[] args) {
+            try {
+                Object thread = BlackBoxCore.mainThread();
+                if (thread == null) return;
+                java.lang.reflect.Field services = thread.getClass().getDeclaredField("mServices");
+                services.setAccessible(true);
+                Object map = services.get(thread);
+                if (!(map instanceof java.util.Map)) return;
+                java.util.Map<?, ?> servicesMap = (java.util.Map<?, ?>) map;
+                for (java.util.Map.Entry<?, ?> entry : servicesMap.entrySet()) {
+                    if (!(entry.getKey() instanceof IBinder) || !(entry.getValue() instanceof android.app.Service)) {
+                        continue;
+                    }
+                    android.app.Service hostService = (android.app.Service) entry.getValue();
+                    if (!(hostService instanceof top.niunaijun.blackbox.proxy.ProxyService)) continue;
+                    for (int i = 0; i < args.length; i++) {
+                        if (args[i] instanceof IBinder) {
+                            args[i] = entry.getKey();
+                        } else if (args[i] instanceof ComponentName) {
+                            args[i] = new ComponentName(BlackBoxCore.getHostPkg(), hostService.getClass().getName());
+                        }
+                    }
+                    return;
+                }
+            } catch (Throwable error) {
+                Slog.w(TAG, "Host foreground token unavailable: " + error.getClass().getSimpleName());
+            }
         }
     }
 

@@ -43,6 +43,15 @@ jobs:
           java -cp build/diagnostic-tests IdentityPolicyTest
           javac -d build/diagnostic-tests Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ApplicationCreationCompat.java tools/diagnostics/ApplicationCreationCompatTest.java
           java -cp build/diagnostic-tests ApplicationCreationCompatTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/PineRuntime.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ApplicationOnCreateGuard.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/BindServiceFlagsCompat.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ForegroundServiceTypeCompat.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ReceiverRegistrationCompat.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/SettingsIdentity.java \
+            tools/diagnostics/GuestLaunchCompatTest.java
+          java -cp build/diagnostic-tests GuestLaunchCompatTest
           node --test tools/diagnostics/request-summary.test.mjs
           node --check tools/diagnostics/capture-webview.mjs
 

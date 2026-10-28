@@ -234,8 +234,19 @@ public class BActivityThread extends IBActivityThread.Stub {
                     // Application class can touch its own login-encryption aliases.
                     boolean keystoreReady =
                             top.niunaijun.blackbox.core.KeystoreIsolation.installForCurrentProcess();
-                    if (!identityReady || !keystoreReady) {
-                        throw new SecurityException("Incomplete runtime identity isolation");
+                    // Build-field and native property identity already ran in prepareEarly and
+                    // still fail closed. A single Pine or Keystore2 hook that the runtime does
+                    // not support must not refuse the whole guest: that is what left cloned
+                    // apps unable to start on Android 14-16 when one hidden method moved.
+                    if (!identityReady) {
+                        top.niunaijun.blackbox.utils.Slog.w(TAG,
+                                "Runtime identity hooks incomplete for " + appConfig.packageName
+                                        + "; continuing with the prepared Build identity");
+                    }
+                    if (!keystoreReady) {
+                        top.niunaijun.blackbox.utils.Slog.w(TAG,
+                                "Keystore namespace unavailable for " + appConfig.packageName
+                                        + "; continuing without per-clone key aliases");
                     }
                     mRuntimeIsolationReady = true;
                     top.niunaijun.blackbox.utils.Slog.d(
@@ -492,6 +503,7 @@ public class BActivityThread extends IBActivityThread.Stub {
         BRLoadedApk.get(loadedApk)._set_mSecurityViolation(false);
         
         BRLoadedApk.get(loadedApk)._set_mApplicationInfo(applicationInfo);
+        alignLoadedApkPackageName(loadedApk, applicationInfo.packageName);
 
         int targetSdkVersion = applicationInfo.targetSdkVersion;
         if (targetSdkVersion < Build.VERSION_CODES.GINGERBREAD) {
@@ -998,6 +1010,25 @@ public class BActivityThread extends IBActivityThread.Stub {
         }
     }
 
+    /**
+     * The process-wide Application cache is keyed by LoadedApk.mPackageName. A context
+     * created for the host package would otherwise miss the guest entry and construct a
+     * second Application, which runs onCreate twice.
+     */
+    private static void alignLoadedApkPackageName(Object loadedApk, String packageName) {
+        if (loadedApk == null || packageName == null) return;
+        try {
+            java.lang.reflect.Field field = loadedApk.getClass().getDeclaredField("mPackageName");
+            field.setAccessible(true);
+            Object current = field.get(loadedApk);
+            if (!packageName.equals(current)) {
+                field.set(loadedApk, packageName);
+            }
+        } catch (Throwable error) {
+            Slog.w(TAG, "Could not align LoadedApk package name: " + error.getClass().getSimpleName());
+        }
+    }
+
     public static Context createPackageContext(ApplicationInfo info) {
         try {
             return BlackBoxCore.getContext().createPackageContext(info.packageName,
@@ -1243,9 +1274,10 @@ public class BActivityThread extends IBActivityThread.Stub {
             BroadcastReceiver mReceiver = null;
             Intent intent = data.intent;
             ActivityInfo activityInfo = data.activityInfo;
-            BroadcastReceiver.PendingResult pendingResult = data.data.build();
+            BroadcastReceiver.PendingResult pendingResult = null;
 
             try {
+                pendingResult = data.data.build();
                 Context baseContext = mInitialApplication.getBaseContext();
                 ClassLoader classLoader = baseContext.getClassLoader();
                 intent.setExtrasClassLoader(classLoader);
@@ -1253,16 +1285,22 @@ public class BActivityThread extends IBActivityThread.Stub {
                 mReceiver = (BroadcastReceiver) classLoader.loadClass(activityInfo.name).newInstance();
                 BRBroadcastReceiver.get(mReceiver).setPendingResult(pendingResult);
                 mReceiver.onReceive(baseContext, intent);
-                BroadcastReceiver.PendingResult finish = BRBroadcastReceiver.get(mReceiver).getPendingResult();
-                if (finish != null) {
-                    finish.finish();
-                }
-                BlackBoxCore.getBActivityManager().finishBroadcast(data.data);
             } catch (Throwable throwable) {
                 throwable.printStackTrace();
                 Slog.e(TAG,
                         "Error receiving broadcast " + intent
                                 + " in " + mReceiver);
+            } finally {
+                // A receiver that throws, or a DeviceStateReceiver that never finishes,
+                // must not leave the broadcast open until the system ANRs this process.
+                try {
+                    if (pendingResult != null) pendingResult.finish();
+                } catch (Throwable ignored) {
+                }
+                try {
+                    BlackBoxCore.getBActivityManager().finishBroadcast(data.data);
+                } catch (Throwable ignored) {
+                }
             }
         });
     }
