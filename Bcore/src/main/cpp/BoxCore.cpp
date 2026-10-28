@@ -73,7 +73,7 @@ JavaVM *BoxCore::getJavaVM() {
 void nativeHook(JNIEnv *env) {
     BaseHook::init(env);
     UnixFileSystemHook::init(env);
-    FileSystemHook::init();
+    FileSystemHook::init(VMEnv.api_level);
     VMClassLoaderHook::init(env);
 
     BinderHook::init(env);
@@ -105,6 +105,18 @@ void addIORule(JNIEnv *env, jclass clazz, jstring target_path,
     ALOGD("set addIORule");
     IO::addRule(env->GetStringUTFChars(target_path, JNI_FALSE),
                 env->GetStringUTFChars(relocate_path, JNI_FALSE));
+}
+
+void setPathIsolation(JNIEnv *env, jclass clazz, jstring root, jstring ext, jint user) {
+    const char *rootChars = root ? env->GetStringUTFChars(root, nullptr) : nullptr;
+    const char *extChars = ext ? env->GetStringUTFChars(ext, nullptr) : nullptr;
+    IO::setIsolation(rootChars, extChars, user);
+    if (root && rootChars) env->ReleaseStringUTFChars(root, rootChars);
+    if (ext && extChars) env->ReleaseStringUTFChars(ext, extChars);
+}
+
+void setUptimeOffsetMs(JNIEnv *env, jclass clazz, jlong offset) {
+    FileSystemHook::setUptimeOffsetMs(offset < 0 ? 0 : (long) offset);
 }
 
 void enableIO(JNIEnv *env, jclass clazz) {
@@ -217,6 +229,8 @@ static JNINativeMethod gMethods[] = {
         {"disableResourceLoading", "()Z",                         (void *) disableResourceLoading},
         {"hideXposed", "()V",                                     (void *) hideXposed},
         {"addIORule",  "(Ljava/lang/String;Ljava/lang/String;)V", (void *) addIORule},
+        {"setPathIsolation", "(Ljava/lang/String;Ljava/lang/String;I)V", (void *) setPathIsolation},
+        {"setUptimeOffsetMs", "(J)V", (void *) setUptimeOffsetMs},
         {"enableIO",   "()V",                                     (void *) enableIO},
         {"init",       "(I)V",                                    (void *) init},
 };

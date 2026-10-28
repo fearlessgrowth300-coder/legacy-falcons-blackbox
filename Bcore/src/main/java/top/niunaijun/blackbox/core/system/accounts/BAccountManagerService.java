@@ -119,56 +119,191 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         loadAuthenticatorCache(packageName);
     }
 
-    private void loadAccounts() {
-        Parcel parcel = Parcel.obtain();
-        InputStream is = null;
-        try {
-            File userInfoConf = BEnvironment.getAccountsConf();
-            if (!userInfoConf.exists()) {
-                return;
-            }
-            is = new FileInputStream(BEnvironment.getAccountsConf());
-            byte[] bytes = FileUtils.toByteArray(is);
-            parcel.unmarshall(bytes, 0, bytes.length);
-            parcel.setDataPosition(0);
+    private File accountDirectory() {
+        return new File(BEnvironment.getSystemDir(), "accounts");
+    }
 
-            HashMap<Integer, BUserAccounts> accountsMap = parcel.readHashMap(BUserAccounts.class.getClassLoader());
-            if (accountsMap == null)
-                return;
-            synchronized (mUserAccountsMap) {
-                mUserAccountsMap.clear();
-                for (Integer key : accountsMap.keySet()) {
-                    mUserAccountsMap.put(key, accountsMap.get(key));
+    private File accountFile(int userId) {
+        return new File(accountDirectory(), "user-" + userId + ".parcel");
+    }
+
+    private void loadAccounts() {
+        synchronized (mUserAccountsMap) {
+            mUserAccountsMap.clear();
+            File directory = accountDirectory();
+            File[] files = directory.isDirectory() ? directory.listFiles() : null;
+            if (files != null) {
+                for (File file : files) {
+                    String name = file.getName();
+                    if (!name.startsWith("user-") || !name.endsWith(".parcel")) continue;
+                    BUserAccounts accounts = readUserAccounts(file);
+                    if (accounts == null) continue;
+                    revealSecrets(accounts);
+                    mUserAccountsMap.put(accounts.userId, accounts);
                 }
             }
-        } catch (Exception e) {
-            e.printStackTrace();
+            File legacy = BEnvironment.getAccountsConf();
+            if (!legacy.isFile()) return;
+            HashMap<Integer, BUserAccounts> legacyAccounts = readLegacyAccounts(legacy);
+            if (legacyAccounts == null) return;
+            boolean migrated = true;
+            for (Map.Entry<Integer, BUserAccounts> entry : legacyAccounts.entrySet()) {
+                if (mUserAccountsMap.containsKey(entry.getKey())) continue;
+                revealSecrets(entry.getValue());
+                mUserAccountsMap.put(entry.getKey(), entry.getValue());
+                if (!writeUserAccounts(entry.getValue())) migrated = false;
+            }
+            if (migrated) {
+                if (!legacy.delete()) {
+                    Slog.w(TAG, "per-user account files were written; the combined accounts.conf remains");
+                }
+            } else {
+                Slog.w(TAG, "account encryption unavailable; combined accounts.conf was left in place");
+            }
+        }
+    }
+
+    private HashMap<Integer, BUserAccounts> readLegacyAccounts(File file) {
+        Parcel parcel = Parcel.obtain();
+        InputStream input = null;
+        try {
+            input = new FileInputStream(file);
+            byte[] bytes = FileUtils.toByteArray(input);
+            parcel.unmarshall(bytes, 0, bytes.length);
+            parcel.setDataPosition(0);
+            return parcel.readHashMap(BUserAccounts.class.getClassLoader());
+        } catch (Exception error) {
+            Slog.w(TAG, "legacy account file unreadable: " + error.getClass().getSimpleName());
+            return null;
         } finally {
             parcel.recycle();
-            CloseUtils.close(is);
+            CloseUtils.close(input);
+        }
+    }
+
+    private BUserAccounts readUserAccounts(File file) {
+        Parcel parcel = Parcel.obtain();
+        InputStream input = null;
+        try {
+            input = new FileInputStream(file);
+            byte[] bytes = FileUtils.toByteArray(input);
+            parcel.unmarshall(bytes, 0, bytes.length);
+            parcel.setDataPosition(0);
+            return parcel.readParcelable(BUserAccounts.class.getClassLoader());
+        } catch (Exception error) {
+            Slog.w(TAG, "account file unreadable: " + error.getClass().getSimpleName());
+            return null;
+        } finally {
+            parcel.recycle();
+            CloseUtils.close(input);
         }
     }
 
     private void saveAllAccounts() {
         synchronized (mUserAccountsMap) {
-            Parcel parcel = Parcel.obtain();
-            AtomicFile atomicFile = new AtomicFile(BEnvironment.getAccountsConf());
-            FileOutputStream fileOutputStream = null;
-            try {
-                parcel.writeMap(mUserAccountsMap);
-                try {
-                    fileOutputStream = atomicFile.startWrite();
-                    FileUtils.writeParcelToOutput(parcel, fileOutputStream);
-                    atomicFile.finishWrite(fileOutputStream);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                    atomicFile.failWrite(fileOutputStream);
-                } finally {
-                    CloseUtils.close(fileOutputStream);
-                }
-            } finally {
-                parcel.recycle();
+            boolean all = true;
+            for (BUserAccounts accounts : mUserAccountsMap.values()) {
+                if (!writeUserAccounts(accounts)) all = false;
             }
+            if (all) {
+                File legacy = BEnvironment.getAccountsConf();
+                if (legacy.isFile() && !legacy.delete()) {
+                    Slog.w(TAG, "could not remove combined accounts.conf");
+                }
+            }
+        }
+    }
+
+    private boolean writeUserAccounts(BUserAccounts accounts) {
+        if (accounts == null) return false;
+        if (accounts.accounts == null) accounts.accounts = new ArrayList<>();
+        AccountSecrets.Sealer sealer = AccountKeystore.getOrNull();
+        if (sealer == null) {
+            Slog.w(TAG, "account keystore unavailable; secrets were not written");
+            return false;
+        }
+        List<String> passwords = new ArrayList<>();
+        List<Map<String, String>> tokens = new ArrayList<>();
+        try {
+            for (BAccount account : accounts.accounts) {
+                passwords.add(account.password);
+                tokens.add(account.authTokens == null ? new LinkedHashMap<String, String>()
+                        : new LinkedHashMap<>(account.authTokens));
+                String sealedPassword = AccountSecrets.seal(account.password, sealer);
+                if (account.password != null && sealedPassword == null) return false;
+                account.password = sealedPassword;
+                if (account.authTokens != null) {
+                    for (Map.Entry<String, String> entry : account.authTokens.entrySet()) {
+                        String sealed = AccountSecrets.seal(entry.getValue(), sealer);
+                        if (entry.getValue() != null && sealed == null) return false;
+                        entry.setValue(sealed);
+                    }
+                }
+            }
+            return writeUserParcel(accounts);
+        } finally {
+            for (int i = 0; i < accounts.accounts.size() && i < passwords.size(); i++) {
+                BAccount account = accounts.accounts.get(i);
+                account.password = passwords.get(i);
+                if (account.authTokens != null && i < tokens.size()) {
+                    account.authTokens.clear();
+                    account.authTokens.putAll(tokens.get(i));
+                }
+            }
+        }
+    }
+
+    private boolean writeUserParcel(BUserAccounts accounts) {
+        Parcel parcel = Parcel.obtain();
+        File directory = accountDirectory();
+        if (!directory.isDirectory() && !directory.mkdirs() && !directory.isDirectory()) return false;
+        AtomicFile atomicFile = new AtomicFile(accountFile(accounts.userId));
+        FileOutputStream output = null;
+        try {
+            parcel.writeParcelable(accounts, 0);
+            output = atomicFile.startWrite();
+            FileUtils.writeParcelToOutput(parcel, output);
+            atomicFile.finishWrite(output);
+            output = null;
+            return true;
+        } catch (Throwable error) {
+            if (output != null) atomicFile.failWrite(output);
+            Slog.w(TAG, "account file write failed: " + error.getClass().getSimpleName());
+            return false;
+        } finally {
+            parcel.recycle();
+        }
+    }
+
+    private void revealSecrets(BUserAccounts accounts) {
+        if (accounts == null || accounts.accounts == null) return;
+        AccountSecrets.Sealer sealer = AccountKeystore.getOrNull();
+        for (BAccount account : accounts.accounts) {
+            account.password = AccountSecrets.open(account.password, sealer);
+            if (account.authTokens == null) continue;
+            for (Map.Entry<String, String> entry : new ArrayList<>(account.authTokens.entrySet())) {
+                entry.setValue(AccountSecrets.open(entry.getValue(), sealer));
+                account.authTokens.put(entry.getKey(), entry.getValue());
+            }
+        }
+    }
+
+    private void requireSecretAccess(String accountType) {
+        boolean internal = Binder.getCallingPid() == android.os.Process.myPid();
+        String caller = null;
+        if (!internal) {
+            try {
+                caller = getCallingPackageName();
+            } catch (Throwable ignored) {
+                caller = null;
+            }
+        }
+        String owner = null;
+        AuthenticatorInfo info = accountType == null ? null
+                : mAuthenticatorCache.authenticators.get(accountType);
+        if (info != null && info.desc != null) owner = info.desc.packageName;
+        if (!AccountCredentialPolicy.mayReadSecrets(internal, caller, owner)) {
+            throw new SecurityException("Account credential access denied");
         }
     }
 
@@ -181,6 +316,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         }
         if (account == null) throw new IllegalArgumentException("account is null");
         BUserAccounts accounts = getUserAccounts(userId);
+        requireSecretAccess(account.type);
         return readPasswordInternal(accounts, account);
     }
 
@@ -194,6 +330,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         Objects.requireNonNull(account, "account cannot be null");
         Objects.requireNonNull(key, "key cannot be null");
         BUserAccounts accounts = getUserAccounts(userId);
+        requireSecretAccess(account.type);
         return readUserDataInternal(accounts, account, key);
     }
 
@@ -445,6 +582,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         BUserAccounts accounts = getUserAccounts(userId);
         if (accounts == null)
             return null;
+        requireSecretAccess(account.type);
         synchronized (accounts.lock) {
             return accounts.getAuthToken(account).get(authTokenType);
         }
@@ -458,6 +596,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         BUserAccounts accounts = getUserAccounts(userId);
         if (accounts == null)
             return;
+        requireSecretAccess(account.type);
         synchronized (accounts.lock) {
             accounts.getAuthToken(account).put(authTokenType, authToken);
             saveAllAccounts();
@@ -470,6 +609,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         BUserAccounts accounts = getUserAccounts(userId);
         if (accounts == null)
             return;
+        requireSecretAccess(account.type);
         synchronized (accounts.lock) {
             BAccount bAccount = accounts.getAccount(account);
             bAccount.password = password;
@@ -496,6 +636,7 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
     public void setUserData(Account account, String key, String value, int userId) throws RemoteException {
         if (key == null) throw new IllegalArgumentException("key is null");
         if (account == null) throw new IllegalArgumentException("account is null");
+        requireSecretAccess(account.type);
 
         BUserAccounts accounts = getUserAccounts(userId);
         if (accounts == null)

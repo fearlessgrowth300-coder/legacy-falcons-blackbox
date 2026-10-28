@@ -634,7 +634,75 @@ static int startLoopbackRelay(int fd, const sockaddr *destination,
     return result;
 }
 
+static thread_local int g_proxy_reentry = 0;
+
+struct ProxyReentry {
+    ProxyReentry() { g_proxy_reentry++; }
+    ~ProxyReentry() { g_proxy_reentry--; }
+};
+
+static ssize_t (*orig_sendto)(int, const void *, size_t, int, const sockaddr *, socklen_t) = nullptr;
+static ssize_t (*orig_sendmsg)(int, const struct msghdr *, int) = nullptr;
+static long (*orig_syscall)(long, long, long, long, long, long, long) = nullptr;
+
+#if defined(__aarch64__)
+static const long NR_CONNECT = 203;
+#elif defined(__arm__)
+static const long NR_CONNECT = 283;
+#elif defined(__x86_64__)
+static const long NR_CONNECT = 42;
+#else
+static const long NR_CONNECT = 203;
+#endif
+
+static bool nonLoopbackInternet(const sockaddr *addr) {
+    if (!addr) return false;
+    if (addr->sa_family != AF_INET && addr->sa_family != AF_INET6) return false;
+    return !isLoopback(addr);
+}
+
+static ssize_t my_sendto(int fd, const void *buf, size_t len, int flags,
+                         const sockaddr *addr, socklen_t addrlen) {
+    bool enabled;
+    { std::lock_guard<std::mutex> lk(g_lock); enabled = g_enabled; }
+    if (enabled && !g_proxy_reentry && nonLoopbackInternet(addr)) {
+        errno = ECONNREFUSED;
+        return -1;
+    }
+    return orig_sendto ? orig_sendto(fd, buf, len, flags, addr, addrlen) : -1;
+}
+
+static ssize_t my_sendmsg(int fd, const struct msghdr *msg, int flags) {
+    bool enabled;
+    { std::lock_guard<std::mutex> lk(g_lock); enabled = g_enabled; }
+    const sockaddr *addr = msg ? (const sockaddr *) msg->msg_name : nullptr;
+    if (enabled && !g_proxy_reentry && nonLoopbackInternet(addr)) {
+        errno = ECONNREFUSED;
+        return -1;
+    }
+    return orig_sendmsg ? orig_sendmsg(fd, msg, flags) : -1;
+}
+
+static int my_connect(int fd, const sockaddr *addr, socklen_t len);
+
+static long my_syscall(long number, long a1, long a2, long a3, long a4, long a5, long a6) {
+    if (number == NR_CONNECT && !g_proxy_reentry) {
+        bool enabled;
+        { std::lock_guard<std::mutex> lk(g_lock); enabled = g_enabled; }
+        if (enabled) {
+            ProxyReentry guard;
+            return my_connect((int) a1, (const sockaddr *) a2, (socklen_t) a3);
+        }
+    }
+    if (!orig_syscall) {
+        errno = ENOSYS;
+        return -1;
+    }
+    return orig_syscall(number, a1, a2, a3, a4, a5, a6);
+}
+
 static int my_connect(int fd, const sockaddr *addr, socklen_t len) {
+    ProxyReentry guard;
     ProxySnapshot proxy;
     bool enabled;
     {
@@ -790,6 +858,15 @@ static bool install_connect_hook() {
         if (gnc && DobbyHook(gnc, (void *) my_android_getaddrinfofornetcontext,
                             (void **) &orig_android_getaddrinfofornetcontext) == 0)
             LOGD("android_getaddrinfofornetcontext hook installed (remote DNS)");
+        void *st = xdl_dsym(h, "sendto", nullptr);
+        if (!st || DobbyHook(st, (void *) my_sendto, (void **) &orig_sendto) != 0)
+            LOGD("sendto hook unavailable; UDP stays fail-closed at socket()");
+        void *sm = xdl_dsym(h, "sendmsg", nullptr);
+        if (!sm || DobbyHook(sm, (void *) my_sendmsg, (void **) &orig_sendmsg) != 0)
+            LOGD("sendmsg hook unavailable; UDP stays fail-closed at socket()");
+        void *sc = xdl_dsym(h, "syscall", nullptr);
+        if (!sc || DobbyHook(sc, (void *) my_syscall, (void **) &orig_syscall) != 0)
+            LOGD("syscall hook unavailable; raw connect is not redirected");
         xdl_close(h);
     }
     return g_installed && orig_connect && orig_getaddrinfo;

@@ -104,6 +104,12 @@ public class NativeCore {
 
     public static native void addIORule(String targetPath, String relocatePath);
 
+    /** Guest-only path jail. A failure here must not crash the process. */
+    public static native void setPathIsolation(String virtualRoot, String externalRoot, int userId);
+
+    /** Added to CLOCK_BOOTTIME / CLOCK_MONOTONIC so uptime is not the phone's. */
+    public static native void setUptimeOffsetMs(long offsetMs);
+
     public static native void hideXposed();
 
     public static native boolean disableHiddenApi();

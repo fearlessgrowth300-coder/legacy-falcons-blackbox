@@ -12,6 +12,7 @@ import java.lang.reflect.Method;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
+import top.niunaijun.blackbox.fake.hook.PineClassAttacher;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Slog;
@@ -41,7 +42,37 @@ public class WebViewProxy extends ClassInvocationStub {
         return false;
     }
 
+    @Override
+    protected Class<?> hookTargetClass() {
+        return android.webkit.WebSettings.class;
+    }
+
+    @Override
+    protected void afterPineHook(String methodName, Object self, Object[] args, Object frame) {
+        if (!"getUserAgentString".equals(methodName)) return;
+        try {
+            Object result = PineClassAttacher.getResult(frame);
+            if (result instanceof String && ((String) result).contains(" BlackBox")) {
+                PineClassAttacher.setResult(frame, ((String) result).replace(" BlackBox", ""));
+            }
+        } catch (Throwable error) {
+            Slog.w(TAG, "WebView user agent hook degraded");
+        }
+    }
+
     
+    @ProxyMethod("getUserAgentString")
+    public static class GetUserAgentString extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            Object result = method.invoke(who, args);
+            if (result instanceof String && ((String) result).contains(" BlackBox")) {
+                return ((String) result).replace(" BlackBox", "");
+            }
+            return result;
+        }
+    }
+
     @ProxyMethod("<init>")
     public static class Constructor extends MethodHook {
         @Override
@@ -139,8 +170,8 @@ public class WebViewProxy extends ClassInvocationStub {
 
                     
                     String userAgent = settings.getUserAgentString();
-                    if (userAgent != null && !userAgent.contains("BlackBox")) {
-                        settings.setUserAgentString(userAgent + " BlackBox");
+                    if (userAgent != null && userAgent.contains(" BlackBox")) {
+                        settings.setUserAgentString(userAgent.replace(" BlackBox", ""));
                     }
 
                     

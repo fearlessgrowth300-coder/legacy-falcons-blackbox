@@ -17,6 +17,16 @@ public class ISystemSensorManagerProxy extends ClassInvocationStub {
     }
 
     @Override
+    protected Class<?> hookTargetClass() {
+        try {
+            return Class.forName("android.hardware.SystemSensorManager");
+        } catch (Throwable error) {
+            Slog.w(TAG, "SystemSensorManager hook skipped");
+            return null;
+        }
+    }
+
+    @Override
     protected Object getWho() {
         
         return null;

@@ -129,6 +129,12 @@ public class DeviceProfile {
     public String androidId, imei, imsi, serial, macWifi, gaid, kernelSeed;
     public String buildId, incremental, securityPatch;   // dynamic per-clone build variance
     public String widevineId;                             // per-clone Widevine deviceUniqueId (hex)
+    public String wifiSsid;
+    public String wifiBssid;
+    public String buildHost;
+    public String buildUser;
+    public long buildTime;
+    public long uptimeOffsetMs;
     // SIM / carrier identity — drives the country picker in WhatsApp/Instagram (they read
     // gsm.sim.operator.iso-country / getNetworkOperator, NOT the IP). Only spoofed when a proxy
     // with a country is assigned (GuestProxy sets these + simSpoofed=true); with NO proxy the SIM
@@ -184,6 +190,12 @@ public class DeviceProfile {
             p.fingerprint = props.getProperty("fingerprint");
             p.widevineId = props.getProperty("widevineId");
             p.kernelSeed = props.getProperty("kernelSeed");
+            p.wifiSsid = props.getProperty("wifiSsid");
+            p.wifiBssid = props.getProperty("wifiBssid");
+            p.buildHost = props.getProperty("buildHost");
+            p.buildUser = props.getProperty("buildUser");
+            p.buildTime = parseLong(props.getProperty("buildTime"), 0L);
+            p.uptimeOffsetMs = parseLong(props.getProperty("uptimeOffsetMs"), 0L);
         } else {
             // First run for this clone: TRUE randomness (SecureRandom), NOT a userId-derived
             // seed — otherwise every user's "User 0" would be identical across all phones.
@@ -207,6 +219,12 @@ public class DeviceProfile {
             // as a stable hardware ID. Give each clone its own so it can't link clones on one phone.
             p.widevineId = hex(r, 64);
             p.kernelSeed = uuid(r);
+            p.wifiSsid = NetworkIdentity.ssid(p.androidId);
+            p.wifiBssid = NetworkIdentity.bssid(p.androidId);
+            p.buildHost = BuildConsistency.host(p.androidId);
+            p.buildUser = BuildConsistency.user(p.androidId);
+            p.buildTime = BuildConsistency.timeMillis(p.androidId);
+            p.uptimeOffsetMs = NetworkIdentity.uptimeOffsetMs(p.androidId);
         }
 
         String[] pr = PROFILES[idx];
@@ -220,6 +238,12 @@ public class DeviceProfile {
         if (p.gaid == null) { p.gaid = uuid(bf); needsSave = true; }
         if (p.widevineId == null) { p.widevineId = hex(bf, 64); needsSave = true; }
         if (p.kernelSeed == null) { p.kernelSeed = uuid(bf); needsSave = true; }
+        if (p.wifiSsid == null) { p.wifiSsid = NetworkIdentity.ssid(p.androidId); needsSave = true; }
+        if (p.wifiBssid == null) { p.wifiBssid = NetworkIdentity.bssid(p.androidId); needsSave = true; }
+        if (p.buildHost == null) { p.buildHost = BuildConsistency.host(p.androidId); needsSave = true; }
+        if (p.buildUser == null) { p.buildUser = BuildConsistency.user(p.androidId); needsSave = true; }
+        if (p.buildTime == 0L) { p.buildTime = BuildConsistency.timeMillis(p.androidId); needsSave = true; }
+        if (p.uptimeOffsetMs == 0L) { p.uptimeOffsetMs = NetworkIdentity.uptimeOffsetMs(p.androidId); needsSave = true; }
         if (p.fingerprint == null) {
             Fp fp = genFingerprint(pr[7], bf);
             p.buildId = fp.buildId; p.incremental = fp.incremental;
@@ -241,6 +265,12 @@ public class DeviceProfile {
             props.setProperty("fingerprint", p.fingerprint);
             props.setProperty("widevineId", p.widevineId);
             props.setProperty("kernelSeed", p.kernelSeed);
+            props.setProperty("wifiSsid", p.wifiSsid);
+            props.setProperty("wifiBssid", p.wifiBssid);
+            props.setProperty("buildHost", p.buildHost);
+            props.setProperty("buildUser", p.buildUser);
+            props.setProperty("buildTime", String.valueOf(p.buildTime));
+            props.setProperty("uptimeOffsetMs", String.valueOf(p.uptimeOffsetMs));
             try (FileOutputStream out = new FileOutputStream(conf)) {
                 props.store(out, "per-clone device identity");
             } catch (Exception e) {
@@ -477,6 +507,18 @@ public class DeviceProfile {
         setBuild("DISPLAY", buildId);
         setBuildVersion("INCREMENTAL", incremental);
         setBuildVersion("SECURITY_PATCH", securityPatch);
+        setBuild("HOST", buildHost);
+        setBuild("USER", buildUser);
+        setBuild("TYPE", "user");
+        setBuild("TAGS", "release-keys");
+        setBuild("BOOTLOADER", serial);
+        setBuild("RADIO", "unknown");
+        setBuildLong("TIME", buildTime);
+        try {
+            NativeCore.setUptimeOffsetMs(uptimeOffsetMs);
+        } catch (Throwable t) {
+            Slog.w(TAG, "uptime offset unavailable: " + t.getClass().getSimpleName());
+        }
         if (!model.equals(Build.MODEL) || !brand.equals(Build.BRAND)
                 || !device.equals(Build.DEVICE) || !product.equals(Build.PRODUCT)
                 || !manufacturer.equals(Build.MANUFACTURER) || !board.equals(Build.BOARD)
@@ -541,6 +583,14 @@ public class DeviceProfile {
             rules.put("/sys/class/dmi/id/product_uuid", boot.getAbsolutePath());
             rules.put("/sys/class/dmi/id/product_serial", socSerial.getAbsolutePath());
             rules.put("/proc/device-tree/serial-number", deviceTreeSerial.getAbsolutePath());
+            String localIp = NetworkIdentity.dotted(userId, androidId);
+            String[] netNames = {"arp", "route", "fib_trie", "tcp", "tcp6", "udp", "udp6",
+                    "dev", "wireless", "if_inet6"};
+            for (String name : netNames) {
+                File net = new File(dir, "proc-net-" + name);
+                writeText(net, NetworkIdentity.procNet(name, localIp, wifiBssid));
+                rules.put("/proc/net/" + name, net.getAbsolutePath());
+            }
 
             // Older ARM devices sometimes publish a unique handset serial in /proc/cpuinfo.
             // Preserve every CPU capability line and replace only that instance identifier.
@@ -710,6 +760,19 @@ public class DeviceProfile {
 
     private static int parseInt(String s, int def) {
         try { return Integer.parseInt(s); } catch (Exception e) { return def; }
+    }
+
+    private static long parseLong(String s, long def) {
+        try { return Long.parseLong(s); } catch (Exception e) { return def; }
+    }
+
+    private static void setBuildLong(String field, long value) {
+        try {
+            Field f = Build.class.getDeclaredField(field);
+            f.setAccessible(true);
+            f.set(null, value);
+        } catch (Throwable ignored) {
+        }
     }
 
     // Spread userIds so consecutive clones don't seed to adjacent values.

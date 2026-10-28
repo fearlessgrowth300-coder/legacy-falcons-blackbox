@@ -150,15 +150,17 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     args[1] = BlackBoxCore.getHostPkg();
                 }
 
-                if (auth.equals("settings")
-                        || auth.equals("media")
-                        || auth.equals("telephony")
-                        || ((String) auth).contains("com.google.android.gms")
-                        || ((String) auth).contains("com.android.vending")
-                        || ((String) auth).contains("com.google.android.gsf")
-                        || auth.equals("com.google.android.gms.chimera")
-                        || auth.equals("com.huawei.android.launcher.settings")
-                        || auth.equals("com.hihonor.android.launcher.settings")) {
+                top.niunaijun.blackbox.core.ProfilePolicy profilePolicy =
+                        top.niunaijun.blackbox.core.ProfilePolicy.defaults();
+                try {
+                    profilePolicy = top.niunaijun.blackbox.core.ProfilePolicy.load(
+                            top.niunaijun.blackbox.core.ProfilePolicy.fileFor(
+                                    top.niunaijun.blackbox.core.env.BEnvironment.getUserDir(
+                                            BActivityThread.getUserId())));
+                } catch (Throwable ignored) {
+                }
+                if (top.niunaijun.blackbox.core.ProviderIsolation.useHostProvider(
+                        (String) auth, profilePolicy)) {
                     content = method.invoke(who, args);
                     ContentProviderDelegate.update(content, (String) auth);
                     return content;
@@ -870,6 +872,9 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class GrantUriPermission extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            if (uriDecision(args) == top.niunaijun.blackbox.core.UriGrantPolicy.DENIED) {
+                return null;
+            }
             MethodParameterUtils.replaceLastUid(args);
             return method.invoke(who, args);
         }
@@ -1022,11 +1027,46 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 || permission.equals("android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE");
     }
 
+    private static int uriDecision(Object[] args) {
+        try {
+            String uri = null;
+            if (args != null) {
+                for (Object arg : args) {
+                    if (arg instanceof android.net.Uri) uri = arg.toString();
+                    else if (uri == null && arg instanceof String && ((String) arg).contains("://")) {
+                        uri = (String) arg;
+                    }
+                }
+            }
+            top.niunaijun.blackbox.core.ProfilePolicy policy =
+                    top.niunaijun.blackbox.core.ProfilePolicy.load(
+                            top.niunaijun.blackbox.core.ProfilePolicy.fileFor(
+                                    top.niunaijun.blackbox.core.env.BEnvironment.getUserDir(
+                                            BActivityThread.getUserId())));
+            return top.niunaijun.blackbox.core.UriGrantPolicy.decide(
+                    uri, BActivityThread.getUserId(), policy.shareHostMedia,
+                    policy.shareHostGoogleProviders);
+        } catch (Throwable error) {
+            return top.niunaijun.blackbox.core.UriGrantPolicy.DENIED;
+        }
+    }
+
     @ProxyMethod("checkUriPermission")
     public static class checkUriPermission extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            return PERMISSION_GRANTED;
+            int decision = uriDecision(args);
+            if (decision == top.niunaijun.blackbox.core.UriGrantPolicy.DENIED) {
+                return PackageManager.PERMISSION_DENIED;
+            }
+            if (decision == top.niunaijun.blackbox.core.UriGrantPolicy.GRANTED) {
+                return PERMISSION_GRANTED;
+            }
+            try {
+                return method.invoke(who, args);
+            } catch (Throwable error) {
+                return PackageManager.PERMISSION_DENIED;
+            }
         }
     }
 

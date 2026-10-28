@@ -22,6 +22,16 @@ public class WebViewFactoryProxy extends ClassInvocationStub {
     }
 
     @Override
+    protected Class<?> hookTargetClass() {
+        try {
+            return Class.forName("android.webkit.WebViewFactory");
+        } catch (Throwable error) {
+            Slog.w(TAG, "WebViewFactory hook skipped");
+            return null;
+        }
+    }
+
+    @Override
     protected Object getWho() {
         return null; 
     }

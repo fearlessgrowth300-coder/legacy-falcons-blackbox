@@ -210,6 +210,19 @@ public class BActivityThread extends IBActivityThread.Stub {
             try {
                 top.niunaijun.blackbox.core.GuestProxy.ApplyStatus proxyStatus =
                         top.niunaijun.blackbox.core.GuestProxy.apply(appConfig.userId, appConfig.packageName);
+                top.niunaijun.blackbox.core.ProfilePolicy profilePolicy =
+                        top.niunaijun.blackbox.core.ProfilePolicy.defaults();
+                try {
+                    profilePolicy = top.niunaijun.blackbox.core.ProfilePolicy.load(
+                            top.niunaijun.blackbox.core.ProfilePolicy.fileFor(
+                                    top.niunaijun.blackbox.core.env.BEnvironment.getUserDir(
+                                            appConfig.userId)));
+                } catch (Throwable ignored) {
+                }
+                if (proxyStatus == top.niunaijun.blackbox.core.GuestProxy.ApplyStatus.NOT_CONFIGURED
+                        && profilePolicy.requireProxy) {
+                    throw new SecurityException("Direct network is disabled for this profile");
+                }
                 if (proxyStatus != top.niunaijun.blackbox.core.GuestProxy.ApplyStatus.READY
                         && proxyStatus != top.niunaijun.blackbox.core.GuestProxy.ApplyStatus.NOT_CONFIGURED) {
                     throw new SecurityException("Assigned proxy is not ready: " + proxyStatus);

@@ -3,6 +3,7 @@ package top.niunaijun.blackbox.fake.service;
 import java.lang.reflect.Method;
 
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
+import top.niunaijun.blackbox.fake.hook.PineClassAttacher;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Slog;
@@ -13,12 +14,26 @@ public class AndroidIdProxy extends ClassInvocationStub {
     public static final String TAG = "AndroidIdProxy";
 
     private static boolean isAndroidIdKey(Object[] args) {
-        if (args != null && args.length > 0 && args[0] instanceof String) {
-            String key = (String) args[0];
-            return key.contains("android_id") || key.contains("ANDROID_ID")
-                    || key.contains("secure_id") || key.contains("device_id");
+        if (args == null) return false;
+        for (Object arg : args) {
+            if (!(arg instanceof String)) continue;
+            String key = (String) arg;
+            if ("android_id".equals(key) || "ANDROID_ID".equals(key)) return true;
         }
         return false;
+    }
+
+    @Override
+    protected Class<?> hookTargetClass() {
+        return android.provider.Settings.Secure.class;
+    }
+
+    @Override
+    protected void afterPineHook(String methodName, Object self, Object[] args, Object frame) {
+        String id = cloneAndroidId();
+        if (id != null && isAndroidIdKey(args)) {
+            PineClassAttacher.setResult(frame, id);
+        }
     }
 
     /** This clone's android_id, or null if no profile is applied (host). */

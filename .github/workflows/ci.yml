@@ -52,6 +52,18 @@ jobs:
             Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/SettingsIdentity.java \
             tools/diagnostics/GuestLaunchCompatTest.java
           java -cp build/diagnostic-tests GuestLaunchCompatTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/PathIsolation.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/ProfilePolicy.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/NetworkIdentity.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/BuildConsistency.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/ProviderIsolation.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/UriGrantPolicy.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/system/accounts/AccountCredentialPolicy.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/system/accounts/AccountSecrets.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/system/notification/NotificationVisibility.java \
+            tools/diagnostics/IsolationBoundaryTest.java
+          java -cp build/diagnostic-tests IsolationBoundaryTest
           node --test tools/diagnostics/request-summary.test.mjs
           node --check tools/diagnostics/capture-webview.mjs
 
