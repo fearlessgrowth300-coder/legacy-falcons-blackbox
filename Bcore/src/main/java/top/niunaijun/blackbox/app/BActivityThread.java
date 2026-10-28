@@ -87,6 +87,7 @@ import top.niunaijun.blackbox.utils.SafeContextWrapper;
 import top.niunaijun.blackbox.utils.GlobalContextWrapper;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ActivityManagerCompat;
+import top.niunaijun.blackbox.utils.compat.ApplicationCreationCompat;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 import top.niunaijun.blackbox.utils.compat.StrictModeCompat;
@@ -233,8 +234,19 @@ public class BActivityThread extends IBActivityThread.Stub {
                     // Application class can touch its own login-encryption aliases.
                     boolean keystoreReady =
                             top.niunaijun.blackbox.core.KeystoreIsolation.installForCurrentProcess();
-                    if (!identityReady || !keystoreReady) {
-                        throw new SecurityException("Incomplete runtime identity isolation");
+                    // Build-field and native property identity already ran in prepareEarly and
+                    // still fail closed. A single Pine or Keystore2 hook that the runtime does
+                    // not support must not refuse the whole guest: that is what left cloned
+                    // apps unable to start on Android 14-16 when one hidden method moved.
+                    if (!identityReady) {
+                        top.niunaijun.blackbox.utils.Slog.w(TAG,
+                                "Runtime identity hooks incomplete for " + appConfig.packageName
+                                        + "; continuing with the prepared Build identity");
+                    }
+                    if (!keystoreReady) {
+                        top.niunaijun.blackbox.utils.Slog.w(TAG,
+                                "Keystore namespace unavailable for " + appConfig.packageName
+                                        + "; continuing without per-clone key aliases");
                     }
                     mRuntimeIsolationReady = true;
                     top.niunaijun.blackbox.utils.Slog.d(
@@ -491,6 +503,7 @@ public class BActivityThread extends IBActivityThread.Stub {
         BRLoadedApk.get(loadedApk)._set_mSecurityViolation(false);
         
         BRLoadedApk.get(loadedApk)._set_mApplicationInfo(applicationInfo);
+        alignLoadedApkPackageName(loadedApk, applicationInfo.packageName);
 
         int targetSdkVersion = applicationInfo.targetSdkVersion;
         if (targetSdkVersion < Build.VERSION_CODES.GINGERBREAD) {
@@ -540,43 +553,12 @@ public class BActivityThread extends IBActivityThread.Stub {
         Application application;
         try {
             onBeforeCreateApplication(packageName, processName, packageContext);
-            
-            
-            try {
-                application = BRLoadedApk.get(loadedApk).makeApplication(false, null);
-            } catch (Exception makeAppException) {
-                Slog.e(TAG, "Failed to makeApplication, trying fallback approach", makeAppException);
-                application = null;
-            }
-            
-            
-            if (application == null) {
-                Slog.w(TAG, "makeApplication returned null, attempting fallback creation");
-                
-                
-                try {
-                    application = BRLoadedApk.get(loadedApk).makeApplication(true, null);
-                } catch (Exception e) {
-                    Slog.e(TAG, "Fallback makeApplication also failed", e);
-                }
-                
-                
-                if (application == null) {
-                    Slog.w(TAG, "Creating minimal application context as fallback");
-                    try {
-                        
-                        application = (Application) packageContext;
-                        if (application == null) {
-                            Slog.e(TAG, "Even package context is null, this is critical");
-                            throw new RuntimeException("Unable to create application context");
-                        }
-                    } catch (Exception contextException) {
-                        Slog.e(TAG, "Failed to create fallback application context", contextException);
-                        throw new RuntimeException("Unable to makeApplication - all fallback attempts failed", contextException);
-                    }
-                }
-            }
-            
+            // Android 13+ keeps a process-wide Application cache in the internal
+            // factory. The legacy entry point deliberately skips that cache;
+            // a later activity with another LoadedApk can then run onCreate twice.
+            application = (Application) ApplicationCreationCompat.create(
+                    loadedApk, Instrumentation.class, Build.VERSION.SDK_INT >= 33);
+
             if (application == null) {
                 Slog.e(TAG, "makeApplication application Error! All attempts failed");
                 throw new RuntimeException("Unable to create application - all creation methods failed");
@@ -600,6 +582,18 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
     
     
+    /** Test-only opt-in, applied after the guest Activity configures its WebViews. */
+    public static void enableActivityWebViewDiagnostics() {
+        String packageName = getAppPackageName();
+        if (top.niunaijun.blackbox.BuildConfig.DEBUG
+                && packageName != null
+                && packageName.equals(getAppProcessName())
+                && packageName.equals(top.niunaijun.blackbox.BuildConfig.DIAGNOSTIC_WEBVIEW_PACKAGE)) {
+            WebView.setWebContentsDebuggingEnabled(true);
+            Slog.i(TAG, "Activity WebView request diagnostics enabled for " + packageName);
+        }
+    }
+
     private void initializeJarEnvironment() {
         try {
             Slog.d(TAG, "Initializing JAR environment for DEX loading");
@@ -1016,6 +1010,25 @@ public class BActivityThread extends IBActivityThread.Stub {
         }
     }
 
+    /**
+     * The process-wide Application cache is keyed by LoadedApk.mPackageName. A context
+     * created for the host package would otherwise miss the guest entry and construct a
+     * second Application, which runs onCreate twice.
+     */
+    private static void alignLoadedApkPackageName(Object loadedApk, String packageName) {
+        if (loadedApk == null || packageName == null) return;
+        try {
+            java.lang.reflect.Field field = loadedApk.getClass().getDeclaredField("mPackageName");
+            field.setAccessible(true);
+            Object current = field.get(loadedApk);
+            if (!packageName.equals(current)) {
+                field.set(loadedApk, packageName);
+            }
+        } catch (Throwable error) {
+            Slog.w(TAG, "Could not align LoadedApk package name: " + error.getClass().getSimpleName());
+        }
+    }
+
     public static Context createPackageContext(ApplicationInfo info) {
         try {
             return BlackBoxCore.getContext().createPackageContext(info.packageName,
@@ -1261,9 +1274,10 @@ public class BActivityThread extends IBActivityThread.Stub {
             BroadcastReceiver mReceiver = null;
             Intent intent = data.intent;
             ActivityInfo activityInfo = data.activityInfo;
-            BroadcastReceiver.PendingResult pendingResult = data.data.build();
+            BroadcastReceiver.PendingResult pendingResult = null;
 
             try {
+                pendingResult = data.data.build();
                 Context baseContext = mInitialApplication.getBaseContext();
                 ClassLoader classLoader = baseContext.getClassLoader();
                 intent.setExtrasClassLoader(classLoader);
@@ -1271,16 +1285,22 @@ public class BActivityThread extends IBActivityThread.Stub {
                 mReceiver = (BroadcastReceiver) classLoader.loadClass(activityInfo.name).newInstance();
                 BRBroadcastReceiver.get(mReceiver).setPendingResult(pendingResult);
                 mReceiver.onReceive(baseContext, intent);
-                BroadcastReceiver.PendingResult finish = BRBroadcastReceiver.get(mReceiver).getPendingResult();
-                if (finish != null) {
-                    finish.finish();
-                }
-                BlackBoxCore.getBActivityManager().finishBroadcast(data.data);
             } catch (Throwable throwable) {
                 throwable.printStackTrace();
                 Slog.e(TAG,
                         "Error receiving broadcast " + intent
                                 + " in " + mReceiver);
+            } finally {
+                // A receiver that throws, or a DeviceStateReceiver that never finishes,
+                // must not leave the broadcast open until the system ANRs this process.
+                try {
+                    if (pendingResult != null) pendingResult.finish();
+                } catch (Throwable ignored) {
+                }
+                try {
+                    BlackBoxCore.getBActivityManager().finishBroadcast(data.data);
+                } catch (Throwable ignored) {
+                }
             }
         });
     }

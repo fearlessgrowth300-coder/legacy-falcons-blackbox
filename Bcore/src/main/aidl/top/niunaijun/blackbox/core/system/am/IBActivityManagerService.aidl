@@ -66,4 +66,5 @@ interface IBActivityManagerService {
     // order, so inserting one above would renumber every method below it and break any guest process
     // still bound to an older build during an update.
     int freeProcessSlots();
+    int getVirtualUidForPid(int pid);
 }
