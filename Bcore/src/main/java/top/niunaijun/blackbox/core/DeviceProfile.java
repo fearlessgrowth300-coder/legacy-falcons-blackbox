@@ -250,6 +250,14 @@ public class DeviceProfile {
         return p;
     }
 
+    private static long pageSize() {
+        try {
+            return android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE);
+        } catch (Throwable ignored) {
+            return 4096L;
+        }
+    }
+
     private static volatile boolean sAndroidIdHooked = false;
 
     /**
@@ -307,6 +315,7 @@ public class DeviceProfile {
     private void hookGaid() {
         final String id = gaid;
         if (id == null) return;
+        if (PineRuntime.hooksCrashThisRuntime(android.os.Build.VERSION.SDK_INT, pageSize())) return;
         final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
         h.postDelayed(new Runnable() {
             int tries = 0;
@@ -480,6 +489,17 @@ public class DeviceProfile {
     /** Install all Pine-backed hooks before guest Application.onCreate is permitted to run. */
     public synchronized boolean installRuntimeHooks() {
         CURRENT = this;
+        // Android 16 ART native-crashes inside Pine 0.3.0's object bridge. android_id is
+        // served by the settings provider instead, and the advertising-id binder is
+        // already swapped without Pine. Sensor and Widevine calibration degrade rather
+        // than taking the process down.
+        if (PineRuntime.hooksCrashThisRuntime(android.os.Build.VERSION.SDK_INT, pageSize())) {
+            sensorIsolationActive = false;
+            Slog.w(TAG, "Skipping Pine identity hooks on API "
+                    + android.os.Build.VERSION.SDK_INT
+                    + "; settings provider serves android_id");
+            return true;
+        }
         sensorIsolationActive = SensorSignalIsolation.install(this);
         boolean androidIdReady = hookAndroidId();
         hookGaid();
