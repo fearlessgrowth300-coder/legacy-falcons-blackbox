@@ -244,17 +244,15 @@ public class BProcessManagerService implements ISystemService {
         if (!mainProcess && !routedGmsPersistent) return;
         try {
             Uri uri = Uri.parse("content://" + record.getProviderAuthority());
-            // The main app uses an unstable hold so an intentional stop remains independent.
-            // Routed GMS is the explicitly enabled push daemon, so use a stable hold to prevent
-            // Android reclaiming its empty runtime before GcmService is delivered.
-            ContentProviderClient client = routedGmsPersistent
-                    ? BlackBoxCore.getContext().getContentResolver()
-                            .acquireContentProviderClient(uri)
-                    : BlackBoxCore.getContext().getContentResolver()
-                            .acquireUnstableContentProviderClient(uri);
+            // Never make the manager depend on a guest's survival. A stable GMS
+            // reference caused Android to kill :black when the guest hit a broadcast
+            // ANR. Keep the reference unstable; binder death already releases the
+            // record through onProcessDie. This does not suppress or fix the guest ANR.
+            ContentProviderClient client = BlackBoxCore.getContext().getContentResolver()
+                    .acquireUnstableContentProviderClient(uri);
             if (client != null) {
                 record.keepAliveProviderClient = client;
-                Slog.d(TAG, "Holding stable provider connection for proxy main process: user="
+                Slog.d(TAG, "Holding unstable guest provider connection: user="
                         + record.userId + " pkg=" + record.info.packageName + " slot=" + record.bpid);
             }
         } catch (Throwable e) {

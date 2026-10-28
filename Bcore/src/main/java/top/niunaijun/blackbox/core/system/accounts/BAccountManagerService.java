@@ -1156,6 +1156,16 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
     }
 
     public BUserAccounts getUserAccounts(int userId) {
+        // Never trust a caller-supplied workspace ID just because all virtual
+        // processes share the host Linux UID. Unknown external PIDs fail closed.
+        int callerPid = Binder.getCallingPid();
+        int servicePid = android.os.Process.myPid();
+        ProcessRecord caller = callerPid == servicePid ? null
+                : BProcessManagerService.get().findProcessByPid(callerPid);
+        if (!AccountWorkspacePolicy.allows(userId, callerPid, servicePid,
+                caller == null ? null : caller.userId)) {
+            throw new SecurityException("Account workspace access denied");
+        }
         synchronized (mUserAccountsMap) {
             BUserAccounts bUserAccounts = mUserAccountsMap.get(userId);
             if (bUserAccounts == null) {
