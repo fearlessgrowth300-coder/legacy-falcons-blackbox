@@ -14,6 +14,47 @@ Guests still share the host app's Linux uid. Path rules, libc hooks, and keystor
 | 4. Notifications | **Fixed** in the hooked getters | `getActiveNotifications`, `getAppActiveNotifications`, and `getHistoricalNotifications` return only items whose host tag is `blackbox\|<userId>\|<package>\|`. A filter failure returns an empty list. The shade still shows both profiles to the person holding the phone. |
 | 5. Network | **Partial** | `requireProxy` defaults to true. A configured clone dials only its ShieldProxy loopback SOCKS listener (`127.0.0.1`, ports 20000–27999) with `socksUser` / `socksPassword`. The hook does not dial the upstream node and does not fall back to the phone network; a missing or refused listener is `ECONNREFUSED` / the guest does not start. `timezoneId`, `locale`, and the supplied latitude/longitude are applied to that clone. `setKeepAlive` defaults to off and does not install GMS. `WifiInfo`, `LinkProperties`, and the redirected `/proc/net` files use a profile `10.x` address. Non-loopback UDP is refused rather than relayed through SOCKS UDP associate. A raw `syscall` redirect is installed when Dobby accepts it and is skipped with a log when it does not. WebRTC was not captured on a phone. |
 | 6. Identity hooks and per-profile values | **Partial** | `ClassInvocationStub` registers hooks even when `getWho()` is null, then Pine-attaches the target class only when `PineRuntime` says Pine will not crash the process. On Android 16 and 16 KB pages those class hooks are skipped and logged. `IDnsResolverProxy` now resolves `IDnsResolver` and refuses the real resolver while a proxy is required. Wi-Fi SSID/BSSID, `Build.HOST` / `USER` / `TIME` / `TYPE` / `TAGS` / `BOOTLOADER`, and a `clock_gettime` uptime offset are per profile. `Build` SDK, ABI, GPU keys, and attestation are not rewritten. |
+| Shared Linux uid | **Partial, real profile added** | The hooked mode is unchanged and still shares one uid. A workspace can instead use a separate Android managed profile (`DevicePolicyManager.ACTION_PROVISION_MANAGED_PROFILE`, Blackbox as profile owner). That user has its own uid (user 10+), data directory, Android ID, keystore, account manager, and GMS. The second workspace recommends this mode. Android allows only one such profile; an existing work profile, device owner, or Samsung Secure Folder/Knox blocks it and the UI says so. |
+
+## Separate Android profile
+
+Hooked workspaces still share the host uid. **Separate Android profile** is the kernel boundary: Android's managed-profile user.
+
+- Create the second workspace and choose **Separate Android profile**. The first workspace stays **same profile, hooked**.
+- Android's setup screen must succeed. Blackbox's `BlackBoxDeviceAdminReceiver` becomes profile owner only, then `onProfileProvisioningComplete` names and enables the profile.
+- Open **Profile separation** to see this side's Android user id, Linux uid, and data directory, and to open the same screen inside the other user. The two uids must differ.
+- Install guest apps, Play services, and ShieldProxy from the installer that runs **inside** the managed profile (`installExistingPackage`, then `enableSystemApp` if the package is a system app).
+- Launching an app in a separate-mode workspace uses `LauncherApps` in that Android user. It does not start a hooked guest in the main process.
+
+**ShieldProxy.** A VPN is per Android user. The main profile's ShieldProxy does not carry the work profile. Install and run ShieldProxy inside the work profile, and give that side its own clone listener, or account B uses the phone's network. The connect-hook contract is unchanged for whichever user the guest runs in: dial `127.0.0.1:<localPort>` and fail closed.
+
+**What still links the two users on one phone.** Privileged apps and the radio stack can still see the same hardware IMEI/MEID. The screen, GPU, sensors, and battery are the same device. The Samsung account, if signed in for the whole phone, is outside this profile. The public IP is the same unless ShieldProxy is running in both users with different exits. This build does not spoof or bypass Play Integrity, SafetyNet, or hardware attestation.
+
+Verify on a computer with:
+
+```sh
+sh scripts/verify-profile-isolation.sh top.niunaijun.blackbox
+```
+
+Windows: `powershell -File scripts/verify-profile-isolation.ps1 -Package top.niunaijun.blackbox`
+
+### Phone evidence, 28 October 2026
+
+The attached dropbox text was not present in the workspace. The report below uses the stack the owner described from `dumpsys dropbox --print` on SM-S918U1, Android 16 / SDK 36. The installed build is 4.1.0, versionCode 210772124, targetSdk 28, installed 2026-09-06. That build does not contain PR #20 or this branch.
+
+`top.niunaijun.blackbox:p2` died in `NativeCore.getCallingUid` inside `libblackbox.so`, with `SimpleCrashFix$1.run` on the same stack. That is the nested main looper, not the cause. PR #20 stopped Pine on this runtime. It did not stop the Binder.getCallingUid hook from calling back into Java, which is the crash. This branch returns the virtual uid from native on API 36 and does not enter Java there.
+
+`com.android.vending:quick_launch` repeated a ClassCastException and then SIGSEGV. That process is refused before a proxy slot is taken. The main Play process is still allowed. Two Finsky providers were already skipped. This is not an attestation change.
+
+The phone has only Android user 0, no profile owner, no device owner, and no Secure Folder. `isProvisioningAllowed(ACTION_PROVISION_MANAGED_PROFILE)` should succeed there. Confirm on the device after installing this build.
+
+### Phone test
+
+1. Install this build over the September APK only after checking the signer. Open **Profile separation** and note the uid.
+2. Manage users → create a user → **Separate Android profile** → complete Android's work-profile screen.
+3. Open **Profile separation** again, then **Open status** on the other user. Confirm the user id and uid differ and the data directories differ.
+4. In the work profile, enable ShieldProxy and the guest app. Confirm the main profile's hooked user 0 still launches the old way.
+5. On a phone that already has Secure Folder or a work profile, confirm the UI explains the block and hooked mode still works.
 
 `tools/diagnostics/IsolationBoundaryTest` covers the path, policy, account, notification, and network decisions. It does not boot a guest.
 

@@ -192,6 +192,11 @@ public class BActivityThread extends IBActivityThread.Stub {
                 return;
             }
             this.mAppConfig = appConfig;
+            try {
+                NativeCore.setCallerIdentity(BlackBoxCore.getHostUid(), appConfig.buid);
+            } catch (Throwable error) {
+                Slog.w(TAG, "caller identity was not published: " + error.getClass().getSimpleName());
+            }
             // Apply this clone's unique, persistent device identity as early as
             // possible (before the guest app loads / references Build.*).
             final top.niunaijun.blackbox.core.DeviceProfile profile;

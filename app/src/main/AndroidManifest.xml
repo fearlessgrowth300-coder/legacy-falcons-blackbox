@@ -50,6 +50,26 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
         <receiver
+            android:name=".profile.BlackBoxDeviceAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
+            </intent-filter>
+        </receiver>
+        <activity
+            android:name=".profile.ProfileStatusActivity"
+            android:exported="true"
+            android:permission="" />
+        <activity
+            android:name=".profile.InstallInProfileActivity"
+            android:exported="true"
+            android:permission="" />
+        <receiver
             android:name=".app.KeepAliveBootReceiver"
             android:exported="true"
             android:permission="">

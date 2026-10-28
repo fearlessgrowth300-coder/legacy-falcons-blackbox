@@ -54,6 +54,10 @@ public class BProcessManagerService implements ISystemService {
         ApplicationInfo info = BPackageManagerService.get().getApplicationInfo(packageName, 0, userId);
         if (info == null)
             return null;
+        if (top.niunaijun.blackbox.core.PlayProcessPolicy.refuseStart(packageName, processName)) {
+            Slog.w(TAG, "refusing Play quick_launch process: " + processName);
+            return null;
+        }
         // Fail before allocating a physical proxy process when a protected app has lost,
         // corrupted, or conflicting route credentials. GMS clients retry failed binds very
         // aggressively; allowing each retry to start another proxy process can exhaust every

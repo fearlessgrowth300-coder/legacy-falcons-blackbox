@@ -110,6 +110,12 @@ public class NativeCore {
     /** Added to CLOCK_BOOTTIME / CLOCK_MONOTONIC so uptime is not the phone's. */
     public static native void setUptimeOffsetMs(long offsetMs);
 
+    /**
+     * Host and virtual uids for the Android 16 Binder.getCallingUid hook.
+     * The hook must not call back into Java on that runtime.
+     */
+    public static native void setCallerIdentity(int hostUid, int virtualUid);
+
     public static native void hideXposed();
 
     public static native boolean disableHiddenApi();

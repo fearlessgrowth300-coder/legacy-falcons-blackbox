@@ -152,6 +152,11 @@ class AppsFragment : Fragment() {
 
             mAdapter.setItemClickListener { _, data, _ ->
                 try {
+                    val mode = top.niunaijun.blackboxa.profile.WorkspaceModeStore.mode(requireContext(), userID)
+                    if (mode == top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.SEPARATE) {
+                        launchInSeparateProfile(data.packageName)
+                        return@setItemClickListener
+                    }
                     showLoading()
                     viewModel.launchApk(data.packageName, userID)
                 } catch (e: Exception) {
@@ -167,6 +172,36 @@ class AppsFragment : Fragment() {
             Log.e(TAG, "Error in onCreateView: ${e.message}")
             
             return View(requireContext())
+        }
+    }
+
+    private fun launchInSeparateProfile(packageName: String) {
+        val controller = top.niunaijun.blackboxa.profile.ManagedProfileController(requireContext())
+        val others = controller.otherProfiles()
+        if (others.isEmpty()) {
+            val reason = controller.blockReason()
+            android.widget.Toast.makeText(
+                requireContext(),
+                reason ?: "Set up the separate Android profile from Manage users before opening this workspace.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            startActivity(android.content.Intent(requireContext(), top.niunaijun.blackboxa.profile.ProfileStatusActivity::class.java))
+            return
+        }
+        val user = others.first()
+        if (!controller.launchPackage(user, packageName)) {
+            android.widget.Toast.makeText(
+                requireContext(),
+                "That app is not in the separate profile yet. Opening the installer there.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            if (!controller.launchInstallerIn(user)) {
+                android.widget.Toast.makeText(
+                    requireContext(),
+                    "Could not open the other profile. Check cross-profile access for Blackbox.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 

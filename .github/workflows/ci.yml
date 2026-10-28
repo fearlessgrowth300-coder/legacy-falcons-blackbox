@@ -64,6 +64,11 @@ jobs:
             Bcore/src/main/java/top/niunaijun/blackbox/core/system/notification/NotificationVisibility.java \
             tools/diagnostics/IsolationBoundaryTest.java
           java -cp build/diagnostic-tests IsolationBoundaryTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/ManagedProfilePolicy.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/PlayProcessPolicy.java \
+            tools/diagnostics/ManagedProfilePolicyTest.java
+          java -cp build/diagnostic-tests ManagedProfilePolicyTest
           node --test tools/diagnostics/request-summary.test.mjs
           node --check tools/diagnostics/capture-webview.mjs
 
