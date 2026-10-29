@@ -1,7 +1,6 @@
 package top.niunaijun.blackboxa.profile
 
 import android.app.admin.DeviceAdminReceiver
-import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -23,20 +22,9 @@ class BlackBoxDeviceAdminReceiver : DeviceAdminReceiver() {
         private const val TAG = "BlackBoxProfileOwner"
         fun component(context: Context) = ComponentName(context, BlackBoxDeviceAdminReceiver::class.java)
 
-        /** Name and enable the profile. Safe to call from both completion paths. */
+        /** Name the profile, enable it, and turn on the launcher apps. Safe to repeat. */
         fun enableProfile(context: Context) {
-            val admin = ComponentName(context, BlackBoxDeviceAdminReceiver::class.java)
-            val manager = context.getSystemService(DevicePolicyManager::class.java)
-            try {
-                manager.setProfileName(admin, "Blackbox account B")
-            } catch (error: Throwable) {
-                Log.w(TAG, "profile name was not set: ${error.javaClass.simpleName}")
-            }
-            try {
-                manager.setProfileEnabled(admin)
-            } catch (error: Throwable) {
-                Log.w(TAG, "profile was not enabled yet: ${error.javaClass.simpleName}")
-            }
+            ManagedProfileFinalizer.finalizeIfOwner(context)
         }
     }
 }

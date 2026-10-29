@@ -1,6 +1,8 @@
 package top.niunaijun.blackboxa.profile
 
+import android.app.Activity
 import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.CrossProfileApps
@@ -12,6 +14,7 @@ import android.os.UserHandle
 import android.os.UserManager
 import top.niunaijun.blackbox.core.ManagedProfilePolicy
 import top.niunaijun.blackbox.core.ProfileStatusCopy
+import top.niunaijun.blackboxa.view.main.WelcomeActivity
 
 /** Talks to Android's managed-profile APIs. Failures return false or a message; they do not crash. */
 class ManagedProfileController(private val context: Context) {
@@ -135,6 +138,96 @@ class ManagedProfileController(private val context: Context) {
     fun launchStatusIn(user: UserHandle): Boolean = launch(user, ProfileStatusActivity::class.java.name)
 
     fun launchInstallerIn(user: UserHandle): Boolean = launch(user, InstallInProfileActivity::class.java.name)
+
+    enum class ProfileOpen {
+        STARTED,
+        NEED_CONSENT,
+        FAILED
+    }
+
+    fun consentIntent(): Intent? {
+        if (Build.VERSION.SDK_INT < 30) return null
+        return try {
+            context.getSystemService(CrossProfileApps::class.java)
+                ?.createRequestInteractAcrossProfilesIntent()
+        } catch (error: Throwable) {
+            null
+        }
+    }
+
+    /** Wake the work profile and start Blackbox there so finalization can run. */
+    fun openBlackbox(user: UserHandle, source: Activity): ProfileOpen {
+        return openComponent(user, source, WelcomeActivity::class.java, preferMain = true)
+    }
+
+    fun openComponent(user: UserHandle, source: Activity, target: Class<*>, preferMain: Boolean): ProfileOpen {
+        wake(user)
+        val cross = if (Build.VERSION.SDK_INT >= 28) {
+            context.getSystemService(CrossProfileApps::class.java)
+        } else {
+            null
+        }
+        if (startAcrossProfiles(cross, user, source, target, preferMain)) return ProfileOpen.STARTED
+        if (launch(user, target.name)) return ProfileOpen.STARTED
+        if (preferMain && launchPackage(user, context.packageName)) return ProfileOpen.STARTED
+        if (needsConsent(cross)) return ProfileOpen.NEED_CONSENT
+        return ProfileOpen.FAILED
+    }
+
+    private fun wake(user: UserHandle) {
+        try {
+            users.requestQuietModeEnabled(false, user)
+        } catch (error: Throwable) {
+        }
+    }
+
+    private fun needsConsent(cross: CrossProfileApps?): Boolean {
+        if (cross == null || Build.VERSION.SDK_INT < 30) return false
+        return try {
+            !cross.canInteractAcrossProfiles() && cross.canRequestInteractAcrossProfiles()
+        } catch (error: Throwable) {
+            false
+        }
+    }
+
+    private fun startAcrossProfiles(
+        cross: CrossProfileApps?,
+        user: UserHandle,
+        source: Activity,
+        target: Class<*>,
+        preferMain: Boolean
+    ): Boolean {
+        if (cross == null) return false
+        val component = ComponentName(context, target)
+        if (preferMain) {
+            if (Build.VERSION.SDK_INT >= 33) {
+                try {
+                    cross.startMainActivity(component, user, source, null)
+                    return true
+                } catch (error: Throwable) {
+                }
+            }
+            try {
+                cross.startMainActivity(component, user)
+                return true
+            } catch (error: Throwable) {
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 33) {
+            try {
+                cross.startActivity(Intent(context, target), user, source, null)
+                return true
+            } catch (error: Throwable) {
+            }
+        } else if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                cross.startActivity(Intent(context, target), user, source)
+                return true
+            } catch (error: Throwable) {
+            }
+        }
+        return false
+    }
 
     fun launchPackage(user: UserHandle, packageName: String): Boolean {
         return try {

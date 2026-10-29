@@ -8,19 +8,33 @@ import android.content.IntentFilter
 import android.content.res.ColorStateList
 import android.os.Build
 import android.os.Bundle
+import android.os.UserHandle
 import android.util.TypedValue
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackbox.core.ProfileStatusCopy
+import top.niunaijun.blackbox.core.ProfileWorkApps
 import top.niunaijun.blackbox.core.env.BEnvironment
 import top.niunaijun.blackboxa.R
 
 /** Shows this process's Android user and Linux uid, and can open the other profile's copy. */
 class ProfileStatusActivity : AppCompatActivity() {
+    private var pendingUser: UserHandle? = null
+    private var pendingTarget: Class<*> = top.niunaijun.blackboxa.view.main.WelcomeActivity::class.java
+    private var pendingMain: Boolean = true
+
+    private val acrossProfilesConsent =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            val user = pendingUser ?: return@registerForActivityResult
+            deliver(user, pendingTarget, pendingMain)
+        }
+
     private val provisioned = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             ManagedProfileStore.capture(context, intent)
@@ -103,32 +117,38 @@ class ProfileStatusActivity : AppCompatActivity() {
                     ProfileStatusCopy.activeMessage(managedId, controller.isProfileOwner()),
                     ink
                 ))
+                column.addView(text(
+                    "If the Work tab is empty, open Blackbox in the work profile once. " +
+                        "That enables Play Store, the browser, Files, and Settings there. " +
+                        "Install ShieldProxy from Play Store or the installer. A VPN belongs to one Android user.",
+                    ink
+                ))
                 if (controller.isProfileOwner()) {
                     column.addView(button("Install apps and ShieldProxy") {
                         startActivity(Intent(this, InstallInProfileActivity::class.java))
+                    })
+                    column.addView(button("Remove profile and set up again") {
+                        confirmRemove(null)
                     })
                 } else {
                     val user = others.firstOrNull { controller.userIdOf(it) == managedId }
                         ?: others.firstOrNull()
                     if (user != null) {
                         column.addView(button("Open Blackbox in the work profile") {
-                            if (!controller.launchPackage(user, packageName)) {
-                                toast("Could not open Blackbox in the work profile. Enable cross-profile apps for Blackbox in system settings.")
-                            }
+                            deliver(user, top.niunaijun.blackboxa.view.main.WelcomeActivity::class.java, true)
                         })
                         column.addView(button("Install or open ShieldProxy in the work profile") {
-                            if (!controller.launchPackage(user, SHIELD_PROXY)) {
-                                if (!controller.launchInstallerIn(user)) {
-                                    toast("Could not open ShieldProxy setup in the work profile.")
-                                }
-                            }
+                            deliver(user, InstallInProfileActivity::class.java, false)
+                        })
+                        column.addView(button("Remove profile and set up again") {
+                            confirmRemove(user)
                         })
                     } else {
                         column.addView(text(
-                            "Android user $managedId is recorded, but this app cannot switch to it yet. " +
-                                "Open Blackbox from the Work tab in the launcher.",
+                            "Android user $managedId is recorded, but this app cannot switch to it yet.",
                             ink
                         ))
+                        column.addView(text(ProfileWorkApps.removeByHandMessage(), ink))
                     }
                 }
             }
@@ -197,13 +217,75 @@ class ProfileStatusActivity : AppCompatActivity() {
         setOnClickListener { action() }
     }
 
+    private fun deliver(user: UserHandle, target: Class<*>, preferMain: Boolean) {
+        val controller = ManagedProfileController(this)
+        when (controller.openComponent(user, this, target, preferMain)) {
+            ManagedProfileController.ProfileOpen.STARTED -> toast(
+                "Opening the work profile. After Blackbox loads there, check the Work tab for Play Store."
+            )
+            ManagedProfileController.ProfileOpen.NEED_CONSENT -> {
+                val consent = controller.consentIntent()
+                if (consent == null) {
+                    toast(ProfileWorkApps.removeByHandMessage())
+                    return
+                }
+                pendingUser = user
+                pendingTarget = target
+                pendingMain = preferMain
+                acrossProfilesConsent.launch(consent)
+            }
+            ManagedProfileController.ProfileOpen.FAILED -> {
+                if (target == InstallInProfileActivity::class.java) {
+                    deliver(user, top.niunaijun.blackboxa.view.main.WelcomeActivity::class.java, true)
+                } else {
+                    toast(ProfileWorkApps.removeByHandMessage())
+                }
+            }
+        }
+    }
+
+    private fun confirmRemove(user: UserHandle?) {
+        AlertDialog.Builder(this)
+            .setTitle("Remove the work profile?")
+            .setMessage(
+                "This deletes Android user ${user?.let { ManagedProfileController(this).userIdOf(it) } ?: "the work profile"} " +
+                    "and the apps inside it. Blackbox on the personal side stays."
+            )
+            .setPositiveButton("Remove") { _, _ ->
+                if (ManagedProfileController(this).isProfileOwner()) {
+                    if (!ManagedProfileFinalizer.wipeIfOwner(this)) {
+                        toast("Android did not remove the work profile.")
+                    }
+                } else if (user != null) {
+                    when (ManagedProfileController(this).openComponent(
+                        user, this, RemoveManagedProfileActivity::class.java, false
+                    )) {
+                        ManagedProfileController.ProfileOpen.STARTED ->
+                            toast("Confirm the removal inside the work profile.")
+                        ManagedProfileController.ProfileOpen.NEED_CONSENT -> {
+                            pendingUser = user
+                            pendingTarget = RemoveManagedProfileActivity::class.java
+                            pendingMain = false
+                            val consent = ManagedProfileController(this).consentIntent()
+                            if (consent != null) acrossProfilesConsent.launch(consent)
+                            else toast(ProfileWorkApps.removeByHandMessage())
+                        }
+                        ManagedProfileController.ProfileOpen.FAILED ->
+                            toast(ProfileWorkApps.removeByHandMessage())
+                    }
+                } else {
+                    toast(ProfileWorkApps.removeByHandMessage())
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun toast(message: String) {
         android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
     }
 
     companion object {
-        private const val SHIELD_PROXY = "com.privacyshield.proxy"
-
         fun readableTextColor(activity: Activity): Int {
             val themeText = themeTextColor(activity)
             val background = ContextCompat.getColor(activity, R.color.blackbox_background)

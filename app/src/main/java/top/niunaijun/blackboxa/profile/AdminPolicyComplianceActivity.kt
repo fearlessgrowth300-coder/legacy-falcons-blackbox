@@ -10,7 +10,7 @@ import android.os.Bundle
 class AdminPolicyComplianceActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        BlackBoxDeviceAdminReceiver.enableProfile(this)
+        ManagedProfileFinalizer.finalizeIfOwner(this)
         setResult(RESULT_OK)
         finish()
     }

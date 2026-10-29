@@ -80,6 +80,10 @@ jobs:
             Bcore/src/main/java/top/niunaijun/blackbox/core/ProfileStatusCopy.java \
             tools/diagnostics/ProfileStatusCopyTest.java
           java -cp build/diagnostic-tests ProfileStatusCopyTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/ProfileWorkApps.java \
+            tools/diagnostics/ProfileWorkAppsTest.java
+          java -cp build/diagnostic-tests ProfileWorkAppsTest
           node --test tools/diagnostics/request-summary.test.mjs
           node --check tools/diagnostics/capture-webview.mjs
 

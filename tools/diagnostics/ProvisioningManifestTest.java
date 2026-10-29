@@ -38,7 +38,33 @@ public final class ProvisioningManifestTest {
                 ".profile.GetProvisioningModeActivity");
         assertHandler(application, "android.app.action.ADMIN_POLICY_COMPLIANCE",
                 ".profile.AdminPolicyComplianceActivity");
+        assertHandler(application, "android.app.action.PROVISIONING_SUCCESSFUL",
+                ".profile.ProvisioningSuccessfulActivity");
         assertAdminReceiver(application);
+
+        String compliance = Files.readString(
+                root.resolve("app/src/main/java/top/niunaijun/blackboxa/profile/AdminPolicyComplianceActivity.kt"),
+                StandardCharsets.UTF_8);
+        check(compliance.contains("RESULT_OK") && compliance.contains("finalizeIfOwner"),
+                "policy compliance finalizes and returns RESULT_OK");
+        String successful = Files.readString(
+                root.resolve("app/src/main/java/top/niunaijun/blackboxa/profile/ProvisioningSuccessfulActivity.kt"),
+                StandardCharsets.UTF_8);
+        check(successful.contains("RESULT_OK") && successful.contains("finalizeIfOwner"),
+                "provisioning success finalizes and returns RESULT_OK");
+        String finalizer = Files.readString(
+                root.resolve("app/src/main/java/top/niunaijun/blackboxa/profile/ManagedProfileFinalizer.kt"),
+                StandardCharsets.UTF_8);
+        check(finalizer.contains("setProfileEnabled") && finalizer.contains("setProfileName"),
+                "finalizer enables and names the profile");
+        check(finalizer.contains("enableSystemApp") && finalizer.contains("setApplicationHidden"),
+                "finalizer enables system apps and unhides Blackbox");
+        check(finalizer.contains("addCrossProfileIntentFilter"),
+                "finalizer adds cross-profile intent filters");
+        check(finalizer.contains("PROFILE_PROVISIONING_COMPLETE") || Files.readString(
+                root.resolve("app/src/main/java/top/niunaijun/blackboxa/profile/BlackBoxDeviceAdminReceiver.kt"),
+                StandardCharsets.UTF_8).contains("finalizeIfOwner"),
+                "the provisioning-complete receiver finalizes");
 
         String controller = Files.readString(
                 root.resolve("app/src/main/java/top/niunaijun/blackboxa/profile/ManagedProfileController.kt"),
