@@ -1,9 +1,21 @@
 LOCAL_PATH := $(call my-dir)
 
+# The vendored Dobby static library is ARM only. x86_64 emulator images still need
+# libblackbox.so to load, so that ABI gets a passthrough DobbyHook: the original
+# function keeps running and the process does not die in the loader. Inline native
+# hooks are therefore not active on x86_64; the Java hook layer is what the emulator
+# matrix exercises.
+ifeq ($(TARGET_ARCH_ABI),x86_64)
+include $(CLEAR_VARS)
+LOCAL_MODULE := libdobby
+LOCAL_SRC_FILES := Dobby/x86_64/dobby_stub.c
+include $(BUILD_STATIC_LIBRARY)
+else
 include $(CLEAR_VARS)
 LOCAL_MODULE := libdobby
 LOCAL_SRC_FILES := Dobby/$(TARGET_ARCH_ABI)/libdobby.a
 include $(PREBUILT_STATIC_LIBRARY)
+endif
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := xdl
@@ -50,7 +62,9 @@ LOCAL_C_INCLUDES += $(LOCAL_PATH)
 LOCAL_CFLAGS += -Wno-error=format-security -fvisibility=hidden -ffunction-sections -fdata-sections -w -std=c++17
 LOCAL_CPPFLAGS += -Wno-error=format-security -fvisibility=hidden -ffunction-sections -fdata-sections -w -Werror -fms-extensions
 LOCAL_LDFLAGS += -Wl,--gc-sections,--strip-all,-z,max-page-size=16384
+ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
 LOCAL_ARM_MODE := arm
+endif
 
 LOCAL_CPP_FEATURES := exceptions
 LOCAL_STATIC_LIBRARIES := libdobby xdl
