@@ -106,7 +106,8 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
         } catch (Throwable ignored) {
         }
         if (top.niunaijun.blackbox.core.PineRuntime.hooksCrashThisRuntime(
-                android.os.Build.VERSION.SDK_INT, page)) {
+                android.os.Build.VERSION.SDK_INT, page)
+                || !top.niunaijun.blackbox.core.PineRuntime.nativeLibraryLoads()) {
             Log.w(TAG, getClass().getSimpleName()
                     + " class hooks skipped; Pine is unsafe on this runtime");
             return;

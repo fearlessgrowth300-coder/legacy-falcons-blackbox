@@ -194,11 +194,51 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 }
                 return packageInfo;
             }
-            if (AppSystemEnv.isOpenPackage(packageName)) {
-                return method.invoke(who, args);
+            if (AppSystemEnv.isOpenPackage(packageName) || isWebViewProvider(packageName)) {
+                try {
+                    Object result = method.invoke(who, args);
+                    if (result != null) return result;
+                } catch (Throwable error) {
+                    Slog.w(TAG, "host package lookup failed for " + packageName);
+                }
+                if (isWebViewProvider(packageName)) {
+                    Object fallback = installedWebViewProvider(who, method, args);
+                    if (fallback != null) return fallback;
+                }
             }
             return null;
         }
+    }
+
+    private static final String[] WEBVIEW_PROVIDERS = new String[] {
+            "com.google.android.webview",
+            "com.android.webview",
+            "com.android.chrome",
+            "com.chrome.beta",
+            "com.google.android.webview.beta",
+            "com.huawei.webview"
+    };
+
+    private static boolean isWebViewProvider(String packageName) {
+        if (packageName == null) return false;
+        for (String candidate : WEBVIEW_PROVIDERS) {
+            if (candidate.equals(packageName)) return true;
+        }
+        return false;
+    }
+
+    /** The image's configured provider is often absent. Any installed provider can load. */
+    private static Object installedWebViewProvider(Object who, Method method, Object[] args) {
+        for (String candidate : WEBVIEW_PROVIDERS) {
+            Object[] copy = args.clone();
+            copy[0] = candidate;
+            try {
+                Object result = method.invoke(who, copy);
+                if (result != null) return result;
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
     }
 
     @ProxyMethod("getPackageUid")
@@ -397,8 +437,17 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             if (applicationInfo != null) {
                 return applicationInfo;
             }
-            if (AppSystemEnv.isOpenPackage(packageName)) {
-                return method.invoke(who, args);
+            if (AppSystemEnv.isOpenPackage(packageName) || isWebViewProvider(packageName)) {
+                try {
+                    Object result = method.invoke(who, args);
+                    if (result != null) return result;
+                } catch (Throwable error) {
+                    Slog.w(TAG, "host application lookup failed for " + packageName);
+                }
+                if (isWebViewProvider(packageName)) {
+                    Object fallback = installedWebViewProvider(who, method, args);
+                    if (fallback != null) return fallback;
+                }
             }
             return null;
         }

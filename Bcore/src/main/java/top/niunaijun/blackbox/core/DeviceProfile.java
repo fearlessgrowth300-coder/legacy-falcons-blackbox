@@ -280,6 +280,13 @@ public class DeviceProfile {
         return p;
     }
 
+    /** Pine 0.3.0 ships ARM natives only. A missing library must not be retried per method. */
+    private static boolean pineNativeAvailable() {
+        boolean available = PineRuntime.nativeLibraryLoads();
+        if (!available) Slog.w(TAG, "Pine native library unavailable");
+        return available;
+    }
+
     private static long pageSize() {
         try {
             return android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE);
@@ -345,7 +352,8 @@ public class DeviceProfile {
     private void hookGaid() {
         final String id = gaid;
         if (id == null) return;
-        if (PineRuntime.hooksCrashThisRuntime(android.os.Build.VERSION.SDK_INT, pageSize())) return;
+        if (PineRuntime.hooksCrashThisRuntime(android.os.Build.VERSION.SDK_INT, pageSize())
+                || !pineNativeAvailable()) return;
         final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
         h.postDelayed(new Runnable() {
             int tries = 0;
@@ -535,7 +543,8 @@ public class DeviceProfile {
         // served by the settings provider instead, and the advertising-id binder is
         // already swapped without Pine. Sensor and Widevine calibration degrade rather
         // than taking the process down.
-        if (PineRuntime.hooksCrashThisRuntime(android.os.Build.VERSION.SDK_INT, pageSize())) {
+        if (PineRuntime.hooksCrashThisRuntime(android.os.Build.VERSION.SDK_INT, pageSize())
+                || !pineNativeAvailable()) {
             sensorIsolationActive = false;
             Slog.w(TAG, "Skipping Pine identity hooks on API "
                     + android.os.Build.VERSION.SDK_INT

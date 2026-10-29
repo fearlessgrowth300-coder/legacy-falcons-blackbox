@@ -23,6 +23,11 @@ public class AppSystemEnv {
         sSystemPackages.add("com.google.android.webview.beta");
         sSystemPackages.add("com.google.android.webview.canary");
         sSystemPackages.add("com.android.webview");
+        // API 26 google_apis images publish the WebView provider as Chrome.
+        sSystemPackages.add("com.android.chrome");
+        sSystemPackages.add("com.chrome.beta");
+        sSystemPackages.add("com.chrome.dev");
+        sSystemPackages.add("com.chrome.canary");
         sSystemPackages.add("com.android.camera");
         sSystemPackages.add("com.android.talkback");
         sSystemPackages.add("com.miui.gallery");

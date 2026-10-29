@@ -31,7 +31,10 @@ public class ProxyActivity extends Activity {
 
         ProxyActivityRecord record = ProxyActivityRecord.create(getIntent());
         if (record.mTarget != null) {
-            record.mTarget.setExtrasClassLoader(BlackBoxCore.getApplication().getClassLoader());
+            android.app.Application guest = BlackBoxCore.getApplication();
+            if (guest != null) {
+                record.mTarget.setExtrasClassLoader(guest.getClassLoader());
+            }
             startActivity(record.mTarget);
             return;
         }

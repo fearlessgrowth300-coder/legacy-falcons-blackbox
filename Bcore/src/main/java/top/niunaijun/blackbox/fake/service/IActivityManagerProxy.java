@@ -886,6 +886,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             if (args == null) return null;
             try {
+                alignForegroundChannel(args);
                 remapForegroundToHostService(args);
                 // The type argument exists from API 29, but specialUse and the strict check
                 // arrive at API 34. Older platforms keep the guest's own type.
@@ -911,6 +912,67 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 } catch (Throwable ignored) {
                 }
                 return null;
+            }
+        }
+
+        /**
+         * The guest channel is stored on the host under a per-clone id. startForeground
+         * posts the notification directly, so the id has to be rewritten or system_server
+         * rejects it as a bad foreground notification and kills the guest.
+         */
+        private static void alignForegroundChannel(Object[] args) {
+            if (android.os.Build.VERSION.SDK_INT < 26) return;
+            android.app.Notification notification = null;
+            for (Object arg : args) {
+                if (arg instanceof android.app.Notification) {
+                    notification = (android.app.Notification) arg;
+                    break;
+                }
+            }
+            if (notification == null) return;
+            String channelId = notification.getChannelId();
+            String pkg = BActivityThread.getAppPackageName();
+            int userId = BActivityThread.getUserId();
+            String hostChannel = channelId;
+            if (channelId != null && !channelId.isEmpty() && pkg != null && !pkg.isEmpty() && userId >= 0) {
+                top.niunaijun.blackbox.core.system.notification.NotificationNamespace scope =
+                        new top.niunaijun.blackbox.core.system.notification.NotificationNamespace(pkg, userId);
+                if (!scope.ownsChannel(channelId)) {
+                    hostChannel = scope.hostChannel(channelId);
+                    try {
+                        // Register the namespaced channel on the real manager. The earlier
+                        // create from the guest may have run before the process record existed.
+                        android.app.NotificationChannel channel = new android.app.NotificationChannel(
+                                channelId, channelId, android.app.NotificationManager.IMPORTANCE_LOW);
+                        top.niunaijun.blackbox.fake.frameworks.BNotificationManager.get()
+                                .createNotificationChannel(channel);
+                    } catch (Throwable error) {
+                        Slog.w(TAG, "foreground channel create failed: " + error.getClass().getSimpleName());
+                    }
+                }
+            }
+            // The guest Icon carries the clone package name. system_server looks that package
+            // up on the host and kills the process with "Couldn't create icon".
+            android.app.Notification posted = notification;
+            try {
+                android.content.Context host = BlackBoxCore.getContext();
+                if (host != null && android.os.Build.VERSION.SDK_INT >= 24) {
+                    android.app.Notification.Builder builder =
+                            android.app.Notification.Builder.recoverBuilder(host, notification);
+                    builder.setSmallIcon(android.R.drawable.stat_notify_sync);
+                    if (hostChannel != null && android.os.Build.VERSION.SDK_INT >= 26) {
+                        builder.setChannelId(hostChannel);
+                    }
+                    posted = builder.build();
+                }
+            } catch (Throwable error) {
+                Slog.w(TAG, "foreground notification rebuild failed: " + error.getClass().getSimpleName());
+            }
+            for (int i = 0; i < args.length; i++) {
+                if (args[i] instanceof android.app.Notification) {
+                    args[i] = posted;
+                    break;
+                }
             }
         }
 

@@ -81,6 +81,8 @@ public class BlackBoxCore extends ClientConfiguration {
     public static final String TAG = "BlackBoxCore";
 
     private static final BlackBoxCore sBlackBoxCore = new BlackBoxCore();
+    private static final java.util.concurrent.CountDownLatch sGuestHooks =
+            new java.util.concurrent.CountDownLatch(1);
     private static Context sContext;
     
     
@@ -808,8 +810,14 @@ public class BlackBoxCore extends ClientConfiguration {
         if (isMainProcess() && !isBlackProcessRunning()) {
             Slog.w(TAG, "Ensuring black process is initialized...");
             startBlackProcess();
-            
-            
+            // bindApplication runs on the main thread. Sleeping here for the server
+            // process is what ActivityManager reports as "failed to complete startup"
+            // once the device is busy. Callers that need the binder already wait.
+            if (android.os.Looper.getMainLooper().isCurrentThread()) {
+                Slog.d(TAG, "Leaving server-process startup off the main thread");
+                return;
+            }
+
             int maxRetries = 5;
             int retryCount = 0;
             while (retryCount < maxRetries && !isBlackProcessRunning()) {
@@ -966,8 +974,38 @@ public class BlackBoxCore extends ClientConfiguration {
         
         
         initVpnService();
-        
-        HookManager.get().init();
+
+        // Guest processes are the ones whose system calls must be redirected.
+        // Installing that set on the main thread keeps bindApplication from
+        // publishing the proxy provider, and ActivityManager then kills the
+        // process ("timeout publishing content providers"). The guest's
+        // initProcess waits for the same latch before any app code runs.
+        if (isBlackProcess()) {
+            Thread hooks = new Thread(() -> {
+                try {
+                    HookManager.get().init();
+                } catch (Throwable error) {
+                    Slog.w(TAG, "guest hook init failed: " + error.getClass().getSimpleName());
+                } finally {
+                    sGuestHooks.countDown();
+                }
+            }, "GuestHookInit");
+            hooks.setDaemon(true);
+            hooks.start();
+        } else {
+            sGuestHooks.countDown();
+        }
+    }
+
+    /** Blocks until guest service hooks have been installed, or 20s have passed. */
+    public void awaitGuestHooks() {
+        try {
+            if (!sGuestHooks.await(20, java.util.concurrent.TimeUnit.SECONDS)) {
+                Slog.w(TAG, "guest hooks were still installing after 20s");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     public void doCreate() {

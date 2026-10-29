@@ -37,3 +37,5 @@ include ':app'
 include(":black-reflection")
 include(":compiler")
 include ':Bcore'
+include ':samples:guest-webview'
+include ':samples:guest-foreground'

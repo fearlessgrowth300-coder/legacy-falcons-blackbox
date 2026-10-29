@@ -133,7 +133,17 @@ public class BPackage implements Parcelable {
         this.mVersionCode = aPackage.mVersionCode;
         this.applicationInfo = aPackage.applicationInfo;
         this.mVersionName = aPackage.mVersionName;
-        this.baseCodePath = aPackage.baseCodePath;
+        // API 28's PackageParser.Package has no String baseCodePath. The public
+        // ApplicationInfo path is the same file the installer copied.
+        String codePath = null;
+        try {
+            codePath = aPackage.baseCodePath;
+        } catch (Throwable ignored) {
+        }
+        if ((codePath == null || codePath.isEmpty()) && aPackage.applicationInfo != null) {
+            codePath = aPackage.applicationInfo.sourceDir;
+        }
+        this.baseCodePath = codePath;
         this.mSharedUserLabel = aPackage.mSharedUserLabel;
         this.configPreferences = aPackage.configPreferences;
         this.reqFeatures = aPackage.reqFeatures;
@@ -444,11 +454,16 @@ public class BPackage implements Parcelable {
         }
 
         public SigningDetails(PackageParser.SigningDetails signingDetails) {
-            if (signingDetails.pastSigningCertificates == null) {
-                this.signatures = signingDetails.signatures;
-            } else {
-                this.signatures = signingDetails.pastSigningCertificates;
+            // pastSigningCertificates arrived in API 29. The getfield throws
+            // NoSuchFieldError on API 26-28 and used to abort the install while
+            // still reporting success.
+            Signature[] history = null;
+            try {
+                history = signingDetails.pastSigningCertificates;
+            } catch (Throwable ignored) {
             }
+            this.signatures = (history != null && history.length > 0)
+                    ? history : signingDetails.signatures;
         }
 
         protected SigningDetails(Parcel in) {
