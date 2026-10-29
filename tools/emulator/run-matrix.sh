@@ -109,7 +109,7 @@ START_MS="$(date +%s%3N)"
 for _start_try in 1 2 3 4 5 6 7 8 9 10; do
   "${ADB[@]}" shell am start -n top.niunaijun.blackbox/top.niunaijun.blackboxa.view.main.WelcomeActivity \
     > "${LOG_DIR}/am-start.txt" 2>&1 || true
-  if ! grep -q "Can't find service" "${LOG_DIR}/am-start.txt"; then
+  if ! grep -Eq "Can't find service|does not exist|^Error" "${LOG_DIR}/am-start.txt"; then
     break
   fi
   sleep 3
