@@ -4,6 +4,19 @@ set -euo pipefail
 
 API_LEVEL="${1:?api level}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# The emulator binary is installed by android-emulator-runner before this script.
+# Re-check here so the soak log itself records whether KVM is usable.
+EMULATOR_BIN="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}/emulator/emulator"
+if [[ -x "${EMULATOR_BIN}" ]]; then
+  echo "---- emulator -accel-check ----"
+  "${EMULATOR_BIN}" -accel-check || true
+fi
+if [[ -r /dev/kvm && -w /dev/kvm ]]; then
+  echo "KVM hardware acceleration is available"
+else
+  echo "KVM hardware acceleration is NOT available" >&2
+  exit 1
+fi
 LOG_DIR="${ROOT}/emulator-logs/api-${API_LEVEL}"
 mkdir -p "${LOG_DIR}"
 ADB=(adb)
