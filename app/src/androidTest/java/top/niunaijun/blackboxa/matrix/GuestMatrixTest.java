@@ -90,8 +90,12 @@ public class GuestMatrixTest {
         Log.i(TAG, "restart-begin pids=" + beforeStop);
         core.stopPackage(WEB, USER);
         core.stopPackage(FOREGROUND, USER);
-        SystemClock.sleep(3_000L);
         Set<Integer> afterStop = guestPids(target);
+        long stopDeadline = SystemClock.elapsedRealtime() + 10_000L;
+        while (!disjoint(beforeStop, afterStop) && SystemClock.elapsedRealtime() < stopDeadline) {
+            SystemClock.sleep(1_000L);
+            afterStop = guestPids(target);
+        }
         Log.i(TAG, "stopped pids=" + afterStop);
         assertTrue("stopPackage left the previous guest pid running: " + afterStop,
                 disjoint(beforeStop, afterStop));

@@ -105,8 +105,15 @@ LOGCAT_PID=$!
 "${ADB[@]}" shell am force-stop top.niunaijun.blackbox || true
 sleep 1
 START_MS="$(date +%s%3N)"
-"${ADB[@]}" shell am start -n top.niunaijun.blackbox/top.niunaijun.blackboxa.view.main.WelcomeActivity \
-  > "${LOG_DIR}/am-start.txt" 2>&1 || true
+# API 36 can report boot_completed while the activity service is still down.
+for _start_try in 1 2 3 4 5 6 7 8 9 10; do
+  "${ADB[@]}" shell am start -n top.niunaijun.blackbox/top.niunaijun.blackboxa.view.main.WelcomeActivity \
+    > "${LOG_DIR}/am-start.txt" 2>&1 || true
+  if ! grep -q "Can't find service" "${LOG_DIR}/am-start.txt"; then
+    break
+  fi
+  sleep 3
+done
 LIMIT_MS="$(python3 -c "import sys; sys.path.insert(0, '${ROOT}/tools/emulator'); from analyze_matrix import start_limit_ms; print(start_limit_ms(${API_LEVEL}))")"
 # pidof flickers while system_server is wedged: one sighting then an empty
 # reply is not a crash. Require the process to be visible three times in a row.

@@ -886,6 +886,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             if (args == null) return null;
             try {
+                alignForegroundChannel(args);
                 remapForegroundToHostService(args);
                 // The type argument exists from API 29, but specialUse and the strict check
                 // arrive at API 34. Older platforms keep the guest's own type.
@@ -911,6 +912,36 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 } catch (Throwable ignored) {
                 }
                 return null;
+            }
+        }
+
+        /**
+         * The guest channel is stored on the host under a per-clone id. startForeground
+         * posts the notification directly, so the id has to be rewritten or system_server
+         * rejects it as a bad foreground notification and kills the guest.
+         */
+        private static void alignForegroundChannel(Object[] args) {
+            if (android.os.Build.VERSION.SDK_INT < 26) return;
+            android.app.Notification notification = null;
+            for (Object arg : args) {
+                if (arg instanceof android.app.Notification) {
+                    notification = (android.app.Notification) arg;
+                    break;
+                }
+            }
+            if (notification == null) return;
+            String channelId = notification.getChannelId();
+            if (channelId == null || channelId.isEmpty()) return;
+            String pkg = BActivityThread.getAppPackageName();
+            int userId = BActivityThread.getUserId();
+            if (pkg == null || pkg.isEmpty() || userId < 0) return;
+            top.niunaijun.blackbox.core.system.notification.NotificationNamespace scope =
+                    new top.niunaijun.blackbox.core.system.notification.NotificationNamespace(pkg, userId);
+            if (scope.ownsChannel(channelId)) return;
+            try {
+                black.android.app.BRNotificationO.get(notification)._set_mChannelId(scope.hostChannel(channelId));
+            } catch (Throwable error) {
+                Slog.w(TAG, "foreground channel rewrite failed: " + error.getClass().getSimpleName());
             }
         }
 

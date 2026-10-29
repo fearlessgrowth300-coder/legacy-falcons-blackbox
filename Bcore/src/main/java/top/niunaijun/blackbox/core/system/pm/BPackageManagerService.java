@@ -786,6 +786,11 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
                 aPackage.applicationInfo = installedApplicationInfo;
             }
             BPackageSettings bPackageSettings = mSettings.getPackageLPw(aPackage.packageName, aPackage, option);
+            // API 28 hides Package.baseCodePath (dark greylist). The file we were asked
+            // to install is the path the copy step has to read.
+            if (bPackageSettings.pkg.baseCodePath == null || bPackageSettings.pkg.baseCodePath.isEmpty()) {
+                bPackageSettings.pkg.baseCodePath = apkFile.getAbsolutePath();
+            }
 
             
             BProcessManagerService.get().killPackageAsUser(aPackage.packageName, userId);
