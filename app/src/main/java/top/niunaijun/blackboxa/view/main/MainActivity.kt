@@ -65,6 +65,15 @@ class MainActivity : LoadingActivity() {
             } else if (!DriveFolderStore.isConnected(this)) showDriveRequired()
         }
 
+    private val managedProfileProvisioning =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == RESULT_OK) {
+                startActivity(Intent(this, top.niunaijun.blackboxa.profile.ProfileStatusActivity::class.java))
+            } else {
+                toast("Android did not create the separate profile")
+            }
+        }
+
     private val accountSettingsLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode != RESULT_OK) return@registerForActivityResult
@@ -528,7 +537,7 @@ class MainActivity : LoadingActivity() {
             )
             .setPositiveButton("Continue") { _, _ ->
                 try {
-                    startActivity(controller.provisionIntent())
+                    managedProfileProvisioning.launch(controller.provisionIntent())
                 } catch (error: Throwable) {
                     toast("Android did not open profile setup")
                 }

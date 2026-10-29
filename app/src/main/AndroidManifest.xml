@@ -61,6 +61,33 @@
                 <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
             </intent-filter>
         </receiver>
+        <!--
+            Android 12+ rejects a DPC that does not export both of these.
+            The component permission replaces the application INTERNAL permission.
+            ManagedProvisioning holds BIND_DEVICE_ADMIN and adds CATEGORY_DEFAULT.
+        -->
+        <activity
+            android:name=".profile.GetProvisioningModeActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.app.action.GET_PROVISIONING_MODE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".profile.AdminPolicyComplianceActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.app.action.ADMIN_POLICY_COMPLIANCE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
         <activity
             android:name=".profile.ProfileStatusActivity"
             android:exported="true"

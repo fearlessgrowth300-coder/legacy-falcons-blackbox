@@ -52,8 +52,15 @@ class ManagedProfileController(private val context: Context) {
         )
     }
 
+    /**
+     * Must be launched with a result contract. ManagedProvisioning reads
+     * {@code getCallingPackage()} and shows "Can't set up device" when that is null.
+     * The component-name extra is required. The deprecated package-name extra is omitted.
+     * Skip-encryption is the flag Samsung One UI needs on an already-encrypted phone.
+     * Offline is set on API 33+ so a role-holder download is not required to continue.
+     */
     fun provisionIntent(): Intent {
-        return Intent(DevicePolicyManager.ACTION_PROVISION_MANAGED_PROFILE)
+        val intent = Intent(DevicePolicyManager.ACTION_PROVISION_MANAGED_PROFILE)
             .putExtra(
                 DevicePolicyManager.EXTRA_PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME,
                 BlackBoxDeviceAdminReceiver.component(context)
@@ -64,6 +71,10 @@ class ManagedProfileController(private val context: Context) {
                 "Blackbox uses this Android profile so the second account has its own Linux user, " +
                     "data directory, Android ID, keystore, and accounts."
             )
+        if (Build.VERSION.SDK_INT >= 33) {
+            intent.putExtra(DevicePolicyManager.EXTRA_PROVISIONING_ALLOW_OFFLINE, true)
+        }
+        return intent
     }
 
     fun launchStatusIn(user: UserHandle): Boolean = launch(user, ProfileStatusActivity::class.java.name)

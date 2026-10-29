@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Profile owner only. watch-login keeps the policy list non-empty for OEM parsers.
+     No wipe, camera, or password-reset policy is requested. -->
 <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-policies>
         <watch-login />

@@ -72,6 +72,10 @@ jobs:
             Bcore/src/main/java/top/niunaijun/blackbox/core/PlayProcessPolicy.java \
             tools/diagnostics/ManagedProfilePolicyTest.java
           java -cp build/diagnostic-tests ManagedProfilePolicyTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/ProvisioningModeChoice.java \
+            tools/diagnostics/ProvisioningManifestTest.java
+          java -cp build/diagnostic-tests ProvisioningManifestTest
           node --test tools/diagnostics/request-summary.test.mjs
           node --check tools/diagnostics/capture-webview.mjs
 

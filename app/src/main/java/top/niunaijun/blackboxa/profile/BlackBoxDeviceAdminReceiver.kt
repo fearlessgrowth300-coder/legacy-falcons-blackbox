@@ -10,19 +10,7 @@ import android.util.Log
 /** Profile owner for the separate Android user. It does not become device owner. */
 class BlackBoxDeviceAdminReceiver : DeviceAdminReceiver() {
     override fun onProfileProvisioningComplete(context: Context, intent: Intent) {
-        val admin = ComponentName(context, BlackBoxDeviceAdminReceiver::class.java)
-        val manager = context.getSystemService(DevicePolicyManager::class.java)
-        try {
-            manager.setProfileName(admin, "Blackbox account B")
-        } catch (error: Throwable) {
-            Log.w(TAG, "profile name was not set: ${error.javaClass.simpleName}")
-        }
-        try {
-            manager.setProfileEnabled(admin)
-        } catch (error: Throwable) {
-            Log.e(TAG, "profile was not enabled", error)
-            return
-        }
+        enableProfile(context)
         try {
             context.startActivity(Intent(context, ProfileStatusActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -34,5 +22,21 @@ class BlackBoxDeviceAdminReceiver : DeviceAdminReceiver() {
     companion object {
         private const val TAG = "BlackBoxProfileOwner"
         fun component(context: Context) = ComponentName(context, BlackBoxDeviceAdminReceiver::class.java)
+
+        /** Name and enable the profile. Safe to call from both completion paths. */
+        fun enableProfile(context: Context) {
+            val admin = ComponentName(context, BlackBoxDeviceAdminReceiver::class.java)
+            val manager = context.getSystemService(DevicePolicyManager::class.java)
+            try {
+                manager.setProfileName(admin, "Blackbox account B")
+            } catch (error: Throwable) {
+                Log.w(TAG, "profile name was not set: ${error.javaClass.simpleName}")
+            }
+            try {
+                manager.setProfileEnabled(admin)
+            } catch (error: Throwable) {
+                Log.w(TAG, "profile was not enabled yet: ${error.javaClass.simpleName}")
+            }
+        }
     }
 }
