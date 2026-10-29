@@ -280,15 +280,11 @@ public class DeviceProfile {
         return p;
     }
 
-    /** Pine 0.3.0 ships ARM natives only. Loading it on x86_64 kills the process. */
+    /** Pine 0.3.0 ships ARM natives only. A missing library must not be retried per method. */
     private static boolean pineNativeAvailable() {
-        try {
-            System.loadLibrary("pine");
-            return true;
-        } catch (Throwable error) {
-            Slog.w(TAG, "Pine native library unavailable: " + error.getClass().getSimpleName());
-            return false;
-        }
+        boolean available = PineRuntime.nativeLibraryLoads();
+        if (!available) Slog.w(TAG, "Pine native library unavailable");
+        return available;
     }
 
     private static long pageSize() {

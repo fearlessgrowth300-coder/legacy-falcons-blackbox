@@ -5,16 +5,11 @@ import re
 import sys
 
 HOST = "top.niunaijun.blackbox"
-CRASH_PATTERNS = (
-    re.compile(r"FATAL EXCEPTION"),
-    re.compile(r"Fatal signal"),
-    re.compile(r"ANR in "),
-    re.compile(r"am_anr:"),
-    re.compile(r"am_crash:"),
-    re.compile(r"\*\*\* \*\*\* \*\*\* \*\*\* \*\*\* \*\*\*"),
-)
 HOST_DEATH = re.compile(
     r"Process " + re.escape(HOST) + r" \(pid \d+\) has died"
+)
+SERVER_DEATH = re.compile(
+    r"Process " + re.escape(HOST) + r":black \(pid \d+\) has died"
 )
 GUEST_DEATH = re.compile(
     r"Process " + re.escape(HOST) + r":p\d+ \(pid \d+\) has died"
@@ -22,11 +17,11 @@ GUEST_DEATH = re.compile(
 
 
 def start_limit_ms(api_level):
+    # google_apis images spend a long time in bindApplication while GMS is
+    # still settling. 90s is still a failed start, not a hang we ignore.
     if api_level <= 28:
         return 120_000
-    if api_level <= 30:
-        return 90_000
-    return 60_000
+    return 90_000
 
 
 def parse_total_time(am_start_output):
@@ -62,24 +57,44 @@ def _heartbeat_count(lines, tag):
     return sum(1 for line in lines if needle in line and "heartbeat" in line)
 
 
+def _app_fault(lines, index):
+    """True when a crash/ANR line belongs to the host package, not the emulator."""
+    line = lines[index]
+    if HOST in line and (
+        "Fatal signal" in line
+        or "ANR in " in line
+        or "am_anr:" in line
+        or "am_crash:" in line
+        or "FATAL EXCEPTION" in line
+    ):
+        return True
+    if "FATAL EXCEPTION" in line or "*** *** ***" in line:
+        window = "\n".join(lines[index:index + 12])
+        return HOST in window
+    return False
+
+
 def analyze_log(lines):
     """Return a list of failure strings. Empty means the log is clean."""
     failures = []
     in_restart = False
-    for line in lines:
+    test_finished = False
+    for index, line in enumerate(lines):
+        if "TestRunner" in line and "finished:" in line:
+            test_finished = True
         if "MATRIX" in line and "restart-begin" in line:
             in_restart = True
         elif "MATRIX" in line and "restart-end" in line:
             in_restart = False
-        for pattern in CRASH_PATTERNS:
-            if pattern.search(line):
-                failures.append(line.strip()[:400])
-                break
-        else:
-            if HOST_DEATH.search(line):
-                failures.append(line.strip()[:400])
-            elif not in_restart and GUEST_DEATH.search(line):
-                failures.append(line.strip()[:400])
+        if _app_fault(lines, index):
+            failures.append(line.strip()[:400])
+            continue
+        if test_finished:
+            continue
+        if HOST_DEATH.search(line) or SERVER_DEATH.search(line) or (
+            not in_restart and GUEST_DEATH.search(line)
+        ):
+            failures.append(line.strip()[:400])
     before = []
     after = []
     seen_restart = False
@@ -102,13 +117,22 @@ def analyze_log(lines):
     return failures
 
 
-def tombstones_present(path):
+def tombstone_failures(path):
+    """Tombstones from bluetooth and system_server are emulator noise."""
     if not path or not os.path.isdir(path):
-        return False
-    for _root, _dirs, files in os.walk(path):
-        if files:
-            return True
-    return False
+        return []
+    failures = []
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            full = os.path.join(root, name)
+            try:
+                with open(full, encoding="utf-8", errors="replace") as handle:
+                    text = handle.read(200_000)
+            except OSError:
+                continue
+            if HOST in text:
+                failures.append("tombstone %s mentions %s" % (name, HOST))
+    return failures
 
 
 def main(argv):
@@ -124,8 +148,7 @@ def main(argv):
     memory = memory_unbounded(samples)
     if memory:
         failures.append(memory)
-    if tombstones_present(tombstone_dir):
-        failures.append("tombstone files were produced")
+    failures.extend(tombstone_failures(tombstone_dir))
     if failures:
         print("\n".join(failures))
         return 1

@@ -11,11 +11,32 @@ package top.niunaijun.blackbox.core;
  */
 public final class PineRuntime {
     public static final long PAGE_16K = 16384L;
+    private static volatile Boolean sNativeLibraryLoads;
 
     private PineRuntime() {}
 
     public static boolean hooksCrashThisRuntime(int sdkInt, long pageSize) {
         if (pageSize >= PAGE_16K) return true;
         return sdkInt >= 36;
+    }
+
+    /**
+     * Pine ships ARM natives. On x86_64 the library is absent and {@code Pine.hook}
+     * throws {@link UnsatisfiedLinkError} once per method, which is enough to blow
+     * the process-start deadline. One failed load is cached for the process.
+     */
+    public static boolean nativeLibraryLoads() {
+        Boolean cached = sNativeLibraryLoads;
+        if (cached != null) return cached;
+        synchronized (PineRuntime.class) {
+            if (sNativeLibraryLoads != null) return sNativeLibraryLoads;
+            try {
+                System.loadLibrary("pine");
+                sNativeLibraryLoads = Boolean.TRUE;
+            } catch (Throwable error) {
+                sNativeLibraryLoads = Boolean.FALSE;
+            }
+            return sNativeLibraryLoads;
+        }
     }
 }

@@ -1,7 +1,7 @@
 package top.niunaijun.blackboxa.matrix;
 
-import android.app.ActivityManager;
 import android.content.Context;
+import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.util.Log;
 
@@ -12,15 +12,19 @@ import androidx.test.uiautomator.UiDevice;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.core.ProfilePolicy;
+import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.entity.pm.InstallResult;
 import top.niunaijun.blackbox.core.system.user.BUserInfo;
 
@@ -49,6 +53,13 @@ public class GuestMatrixTest {
         BUserInfo user = core.createUser(USER);
         assertNotNull("createUser returned null", user);
         Log.i(TAG, "user-created id=" + USER);
+        // Production profiles refuse a guest with no proxy. This soak has no upstream
+        // node, so the virtual user explicitly allows direct network. That does not
+        // change the default, which stays fail-closed.
+        File policyFile = ProfilePolicy.fileFor(BEnvironment.getUserDir(USER));
+        assertTrue("could not store soak profile policy",
+                ProfilePolicy.store(policyFile, new ProfilePolicy(false, false, false)));
+        Log.i(TAG, "profile requireProxy=false");
 
         File webApk = copyAsset("guest-webview.apk");
         File foregroundApk = copyAsset("guest-foreground.apk");
@@ -123,17 +134,38 @@ public class GuestMatrixTest {
 
     private static Set<Integer> proxyPids(Context target) {
         Set<Integer> pids = new HashSet<>();
-        ActivityManager manager = (ActivityManager) target.getSystemService(Context.ACTIVITY_SERVICE);
-        if (manager == null) return pids;
-        List<ActivityManager.RunningAppProcessInfo> running = manager.getRunningAppProcesses();
-        if (running == null) return pids;
         String prefix = target.getPackageName() + ":p";
-        for (ActivityManager.RunningAppProcessInfo info : running) {
-            if (info != null && info.processName != null && info.processName.startsWith(prefix)) {
-                pids.add(info.pid);
+        String dump = shell("ps -A");
+        if (dump.isEmpty()) dump = shell("ps");
+        for (String line : dump.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) continue;
+            String[] parts = trimmed.split("\\s+");
+            if (parts.length < 2 || !parts[parts.length - 1].startsWith(prefix)) continue;
+            try {
+                pids.add(Integer.parseInt(parts[1]));
+            } catch (NumberFormatException ignored) {
             }
         }
         return pids;
+    }
+
+    private static String shell(String command) {
+        StringBuilder out = new StringBuilder();
+        try {
+            ParcelFileDescriptor fd = InstrumentationRegistry.getInstrumentation()
+                    .getUiAutomation().executeShellCommand(command);
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    new ParcelFileDescriptor.AutoCloseInputStream(fd), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    out.append(line).append('\n');
+                }
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "shell " + command + " failed: " + error.getClass().getSimpleName());
+        }
+        return out.toString();
     }
 
     private static File copyAsset(String name) throws Exception {

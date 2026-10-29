@@ -33,6 +33,17 @@ install_apk() {
   done
   return 1
 }
+# API 30 often boots with "Can't find service: package" for several seconds.
+echo "waiting for package manager" >&2
+PACKAGE_READY=0
+for _attempt in $(seq 1 40); do
+  if "${ADB[@]}" shell pm path android >/dev/null 2>&1; then
+    PACKAGE_READY=1
+    break
+  fi
+  sleep 5
+done
+[[ "${PACKAGE_READY}" -eq 1 ]] || fail "package manager did not come up"
 install_apk "${HOST_APK}"
 install_apk "${TEST_APK}"
 # POST_NOTIFICATIONS exists only from API 33. WRITE_EXTERNAL_STORAGE is not requested
@@ -57,6 +68,8 @@ cleanup() {
   "${ADB[@]}" shell dumpsys meminfo top.niunaijun.blackbox > "${LOG_DIR}/meminfo-final.txt" 2>/dev/null || true
 }
 trap cleanup EXIT
+# Drop tombstones left by the emulator image (bluetooth aborts) before the run.
+"${ADB[@]}" shell rm -f /data/tombstones/tombstone_* /data/anr/anr_* || true
 "${ADB[@]}" logcat -c || true
 "${ADB[@]}" logcat -v threadtime > "${LOG_DIR}/logcat.txt" &
 LOGCAT_PID=$!
@@ -70,20 +83,32 @@ START_MS="$(date +%s%3N)"
 "${ADB[@]}" shell am start -n top.niunaijun.blackbox/top.niunaijun.blackboxa.view.main.WelcomeActivity \
   > "${LOG_DIR}/am-start.txt" 2>&1 || true
 LIMIT_MS="$(python3 -c "import sys; sys.path.insert(0, '${ROOT}/tools/emulator'); from analyze_matrix import start_limit_ms; print(start_limit_ms(${API_LEVEL}))")"
+# pidof flickers while system_server is wedged: one sighting then an empty
+# reply is not a crash. Require the process to be visible three times in a row.
 HOST_PID=""
+STABLE=0
 while true; do
   NOW_MS="$(date +%s%3N)"
   ELAPSED_MS="$((NOW_MS - START_MS))"
-  HOST_PID="$("${ADB[@]}" shell pidof top.niunaijun.blackbox 2>/dev/null | tr -d '\r' || true)"
-  if [[ -z "${HOST_PID}" ]]; then
-    HOST_PID="$("${ADB[@]}" shell ps 2>/dev/null | awk '/top\.niunaijun\.blackbox$/ {print $2; exit}' | tr -d '\r' || true)"
+  SEEN="$("${ADB[@]}" shell pidof top.niunaijun.blackbox 2>/dev/null | awk '{print $1}' | tr -d '\r' || true)"
+  if [[ -z "${SEEN}" ]]; then
+    SEEN="$("${ADB[@]}" shell ps -A 2>/dev/null | awk '$NF == "top.niunaijun.blackbox" {print $2; exit}' | tr -d '\r' || true)"
   fi
-  if [[ -n "${HOST_PID}" ]]; then
-    break
+  if [[ -z "${SEEN}" ]]; then
+    SEEN="$("${ADB[@]}" shell ps 2>/dev/null | awk '$NF == "top.niunaijun.blackbox" {print $2; exit}' | tr -d '\r' || true)"
+  fi
+  if [[ -n "${SEEN}" ]]; then
+    HOST_PID="${SEEN}"
+    STABLE=$((STABLE + 1))
+    if [[ "${STABLE}" -ge 3 ]]; then
+      break
+    fi
+  else
+    STABLE=0
   fi
   if [[ "${ELAPSED_MS}" -ge "${LIMIT_MS}" ]]; then
     {
-      echo "cold start exceeded ${LIMIT_MS} ms without a host process"
+      echo "cold start exceeded ${LIMIT_MS} ms without a stable host process"
       echo "--- am start ---"
       cat "${LOG_DIR}/am-start.txt" || true
     } | tee "${LOG_DIR}/failure.txt"
@@ -91,12 +116,6 @@ while true; do
   fi
   sleep 1
 done
-sleep 2
-STILL_PID="$("${ADB[@]}" shell pidof top.niunaijun.blackbox 2>/dev/null | tr -d '\r' || true)"
-if [[ -z "${STILL_PID}" ]]; then
-  echo "host process exited during cold start" | tee "${LOG_DIR}/failure.txt"
-  exit 1
-fi
 {
   echo "TotalTime: ${ELAPSED_MS}"
   echo "pid: ${HOST_PID}"

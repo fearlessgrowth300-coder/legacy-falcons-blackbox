@@ -444,11 +444,16 @@ public class BPackage implements Parcelable {
         }
 
         public SigningDetails(PackageParser.SigningDetails signingDetails) {
-            if (signingDetails.pastSigningCertificates == null) {
-                this.signatures = signingDetails.signatures;
-            } else {
-                this.signatures = signingDetails.pastSigningCertificates;
+            // pastSigningCertificates arrived in API 29. The getfield throws
+            // NoSuchFieldError on API 26-28 and used to abort the install while
+            // still reporting success.
+            Signature[] history = null;
+            try {
+                history = signingDetails.pastSigningCertificates;
+            } catch (Throwable ignored) {
             }
+            this.signatures = (history != null && history.length > 0)
+                    ? history : signingDetails.signatures;
         }
 
         protected SigningDetails(Parcel in) {

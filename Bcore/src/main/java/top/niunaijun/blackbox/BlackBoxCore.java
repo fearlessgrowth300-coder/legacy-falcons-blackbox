@@ -808,8 +808,14 @@ public class BlackBoxCore extends ClientConfiguration {
         if (isMainProcess() && !isBlackProcessRunning()) {
             Slog.w(TAG, "Ensuring black process is initialized...");
             startBlackProcess();
-            
-            
+            // bindApplication runs on the main thread. Sleeping here for the server
+            // process is what ActivityManager reports as "failed to complete startup"
+            // once the device is busy. Callers that need the binder already wait.
+            if (android.os.Looper.getMainLooper().isCurrentThread()) {
+                Slog.d(TAG, "Leaving server-process startup off the main thread");
+                return;
+            }
+
             int maxRetries = 5;
             int retryCount = 0;
             while (retryCount < maxRetries && !isBlackProcessRunning()) {
@@ -966,8 +972,14 @@ public class BlackBoxCore extends ClientConfiguration {
         
         
         initVpnService();
-        
-        HookManager.get().init();
+
+        // Guest processes are the ones whose system calls must be redirected.
+        // The host UI and :black install the same set during bindApplication, and on
+        // a loaded device that walks past the process-start deadline (ANR:
+        // "failed to complete startup") before the first frame.
+        if (isBlackProcess()) {
+            HookManager.get().init();
+        }
     }
 
     public void doCreate() {

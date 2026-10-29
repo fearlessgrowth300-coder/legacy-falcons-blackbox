@@ -7,10 +7,12 @@ import top.niunaijun.blackbox.utils.Slog;
 
 /** Attaches already-registered method hooks with Pine. Loaded only when Pine is safe to load. */
 public final class PineClassAttacher {
+    private static volatile boolean sNativeMissing;
+
     private PineClassAttacher() {}
 
     static void attach(Class<?> target, ClassInvocationStub stub) {
-        if (target == null || stub == null) return;
+        if (target == null || stub == null || sNativeMissing) return;
         int attached = 0;
         for (Method method : target.getDeclaredMethods()) {
             if (!stub.hasHook(method.getName())) continue;
@@ -29,7 +31,16 @@ public final class PineClassAttacher {
                     }
                 });
                 attached++;
+            } catch (UnsatisfiedLinkError error) {
+                sNativeMissing = true;
+                Slog.w("PineClassAttacher", "Pine native missing; skipping remaining class hooks");
+                return;
             } catch (Throwable error) {
+                if (error.getCause() instanceof UnsatisfiedLinkError) {
+                    sNativeMissing = true;
+                    Slog.w("PineClassAttacher", "Pine native missing; skipping remaining class hooks");
+                    return;
+                }
                 Slog.w("PineClassAttacher", target.getSimpleName() + "." + method.getName()
                         + " not hooked: " + error.getClass().getSimpleName());
             }
