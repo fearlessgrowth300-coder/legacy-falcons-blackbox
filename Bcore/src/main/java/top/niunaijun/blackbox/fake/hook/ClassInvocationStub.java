@@ -40,18 +40,42 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
         onlyProxy = o;
     }
 
+    /** Class whose methods should be Pine-hooked when this stub has no binder base. */
+    protected Class<?> hookTargetClass() {
+        return null;
+    }
+
+    public boolean hasHook(String name) {
+        return name != null && mMethodHookMap.containsKey(name);
+    }
+
+    /** Pine after-call. Default keeps the original result. Must not throw out of the hook. */
+    protected void afterPineHook(String methodName, Object self, Object[] args, Object frame) {
+    }
+
     @Override
     public void injectHook() {
-        mBase = getWho();
-        
-        if (mBase == null) {
-            return;
+        try {
+            bindAnnotations();
+            mBase = getWho();
+            if (mBase == null) {
+                Log.w(TAG, getClass().getSimpleName() + " has no base; binder proxy not installed");
+                attachPine();
+                return;
+            }
+            mProxyInvocation = Proxy.newProxyInstance(mBase.getClass().getClassLoader(),
+                    MethodParameterUtils.getAllInterface(mBase.getClass()), this);
+            if (!onlyProxy) {
+                inject(mBase, mProxyInvocation);
+            }
+            attachPine();
+        } catch (Throwable error) {
+            Log.w(TAG, getClass().getSimpleName() + " inject degraded: "
+                    + error.getClass().getSimpleName());
         }
-        mProxyInvocation = Proxy.newProxyInstance(mBase.getClass().getClassLoader(), MethodParameterUtils.getAllInterface(mBase.getClass()), this);
-        if (!onlyProxy) {
-            inject(mBase, mProxyInvocation);
-        }
+    }
 
+    private void bindAnnotations() {
         onBindMethod();
         Class<?>[] declaredClasses = this.getClass().getDeclaredClasses();
         for (Class<?> declaredClass : declaredClasses) {
@@ -64,6 +88,34 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
                     initAnnotation(declaredClass);
                 }
             }
+        }
+    }
+
+    private void attachPine() {
+        Class<?> target;
+        try {
+            target = hookTargetClass();
+        } catch (Throwable error) {
+            Log.w(TAG, getClass().getSimpleName() + " hook target unavailable");
+            return;
+        }
+        if (target == null) return;
+        long page = 4096L;
+        try {
+            page = android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE);
+        } catch (Throwable ignored) {
+        }
+        if (top.niunaijun.blackbox.core.PineRuntime.hooksCrashThisRuntime(
+                android.os.Build.VERSION.SDK_INT, page)) {
+            Log.w(TAG, getClass().getSimpleName()
+                    + " class hooks skipped; Pine is unsafe on this runtime");
+            return;
+        }
+        try {
+            PineClassAttacher.attach(target, this);
+        } catch (Throwable error) {
+            Log.w(TAG, getClass().getSimpleName() + " class hooks degraded: "
+                    + error.getClass().getSimpleName());
         }
     }
 

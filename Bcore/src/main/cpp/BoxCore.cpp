@@ -42,9 +42,30 @@ JNIEnv *ensureEnvCreated() {
     return env;
 }
 
+static int g_host_uid = 0;
+static int g_virtual_uid = 0;
+
+void BoxCore::setCallerIdentity(int hostUid, int virtualUid) {
+    g_host_uid = hostUid;
+    g_virtual_uid = virtualUid;
+}
+
 int BoxCore::getCallingUid(JNIEnv *env, int orig) {
+    // Android 16 crashes if this hook calls back into Java. Binder.getCallingUid can run
+    // while ART is resolving a method, and the upcall through NativeCore.getCallingUid
+    // SIGSEGVs the guest (seen on SM-S918U1, SDK 36, process :p2). Resolve locally.
+    if (VMEnv.api_level >= 36) {
+        if (g_host_uid > 0 && orig == g_host_uid && g_virtual_uid >= 10000) return g_virtual_uid;
+        return orig;
+    }
     env = ensureEnvCreated();
-    return env->CallStaticIntMethod(VMEnv.NativeCoreClass, VMEnv.getCallingUidId, orig);
+    if (env == nullptr || env->ExceptionCheck()) return orig;
+    int result = env->CallStaticIntMethod(VMEnv.NativeCoreClass, VMEnv.getCallingUidId, orig);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return orig;
+    }
+    return result;
 }
 
 jstring BoxCore::redirectPathString(JNIEnv *env, jstring path) {
@@ -73,7 +94,7 @@ JavaVM *BoxCore::getJavaVM() {
 void nativeHook(JNIEnv *env) {
     BaseHook::init(env);
     UnixFileSystemHook::init(env);
-    FileSystemHook::init();
+    FileSystemHook::init(VMEnv.api_level);
     VMClassLoaderHook::init(env);
 
     BinderHook::init(env);
@@ -105,6 +126,22 @@ void addIORule(JNIEnv *env, jclass clazz, jstring target_path,
     ALOGD("set addIORule");
     IO::addRule(env->GetStringUTFChars(target_path, JNI_FALSE),
                 env->GetStringUTFChars(relocate_path, JNI_FALSE));
+}
+
+void setPathIsolation(JNIEnv *env, jclass clazz, jstring root, jstring ext, jint user) {
+    const char *rootChars = root ? env->GetStringUTFChars(root, nullptr) : nullptr;
+    const char *extChars = ext ? env->GetStringUTFChars(ext, nullptr) : nullptr;
+    IO::setIsolation(rootChars, extChars, user);
+    if (root && rootChars) env->ReleaseStringUTFChars(root, rootChars);
+    if (ext && extChars) env->ReleaseStringUTFChars(ext, extChars);
+}
+
+void setUptimeOffsetMs(JNIEnv *env, jclass clazz, jlong offset) {
+    FileSystemHook::setUptimeOffsetMs(offset < 0 ? 0 : (long) offset);
+}
+
+void setCallerIdentity(JNIEnv *env, jclass clazz, jint hostUid, jint virtualUid) {
+    BoxCore::setCallerIdentity(hostUid, virtualUid);
 }
 
 void enableIO(JNIEnv *env, jclass clazz) {
@@ -217,6 +254,9 @@ static JNINativeMethod gMethods[] = {
         {"disableResourceLoading", "()Z",                         (void *) disableResourceLoading},
         {"hideXposed", "()V",                                     (void *) hideXposed},
         {"addIORule",  "(Ljava/lang/String;Ljava/lang/String;)V", (void *) addIORule},
+        {"setPathIsolation", "(Ljava/lang/String;Ljava/lang/String;I)V", (void *) setPathIsolation},
+        {"setUptimeOffsetMs", "(J)V", (void *) setUptimeOffsetMs},
+        {"setCallerIdentity", "(II)V", (void *) setCallerIdentity},
         {"enableIO",   "()V",                                     (void *) enableIO},
         {"init",       "(I)V",                                    (void *) init},
 };

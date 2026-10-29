@@ -174,7 +174,11 @@ public class GuestProxy {
             for (String pkg : GMS_ROUTE_PACKAGES) {
                 if (!markRouteRequired(userId, pkg)) return GmsRouteStatus.INVALID;
                 if (!commonRoute.equals(routeIdFor(userId, pkg))) {
-                    ProxyConfigCrypto.writeText(file(userId, pkg), userId, pkg, commonJson);
+                    // Each package has its own loopback listener. Copy the upstream route
+                    // without replacing that listener with another clone's port.
+                    String merged = mergeUpstreamPreservingListener(commonJson, userId, pkg);
+                    if (merged == null) return GmsRouteStatus.INVALID;
+                    ProxyConfigCrypto.writeText(file(userId, pkg), userId, pkg, merged);
                     changed = true;
                 }
             }
@@ -377,6 +381,22 @@ public class GuestProxy {
                                String user, String pass, String countryIso,
                                String city, String region, Double latitude, Double longitude,
                                String timezoneId) {
+        return save(userId, pkg, type, server, port, user, pass, countryIso,
+                city, region, latitude, longitude, timezoneId,
+                null, 0, null, null, null, null);
+    }
+
+    /**
+     * Save a route whose guest sockets dial ShieldProxy's per-clone loopback SOCKS listener.
+     * {@code localPort} 0 means the listener was not supplied. Apply then refuses to dial the
+     * upstream node directly.
+     */
+    public static boolean save(int userId, String pkg, String type, String server, int port,
+                               String user, String pass, String countryIso,
+                               String city, String region, Double latitude, Double longitude,
+                               String timezoneId, String localHost, int localPort,
+                               String socksUser, String socksPassword, String locale,
+                               Boolean tls) {
         String normalizedType = type == null ? "" : type.trim().toLowerCase();
         String normalizedServer = server == null ? "" : server.trim();
         if (userId < 0 || (pkg != null && !pkg.isEmpty() && !validPackage(pkg))
@@ -414,6 +434,16 @@ public class GuestProxy {
                 o.put("longitude", longitude.doubleValue());
             }
             if (!safeTimezone.isEmpty()) o.put("timezoneId", safeTimezone);
+            String safeLocale = normalizeLocale(locale);
+            if (!safeLocale.isEmpty()) o.put("locale", safeLocale);
+            if (tls != null) o.put("tls", tls.booleanValue());
+            if (localPort > 0) {
+                if (!isCloneListener(localHost, localPort)) return false;
+                o.put("localHost", "127.0.0.1");
+                o.put("localPort", localPort);
+                o.put("socksUser", socksUser == null ? "" : socksUser);
+                o.put("socksPassword", socksPassword == null ? "" : socksPassword);
+            }
 
             ProxyConfigCrypto.writeText(file(userId, pkg), userId, pkg, o.toString());
             updateUnregisteredWhatsAppCountry(userId, pkg, effectiveCountryIso);
@@ -497,14 +527,22 @@ public class GuestProxy {
             String type = o.optString("type", "").trim().toLowerCase();
             if (!(type.equals("http") || type.equals("https") || type.equals("socks") || type.equals("socks5")))
                 return ApplyStatus.INVALID_CONFIG;
-            int t = (type.equalsIgnoreCase("socks5") || type.equalsIgnoreCase("socks")) ? 1 : 0;
             String server = o.optString("server", "").trim();
             int port = o.optInt("port", 0);
-            String user = o.optString("username", "");
-            String pass = o.optString("password", "");
             if (server.isEmpty() || port <= 0 || port > 65535) return ApplyStatus.INVALID_CONFIG;
-
-            if (!NativeCore.setProxy(t, server, port, user, pass)) {
+            // Dial only this clone's loopback SOCKS listener. The upstream node, including TLS,
+            // is Mihomo's job. A missing or closed listener must not fall through to the phone
+            // network or to the upstream address.
+            int localPort = o.optInt("localPort", 0);
+            String localHost = o.optString("localHost", "");
+            if (!isCloneListener(localHost, localPort)) {
+                NativeCore.disableProxy();
+                Slog.w(TAG, "refusing direct or upstream dial; clone listener missing");
+                return ApplyStatus.INVALID_CONFIG;
+            }
+            String socksUser = o.optString("socksUser", "");
+            String socksPass = o.optString("socksPassword", "");
+            if (!NativeCore.setProxy(1, "127.0.0.1", localPort, socksUser, socksPass)) {
                 NativeCore.disableProxy();
                 return ApplyStatus.NATIVE_SETUP_FAILED;
             }
@@ -544,7 +582,8 @@ public class GuestProxy {
             String appPkg = top.niunaijun.blackbox.app.BActivityThread.getAppPackageName();
             String tz = normalizeTimezone(route.optString("timezoneId", ""));
             if (tz.isEmpty()) tz = timezoneFor(u, countryIso);
-            java.util.Locale loc = localeFor(u, countryIso);
+            java.util.Locale loc = localeFromTag(route.optString("locale", ""));
+            if (loc == null) loc = localeFor(u, countryIso);
             if (tz != null && !tz.isEmpty()) {
                 java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(tz));
                 CURRENT_TIMEZONE_ID = java.util.TimeZone.getDefault().getID();
@@ -558,13 +597,16 @@ public class GuestProxy {
             // jitter so two clones in the same city aren't at the identical point.
             Double verifiedLat = route.has("latitude") ? route.optDouble("latitude") : null;
             Double verifiedLng = route.has("longitude") ? route.optDouble("longitude") : null;
-            double[] ll = validLatLng(verifiedLat, verifiedLng)
+            boolean explicitFix = validLatLng(verifiedLat, verifiedLng);
+            double[] ll = explicitFix
                     ? new double[]{verifiedLat.doubleValue(), verifiedLng.doubleValue()}
                     : latLngForProxy(u);
             if (ll != null) {
                 try {
-                    double jLat = ll[0] + ((userId * 37 % 100) - 50) / 10000.0;   // ±0.005°
-                    double jLng = ll[1] + ((userId * 53 % 100) - 50) / 10000.0;
+                    // ShieldProxy's coordinates are the clone's fix. Jitter is only for a
+                    // coordinate guessed from the proxy username.
+                    double jLat = explicitFix ? ll[0] : ll[0] + ((userId * 37 % 100) - 50) / 10000.0;
+                    double jLng = explicitFix ? ll[1] : ll[1] + ((userId * 53 % 100) - 50) / 10000.0;
                     top.niunaijun.blackbox.fake.frameworks.BLocationManager lm =
                             top.niunaijun.blackbox.fake.frameworks.BLocationManager.get();
                     lm.setPattern(userId, appPkg, top.niunaijun.blackbox.fake.frameworks.BLocationManager.OWN_MODE);
@@ -721,6 +763,54 @@ public class GuestProxy {
     }
 
     /** Map a proxy username's country to a plausible carrier: {mccMnc, iso, operatorName}. */
+    public static boolean isCloneListener(String host, int port) {
+        if (port < 20000 || port > 27999) return false;
+        if (host == null) return false;
+        String value = host.trim().toLowerCase(java.util.Locale.ROOT);
+        return value.isEmpty() || value.equals("127.0.0.1") || value.equals("localhost")
+                || value.equals("::1");
+    }
+
+    private static String normalizeLocale(String locale) {
+        if (locale == null) return "";
+        String value = locale.trim().replace('_', '-');
+        if (value.length() < 2 || value.length() > 16) return "";
+        if (!value.matches("[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?")) return "";
+        return value;
+    }
+
+    private static java.util.Locale localeFromTag(String locale) {
+        String tag = normalizeLocale(locale);
+        if (tag.isEmpty()) return null;
+        java.util.Locale parsed = java.util.Locale.forLanguageTag(tag);
+        if (parsed.getLanguage() == null || parsed.getLanguage().isEmpty()) return null;
+        return parsed;
+    }
+
+    private static String mergeUpstreamPreservingListener(String upstreamJson, int userId, String pkg) {
+        try {
+            JSONObject merged = new JSONObject(upstreamJson);
+            merged.remove("localHost");
+            merged.remove("localPort");
+            merged.remove("socksUser");
+            merged.remove("socksPassword");
+            File existing = file(userId, pkg);
+            if (existing.isFile()) {
+                JSONObject prior = new JSONObject(ProxyConfigCrypto.readText(existing, userId, pkg));
+                int port = prior.optInt("localPort", 0);
+                if (isCloneListener(prior.optString("localHost", ""), port)) {
+                    merged.put("localHost", "127.0.0.1");
+                    merged.put("localPort", port);
+                    merged.put("socksUser", prior.optString("socksUser", ""));
+                    merged.put("socksPassword", prior.optString("socksPassword", ""));
+                }
+            }
+            return merged.toString();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     private static String normalizeCountryIso(String iso) {
         if (iso == null) return "";
         String value = iso.trim().toLowerCase(java.util.Locale.ROOT);

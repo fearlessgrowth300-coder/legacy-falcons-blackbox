@@ -24,6 +24,8 @@ public:
 
     static void addRule(const char *targetPath, const char *relocatePath);
 
+    static void setIsolation(const char *virtualRoot, const char *externalRoot, int userId);
+
     static jstring redirectPath(JNIEnv *env, jstring path);
 
     static jobject redirectPath(JNIEnv *env, jobject path);

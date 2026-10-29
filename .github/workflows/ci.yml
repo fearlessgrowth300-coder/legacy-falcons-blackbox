@@ -33,6 +33,9 @@ jobs:
         with:
           node-version: "22"
       - uses: android-actions/setup-android@v3
+        with:
+          # cmdline-tools 16.0 removed the obsolete "tools" package.
+          packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Run identity and log-redaction regression checks
@@ -43,6 +46,44 @@ jobs:
           java -cp build/diagnostic-tests IdentityPolicyTest
           javac -d build/diagnostic-tests Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ApplicationCreationCompat.java tools/diagnostics/ApplicationCreationCompatTest.java
           java -cp build/diagnostic-tests ApplicationCreationCompatTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/PineRuntime.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ApplicationOnCreateGuard.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/BindServiceFlagsCompat.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ForegroundServiceTypeCompat.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ReceiverRegistrationCompat.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/SettingsIdentity.java \
+            tools/diagnostics/GuestLaunchCompatTest.java
+          java -cp build/diagnostic-tests GuestLaunchCompatTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/PathIsolation.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/ProfilePolicy.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/NetworkIdentity.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/BuildConsistency.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/ProviderIsolation.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/UriGrantPolicy.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/system/accounts/AccountCredentialPolicy.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/system/accounts/AccountSecrets.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/system/notification/NotificationVisibility.java \
+            tools/diagnostics/IsolationBoundaryTest.java
+          java -cp build/diagnostic-tests IsolationBoundaryTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/ManagedProfilePolicy.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/PlayProcessPolicy.java \
+            tools/diagnostics/ManagedProfilePolicyTest.java
+          java -cp build/diagnostic-tests ManagedProfilePolicyTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/ProvisioningModeChoice.java \
+            tools/diagnostics/ProvisioningManifestTest.java
+          java -cp build/diagnostic-tests ProvisioningManifestTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/ProfileStatusCopy.java \
+            tools/diagnostics/ProfileStatusCopyTest.java
+          java -cp build/diagnostic-tests ProfileStatusCopyTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/ProfileWorkApps.java \
+            tools/diagnostics/ProfileWorkAppsTest.java
+          java -cp build/diagnostic-tests ProfileWorkAppsTest
           node --test tools/diagnostics/request-summary.test.mjs
           node --check tools/diagnostics/capture-webview.mjs
 

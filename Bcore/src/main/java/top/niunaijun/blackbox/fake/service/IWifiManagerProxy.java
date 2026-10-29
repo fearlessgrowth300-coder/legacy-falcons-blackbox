@@ -13,7 +13,9 @@ import black.android.os.BRServiceManager;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
+import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.core.DeviceProfile;
+import top.niunaijun.blackbox.core.NetworkIdentity;
 
 
 public class IWifiManagerProxy extends BinderInvocationStub {
@@ -52,9 +54,25 @@ public class IWifiManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             WifiInfo wifiInfo = (WifiInfo) method.invoke(who, args);
-            BRWifiInfo.get(wifiInfo)._set_mBSSID("ac:62:5a:82:65:c4");
+            DeviceProfile profile = DeviceProfile.CURRENT;
+            String bssid = profile != null && profile.wifiBssid != null
+                    ? profile.wifiBssid : NetworkIdentity.bssid("profile");
+            String ssid = profile != null && profile.wifiSsid != null
+                    ? profile.wifiSsid : NetworkIdentity.ssid("profile");
+            BRWifiInfo.get(wifiInfo)._set_mBSSID(bssid);
             BRWifiInfo.get(wifiInfo)._set_mMacAddress(cloneMac());
-            BRWifiInfo.get(wifiInfo)._set_mWifiSsid(BRWifiSsid.get().createFromAsciiEncoded("AndroidWifi"));
+            try {
+                BRWifiInfo.get(wifiInfo)._set_mSSID(ssid);
+            } catch (Throwable ignored) {
+            }
+            BRWifiInfo.get(wifiInfo)._set_mWifiSsid(BRWifiSsid.get().createFromAsciiEncoded(ssid));
+            try {
+                int userId = profile == null ? 0 : BlackBoxCore.getUserId();
+                String seed = profile != null && profile.androidId != null ? profile.androidId : "profile";
+                BRWifiInfo.get(wifiInfo)._set_mIpAddress(
+                        java.net.InetAddress.getByAddress(NetworkIdentity.localIpv4(userId, seed)));
+            } catch (Throwable ignored) {
+            }
             return wifiInfo;
         }
 

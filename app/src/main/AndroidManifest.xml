@@ -12,6 +12,7 @@
 
     <uses-permission android:name="com.privacyshield.proxy.permission.BRIDGE" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.INTERACT_ACROSS_PROFILES" />
 
     
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
@@ -49,6 +50,76 @@
             android:name=".cloud.BackupService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <receiver
+            android:name=".profile.ManagedProfileProvisionedReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <intent-filter>
+                <action android:name="android.app.action.MANAGED_PROFILE_PROVISIONED" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".profile.BlackBoxDeviceAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
+            </intent-filter>
+        </receiver>
+        <!--
+            Android 12+ rejects a DPC that does not export both of these.
+            The component permission replaces the application INTERNAL permission.
+            ManagedProvisioning holds BIND_DEVICE_ADMIN and adds CATEGORY_DEFAULT.
+        -->
+        <activity
+            android:name=".profile.GetProvisioningModeActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.app.action.GET_PROVISIONING_MODE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".profile.AdminPolicyComplianceActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.app.action.ADMIN_POLICY_COMPLIANCE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".profile.ProvisioningSuccessfulActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.app.action.PROVISIONING_SUCCESSFUL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".profile.RemoveManagedProfileActivity"
+            android:exported="true"
+            android:permission="" />
+        <activity
+            android:name=".profile.ProfileStatusActivity"
+            android:exported="true"
+            android:permission="" />
+        <activity
+            android:name=".profile.InstallInProfileActivity"
+            android:exported="true"
+            android:permission="" />
         <receiver
             android:name=".app.KeepAliveBootReceiver"
             android:exported="true"

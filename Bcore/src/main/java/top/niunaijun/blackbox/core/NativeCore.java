@@ -104,6 +104,18 @@ public class NativeCore {
 
     public static native void addIORule(String targetPath, String relocatePath);
 
+    /** Guest-only path jail. A failure here must not crash the process. */
+    public static native void setPathIsolation(String virtualRoot, String externalRoot, int userId);
+
+    /** Added to CLOCK_BOOTTIME / CLOCK_MONOTONIC so uptime is not the phone's. */
+    public static native void setUptimeOffsetMs(long offsetMs);
+
+    /**
+     * Host and virtual uids for the Android 16 Binder.getCallingUid hook.
+     * The hook must not call back into Java on that runtime.
+     */
+    public static native void setCallerIdentity(int hostUid, int virtualUid);
+
     public static native void hideXposed();
 
     public static native boolean disableHiddenApi();
