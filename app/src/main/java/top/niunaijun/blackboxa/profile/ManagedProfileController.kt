@@ -3,6 +3,7 @@ package top.niunaijun.blackboxa.profile
 import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.CrossProfileApps
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.os.Build
@@ -10,6 +11,7 @@ import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
 import top.niunaijun.blackbox.core.ManagedProfilePolicy
+import top.niunaijun.blackbox.core.ProfileStatusCopy
 
 /** Talks to Android's managed-profile APIs. Failures return false or a message; they do not crash. */
 class ManagedProfileController(private val context: Context) {
@@ -25,17 +27,49 @@ class ManagedProfileController(private val context: Context) {
 
     fun isProfileOwner(): Boolean = manager.isProfileOwnerApp(context.packageName)
 
+    /**
+     * Other Android users this app can see. Samsung One UI often hides the work
+     * profile from {@code getUserProfiles()} for a normal app, so this also asks
+     * CrossProfileApps, LauncherApps, and the hidden profile list, then the id
+     * saved when provisioning finished.
+     */
     fun otherProfiles(): List<UserHandle> {
-        val mine = Process.myUserHandle()
-        return users.userProfiles.filter { it != mine }
+        val mine = myUserId()
+        val found = LinkedHashMap<Int, UserHandle>()
+        fun add(handle: UserHandle?) {
+            if (handle == null) return
+            val id = userId(handle)
+            if (id >= 0 && id != mine) found.putIfAbsent(id, handle)
+        }
+        try {
+            users.userProfiles.forEach { add(it) }
+        } catch (error: Throwable) {
+        }
+        if (Build.VERSION.SDK_INT >= 28) {
+            try {
+                context.getSystemService(CrossProfileApps::class.java)
+                    ?.targetUserProfiles
+                    ?.forEach { add(it) }
+            } catch (error: Throwable) {
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 26) {
+            try {
+                launcher.profiles.forEach { add(it) }
+            } catch (error: Throwable) {
+            }
+        }
+        hiddenProfiles().forEach { add(it) }
+        add(profileOwnerByUserId())
+        val remembered = ManagedProfileStore.androidUserId(context)
+        if (remembered >= 0 && remembered != mine && !found.containsKey(remembered)) {
+            add(userHandleFor(remembered))
+        }
+        return found.values.toList()
     }
 
     fun blockReason(): String? {
-        val allowed = try {
-            manager.isProvisioningAllowed(DevicePolicyManager.ACTION_PROVISION_MANAGED_PROFILE)
-        } catch (error: Throwable) {
-            false
-        }
+        val allowed = provisioningAllowed()
         val resolved = try {
             context.packageManager.resolveActivity(
                 provisionIntent(),
@@ -44,12 +78,33 @@ class ManagedProfileController(private val context: Context) {
         } catch (error: Throwable) {
             false
         }
+        val owned = isProfileOwner() || otherProfiles().isNotEmpty()
         return ManagedProfilePolicy.blockReason(
             allowed,
             isProfileOwner(),
-            samsungContainerInstalled(),
-            resolved
+            secureFolderInstalled(),
+            resolved,
+            owned
         )
+    }
+
+    fun provisioningAllowed(): Boolean {
+        return try {
+            manager.isProvisioningAllowed(DevicePolicyManager.ACTION_PROVISION_MANAGED_PROFILE)
+        } catch (error: Throwable) {
+            false
+        }
+    }
+
+    fun setupActivityResolved(): Boolean {
+        return try {
+            context.packageManager.resolveActivity(
+                provisionIntent(),
+                PackageManager.MATCH_DEFAULT_ONLY
+            ) != null
+        } catch (error: Throwable) {
+            false
+        }
     }
 
     /**
@@ -115,6 +170,21 @@ class ManagedProfileController(private val context: Context) {
         }
     }
 
+    private fun userHandleFor(userId: Int): UserHandle? {
+        return try {
+            val of = UserHandle::class.java.getMethod("of", Int::class.javaPrimitiveType)
+            of.invoke(null, userId) as UserHandle
+        } catch (error: Throwable) {
+            try {
+                val ctor = UserHandle::class.java.getDeclaredConstructor(Int::class.javaPrimitiveType)
+                ctor.isAccessible = true
+                ctor.newInstance(userId) as UserHandle
+            } catch (fallback: Throwable) {
+                null
+            }
+        }
+    }
+
     private fun userId(user: UserHandle): Int {
         return try {
             val method = UserHandle::class.java.getDeclaredMethod("getIdentifier")
@@ -127,19 +197,51 @@ class ManagedProfileController(private val context: Context) {
 
     fun userIdOf(user: UserHandle): Int = userId(user)
 
-    private fun samsungContainerInstalled(): Boolean {
-        val names = arrayOf(
-            "com.samsung.knox.securefolder",
-            "com.samsung.android.knox.containercore",
-            "com.samsung.android.knox.containeragent"
-        )
-        return names.any { name ->
+    private fun secureFolderInstalled(): Boolean {
+        return try {
+            context.packageManager.getPackageInfo(ProfileStatusCopy.SECURE_FOLDER_PACKAGE, 0)
+            true
+        } catch (error: Throwable) {
+            false
+        }
+    }
+
+    /** Hidden API. Used when list APIs omit a profile this app already owns. */
+    private fun profileOwnerByUserId(): UserHandle? {
+        val method = try {
+            DevicePolicyManager::class.java.getMethod(
+                "getProfileOwnerAsUser",
+                Int::class.javaPrimitiveType
+            )
+        } catch (error: Throwable) {
+            return null
+        }
+        val ours = BlackBoxDeviceAdminReceiver.component(context)
+        for (id in 10..30) {
             try {
-                context.packageManager.getPackageInfo(name, 0)
-                true
+                val owner = method.invoke(manager, id) as? android.content.ComponentName ?: continue
+                if (owner.packageName == ours.packageName && owner.className == ours.className) {
+                    return userHandleFor(id)
+                }
             } catch (error: Throwable) {
-                false
+                return null
             }
+        }
+        return null
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun hiddenProfiles(): List<UserHandle> {
+        return try {
+            val method = UserManager::class.java.getMethod("getAllProfiles")
+            val list = method.invoke(users) as? List<*> ?: return emptyList()
+            list.mapNotNull { info ->
+                if (info == null) return@mapNotNull null
+                val id = info.javaClass.getField("id").getInt(info)
+                if (id < 0) null else userHandleFor(id)
+            }
+        } catch (error: Throwable) {
+            emptyList()
         }
     }
 }

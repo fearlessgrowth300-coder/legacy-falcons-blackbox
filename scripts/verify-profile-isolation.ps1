@@ -25,7 +25,23 @@ $dirs | ForEach-Object { Write-Host $_ }
 
 if ($dirs.Count -lt 2) {
     Write-Host ""
-    Write-Host "FAIL: expected two data directories. The separate Android profile is not installed, or dumpsys did not list both users."
+    Write-Host "dumpsys package did not list two data directories."
+    Write-Host "Samsung One UI blocks shell queries into the work profile (pm list packages --user 10 raises SecurityException)."
+    Write-Host "Falling back to pm list users and dumpsys device_policy."
+    $usersOut = & $Adb shell pm list users 2>&1 | Out-String
+    $policyOut = & $Adb shell dumpsys device_policy 2>&1 | Out-String
+    Write-Host $usersOut
+    $secondUser = $usersOut -match 'UserInfo\{[1-9][0-9]*:'
+    $owner = ($policyOut -match 'Profile Owner') -and ($policyOut -match [regex]::Escape($Package))
+    if ($secondUser -and $owner) {
+        Write-Host ""
+        Write-Host "PASS: a second Android user exists and $Package is a profile owner."
+        Write-Host "NOTE: data directories were not compared because the shell cannot read the work profile."
+        Write-Host "Hardware IMEI, the Samsung account, and the phone's public IP can still link the two users. A VPN is per Android user, so ShieldProxy must be installed in the work profile too."
+        exit 0
+    }
+    Write-Host ""
+    Write-Host "FAIL: expected two data directories, or a second user with $Package as profile owner."
     exit 2
 }
 if ($dirs[0] -eq $dirs[1]) {

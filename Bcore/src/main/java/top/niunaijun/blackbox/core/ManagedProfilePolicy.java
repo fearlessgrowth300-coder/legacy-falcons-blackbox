@@ -32,18 +32,29 @@ public final class ManagedProfilePolicy {
      */
     public static String blockReason(boolean provisioningAllowed, boolean alreadyProfileOwner,
                                      boolean samsungContainerInstalled, boolean provisionActivityResolved) {
-        if (alreadyProfileOwner) return null;
+        return blockReason(provisioningAllowed, alreadyProfileOwner, samsungContainerInstalled,
+                provisionActivityResolved, false);
+    }
+
+    /**
+     * @param ownedProfileKnown our managed profile is visible or was recorded, even from user 0
+     *                          where {@code isProfileOwnerApp} is false
+     */
+    public static String blockReason(boolean provisioningAllowed, boolean alreadyProfileOwner,
+                                     boolean samsungContainerInstalled, boolean provisionActivityResolved,
+                                     boolean ownedProfileKnown) {
+        if (alreadyProfileOwner || ownedProfileKnown) return null;
         if (!provisionActivityResolved) {
             return "This phone cannot start Android's managed-profile setup.";
         }
         if (provisioningAllowed) return null;
         if (samsungContainerInstalled) {
-            return "Android will not create another managed profile. Samsung Secure Folder or Knox "
+            return "Android will not create another managed profile. Samsung Secure Folder "
                     + "is already using the one work-profile slot. Remove that folder, or keep this "
                     + "workspace in the weaker hooked mode.";
         }
         return "Android will not create another managed profile. A work profile, device owner, "
-                + "or OEM folder is already using that slot. Remove it, or keep this workspace "
-                + "in the weaker hooked mode.";
+                + "or OEM folder that is not this app is already using that slot. Remove it, or keep "
+                + "this workspace in the weaker hooked mode.";
     }
 }

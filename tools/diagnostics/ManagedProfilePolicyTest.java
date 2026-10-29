@@ -23,6 +23,8 @@ public final class ManagedProfilePolicyTest {
                 "an existing profile owner is not a new-provision block");
         String knox = ManagedProfilePolicy.blockReason(false, false, true, true);
         check(knox != null && knox.contains("Samsung"), "Knox names Samsung when the slot is taken");
+        check(ManagedProfilePolicy.blockReason(false, false, true, true, true) == null,
+                "our own profile does not show the Secure Folder message");
         String generic = ManagedProfilePolicy.blockReason(false, false, false, true);
         check(generic != null && generic.contains("work profile"), "a taken slot is explained");
         String missing = ManagedProfilePolicy.blockReason(false, false, false, false);

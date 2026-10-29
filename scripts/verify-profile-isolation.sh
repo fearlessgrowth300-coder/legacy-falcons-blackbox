@@ -25,7 +25,23 @@ printf '%s\n' "$DIRS"
 COUNT="$(printf '%s\n' "$DIRS" | grep -c . || true)"
 if [ "$COUNT" -lt 2 ]; then
   echo
-  echo "FAIL: expected two data directories. The separate Android profile is not installed, or dumpsys did not list both users."
+  echo "dumpsys package did not list two data directories."
+  echo "Samsung One UI blocks shell queries into the work profile (pm list packages --user 10 raises SecurityException)."
+  echo "Falling back to pm list users and dumpsys device_policy."
+  USERS_OUT="$("$ADB" shell pm list users 2>&1 || true)"
+  POLICY_OUT="$("$ADB" shell dumpsys device_policy 2>&1 || true)"
+  printf '%s\n' "$USERS_OUT"
+  if printf '%s\n' "$USERS_OUT" | grep -Eq 'UserInfo\{[1-9][0-9]*:' \
+      && printf '%s\n' "$POLICY_OUT" | grep -q 'Profile Owner' \
+      && printf '%s\n' "$POLICY_OUT" | grep -q "$PKG"; then
+    echo
+    echo "PASS: a second Android user exists and $PKG is a profile owner."
+    echo "NOTE: data directories were not compared because the shell cannot read the work profile."
+    echo "Hardware IMEI, the Samsung account, and the phone's public IP can still link the two users. A VPN is per Android user, so ShieldProxy must be installed in the work profile too."
+    exit 0
+  fi
+  echo
+  echo "FAIL: expected two data directories, or a second user with $PKG as profile owner."
   exit 2
 fi
 

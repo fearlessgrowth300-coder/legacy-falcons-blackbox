@@ -50,6 +50,14 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
         <receiver
+            android:name=".profile.ManagedProfileProvisionedReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <intent-filter>
+                <action android:name="android.app.action.MANAGED_PROFILE_PROVISIONED" />
+            </intent-filter>
+        </receiver>
+        <receiver
             android:name=".profile.BlackBoxDeviceAdminReceiver"
             android:exported="true"
             android:permission="android.permission.BIND_DEVICE_ADMIN">

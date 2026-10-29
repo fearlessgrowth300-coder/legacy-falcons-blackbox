@@ -67,7 +67,9 @@ class MainActivity : LoadingActivity() {
 
     private val managedProfileProvisioning =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            top.niunaijun.blackboxa.profile.ManagedProfileStore.capture(this, result.data)
             if (result.resultCode == RESULT_OK) {
+                top.niunaijun.blackboxa.profile.ManagedProfileStore.commitPendingWorkspace(this)
                 startActivity(Intent(this, top.niunaijun.blackboxa.profile.ProfileStatusActivity::class.java))
             } else {
                 toast("Android did not create the separate profile")
@@ -434,8 +436,14 @@ class MainActivity : LoadingActivity() {
                 .orEmpty().ifBlank { "User ${user.id}" }
             val defaultName = "User ${user.id}"
             val shown = if (name == defaultName) defaultName else "$name  •  $defaultName"
+            val separate = top.niunaijun.blackboxa.profile.WorkspaceModeStore
+                .launchesInManagedProfile(this, user.id)
             val mode = top.niunaijun.blackbox.core.ManagedProfilePolicy.shortLabel(
-                top.niunaijun.blackboxa.profile.WorkspaceModeStore.mode(this, user.id)
+                if (separate) {
+                    top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.SEPARATE
+                } else {
+                    top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.HOOKED
+                }
             )
             labels.add("$shown  •  $mode")
         }
@@ -508,14 +516,15 @@ class MainActivity : LoadingActivity() {
             refreshUserPages(userId)
             toast("$name created")
             if (mode == top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.SEPARATE) {
-                offerSeparateProfile()
+                offerSeparateProfile(userId)
             }
         }
     }
 
-    private fun offerSeparateProfile() {
+    private fun offerSeparateProfile(workspaceId: Int) {
         val controller = top.niunaijun.blackboxa.profile.ManagedProfileController(this)
         if (controller.otherProfiles().isNotEmpty() || controller.isProfileOwner()) {
+            top.niunaijun.blackboxa.profile.ManagedProfileStore.bindWorkspace(this, workspaceId)
             startActivity(Intent(this, top.niunaijun.blackboxa.profile.ProfileStatusActivity::class.java))
             return
         }
@@ -537,6 +546,7 @@ class MainActivity : LoadingActivity() {
             )
             .setPositiveButton("Continue") { _, _ ->
                 try {
+                    top.niunaijun.blackboxa.profile.ManagedProfileStore.setPendingWorkspace(this, workspaceId)
                     managedProfileProvisioning.launch(controller.provisionIntent())
                 } catch (error: Throwable) {
                     toast("Android did not open profile setup")
@@ -579,7 +589,13 @@ class MainActivity : LoadingActivity() {
     }
 
     private fun showIsolationModeDialog(userId: Int, name: String) {
-        val current = top.niunaijun.blackboxa.profile.WorkspaceModeStore.mode(this, userId)
+        val current = if (top.niunaijun.blackboxa.profile.WorkspaceModeStore
+                .launchesInManagedProfile(this, userId)
+        ) {
+            top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.SEPARATE
+        } else {
+            top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.HOOKED
+        }
         AlertDialog.Builder(this)
             .setTitle("$name isolation")
             .setMessage(
@@ -592,12 +608,15 @@ class MainActivity : LoadingActivity() {
                 top.niunaijun.blackboxa.profile.WorkspaceModeStore.set(
                     this, userId, top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.SEPARATE
                 )
-                offerSeparateProfile()
+                offerSeparateProfile(userId)
             }
             .setNeutralButton("Hooked mode") { _, _ ->
                 top.niunaijun.blackboxa.profile.WorkspaceModeStore.set(
                     this, userId, top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.HOOKED
                 )
+                if (top.niunaijun.blackboxa.profile.ManagedProfileStore.boundWorkspaceId(this) == userId) {
+                    top.niunaijun.blackboxa.profile.ManagedProfileStore.clearBoundWorkspace(this)
+                }
                 toast("User $userId stays in the hooked profile")
             }
             .setNegativeButton("Cancel", null)

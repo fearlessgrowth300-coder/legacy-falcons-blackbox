@@ -152,8 +152,9 @@ class AppsFragment : Fragment() {
 
             mAdapter.setItemClickListener { _, data, _ ->
                 try {
-                    val mode = top.niunaijun.blackboxa.profile.WorkspaceModeStore.mode(requireContext(), userID)
-                    if (mode == top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.SEPARATE) {
+                    val separate = top.niunaijun.blackboxa.profile.WorkspaceModeStore
+                        .launchesInManagedProfile(requireContext(), userID)
+                    if (separate) {
                         launchInSeparateProfile(data.packageName)
                         return@setItemClickListener
                     }
