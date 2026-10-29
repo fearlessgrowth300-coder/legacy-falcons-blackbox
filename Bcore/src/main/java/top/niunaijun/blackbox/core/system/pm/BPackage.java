@@ -133,7 +133,17 @@ public class BPackage implements Parcelable {
         this.mVersionCode = aPackage.mVersionCode;
         this.applicationInfo = aPackage.applicationInfo;
         this.mVersionName = aPackage.mVersionName;
-        this.baseCodePath = aPackage.baseCodePath;
+        // API 28's PackageParser.Package has no String baseCodePath. The public
+        // ApplicationInfo path is the same file the installer copied.
+        String codePath = null;
+        try {
+            codePath = aPackage.baseCodePath;
+        } catch (Throwable ignored) {
+        }
+        if ((codePath == null || codePath.isEmpty()) && aPackage.applicationInfo != null) {
+            codePath = aPackage.applicationInfo.sourceDir;
+        }
+        this.baseCodePath = codePath;
         this.mSharedUserLabel = aPackage.mSharedUserLabel;
         this.configPreferences = aPackage.configPreferences;
         this.reqFeatures = aPackage.reqFeatures;

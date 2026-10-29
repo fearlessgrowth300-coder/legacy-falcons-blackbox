@@ -55,6 +55,18 @@ fi
 if [[ "${API_LEVEL}" -le 29 ]]; then
   "${ADB[@]}" shell pm grant top.niunaijun.blackbox android.permission.WRITE_EXTERNAL_STORAGE || true
 fi
+# A just-booted google_apis image verifies this APK on the main thread of
+# :black and :pN, and ActivityManager kills them for "timeout publishing
+# content providers". speed-compile first so bindApplication loads oat code.
+for key in window_animation_scale transition_animation_scale animator_duration_scale; do
+  "${ADB[@]}" shell settings put global "${key}" 0 || true
+done
+for pkg in com.android.bluetooth com.google.android.bluetooth; do
+  "${ADB[@]}" shell pm disable-user --user 0 "${pkg}" || true
+done
+echo "speed-compiling host" >&2
+"${ADB[@]}" shell cmd package compile -m speed -f top.niunaijun.blackbox || true
+"${ADB[@]}" shell cmd package compile -m speed -f top.niunaijun.blackbox.test || true
 
 LOGCAT_PID=""
 cleanup() {

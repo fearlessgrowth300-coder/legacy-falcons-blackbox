@@ -72,7 +72,10 @@ jobs:
           api-level: ${{ matrix.api-level }}
           target: google_apis
           arch: x86_64
-          disable-animations: true
+          # The runner's own animation toggle aborts the job when settings
+          # returns "Broken pipe" on a just-booted API 30/34 image. The soak
+          # script turns animations off and ignores that failure.
+          disable-animations: false
           emulator-boot-timeout: 1200
           ram-size: 3072M
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none

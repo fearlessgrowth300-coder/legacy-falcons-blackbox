@@ -71,13 +71,14 @@ public class GuestMatrixTest {
         assertTrue("webview launch failed " + core.getLaunchBlockReason(USER), core.launchApk(WEB, USER));
         assertTrue("foreground launch failed " + core.getLaunchBlockReason(USER), core.launchApk(FOREGROUND, USER));
         SystemClock.sleep(8_000L);
-        assertFalse("no proxy process after launch", proxyPids(target).isEmpty());
-        Log.i(TAG, "soak-begin pids=" + proxyPids(target));
+        Set<Integer> launched = guestPids(target);
+        assertFalse("no proxy process after launch", launched.isEmpty());
+        Log.i(TAG, "soak-begin pids=" + launched);
 
         long end = SystemClock.elapsedRealtime() + SOAK_MS;
         while (SystemClock.elapsedRealtime() < end) {
             interact(core);
-            Set<Integer> pids = proxyPids(target);
+            Set<Integer> pids = guestPids(target);
             Log.i(TAG, "soak-sample pids=" + pids);
             assertFalse("guest proxy process disappeared during soak", pids.isEmpty());
             long remaining = end - SystemClock.elapsedRealtime();
@@ -85,12 +86,12 @@ public class GuestMatrixTest {
             SystemClock.sleep(Math.min(15_000L, remaining));
         }
 
-        Set<Integer> beforeStop = proxyPids(target);
+        Set<Integer> beforeStop = guestPids(target);
         Log.i(TAG, "restart-begin pids=" + beforeStop);
         core.stopPackage(WEB, USER);
         core.stopPackage(FOREGROUND, USER);
         SystemClock.sleep(3_000L);
-        Set<Integer> afterStop = proxyPids(target);
+        Set<Integer> afterStop = guestPids(target);
         Log.i(TAG, "stopped pids=" + afterStop);
         assertTrue("stopPackage left the previous guest pid running: " + afterStop,
                 disjoint(beforeStop, afterStop));
@@ -99,7 +100,7 @@ public class GuestMatrixTest {
         assertTrue("foreground relaunch failed", core.launchApk(FOREGROUND, USER));
         // The guest's first heartbeat is posted 10s after onCreate.
         SystemClock.sleep(15_000L);
-        Set<Integer> restarted = proxyPids(target);
+        Set<Integer> restarted = guestPids(target);
         Log.i(TAG, "restart-end pids=" + restarted);
         assertFalse("guest did not return after relaunch", restarted.isEmpty());
     }
@@ -132,22 +133,44 @@ public class GuestMatrixTest {
         return true;
     }
 
+    private static Set<Integer> guestPids(Context target) {
+        Set<Integer> pids = proxyPids(target);
+        if (!pids.isEmpty()) return pids;
+        // The proxy process is renamed to the guest package after bindApplication,
+        // and a single ps snapshot can land in that window.
+        SystemClock.sleep(2_000L);
+        return proxyPids(target);
+    }
+
     private static Set<Integer> proxyPids(Context target) {
         Set<Integer> pids = new HashSet<>();
-        String prefix = target.getPackageName() + ":p";
-        String dump = shell("ps -A");
-        if (dump.isEmpty()) dump = shell("ps");
+        collectGuestPids(pids, shell("ps"));
+        collectGuestPids(pids, shell("ps -A"));
+        return pids;
+    }
+
+    private static void collectGuestPids(Set<Integer> pids, String dump) {
+        if (dump == null || dump.isEmpty()) return;
         for (String line : dump.split("\n")) {
             String trimmed = line.trim();
             if (trimmed.isEmpty()) continue;
             String[] parts = trimmed.split("\\s+");
-            if (parts.length < 2 || !parts[parts.length - 1].startsWith(prefix)) continue;
+            boolean guest = false;
+            String pid = null;
+            for (String part : parts) {
+                if (pid == null && part.matches("[0-9]+")) pid = part;
+                if (part.contains(":p")
+                        || part.contains("guest.webview")
+                        || part.contains("guest.foreground")) {
+                    guest = true;
+                }
+            }
+            if (!guest || pid == null) continue;
             try {
-                pids.add(Integer.parseInt(parts[1]));
+                pids.add(Integer.parseInt(pid));
             } catch (NumberFormatException ignored) {
             }
         }
-        return pids;
     }
 
     private static String shell(String command) {

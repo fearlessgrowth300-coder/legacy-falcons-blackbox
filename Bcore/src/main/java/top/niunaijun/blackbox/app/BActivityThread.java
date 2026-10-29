@@ -183,6 +183,7 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
 
     public void initProcess(AppConfig appConfig) {
+        BlackBoxCore.get().awaitGuestHooks();
         synchronized (mConfigLock) {
             if (this.mAppConfig != null) {
                 if (!this.mAppConfig.packageName.equals(appConfig.packageName)) {

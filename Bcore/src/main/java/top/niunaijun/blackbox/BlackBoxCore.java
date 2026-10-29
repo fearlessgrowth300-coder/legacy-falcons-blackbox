@@ -81,6 +81,8 @@ public class BlackBoxCore extends ClientConfiguration {
     public static final String TAG = "BlackBoxCore";
 
     private static final BlackBoxCore sBlackBoxCore = new BlackBoxCore();
+    private static final java.util.concurrent.CountDownLatch sGuestHooks =
+            new java.util.concurrent.CountDownLatch(1);
     private static Context sContext;
     
     
@@ -974,11 +976,35 @@ public class BlackBoxCore extends ClientConfiguration {
         initVpnService();
 
         // Guest processes are the ones whose system calls must be redirected.
-        // The host UI and :black install the same set during bindApplication, and on
-        // a loaded device that walks past the process-start deadline (ANR:
-        // "failed to complete startup") before the first frame.
+        // Installing that set on the main thread keeps bindApplication from
+        // publishing the proxy provider, and ActivityManager then kills the
+        // process ("timeout publishing content providers"). The guest's
+        // initProcess waits for the same latch before any app code runs.
         if (isBlackProcess()) {
-            HookManager.get().init();
+            Thread hooks = new Thread(() -> {
+                try {
+                    HookManager.get().init();
+                } catch (Throwable error) {
+                    Slog.w(TAG, "guest hook init failed: " + error.getClass().getSimpleName());
+                } finally {
+                    sGuestHooks.countDown();
+                }
+            }, "GuestHookInit");
+            hooks.setDaemon(true);
+            hooks.start();
+        } else {
+            sGuestHooks.countDown();
+        }
+    }
+
+    /** Blocks until guest service hooks have been installed, or 20s have passed. */
+    public void awaitGuestHooks() {
+        try {
+            if (!sGuestHooks.await(20, java.util.concurrent.TimeUnit.SECONDS)) {
+                Slog.w(TAG, "guest hooks were still installing after 20s");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 
