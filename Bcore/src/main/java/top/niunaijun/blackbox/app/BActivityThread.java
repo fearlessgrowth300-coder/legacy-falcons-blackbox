@@ -1309,11 +1309,24 @@ public class BActivityThread extends IBActivityThread.Stub {
                         "Error receiving broadcast " + intent
                                 + " in " + mReceiver);
             } finally {
-                // A receiver that throws, or a DeviceStateReceiver that never finishes,
-                // must not leave the broadcast open until the system ANRs this process.
-                try {
-                    if (pendingResult != null) pendingResult.finish();
-                } catch (Throwable ignored) {
+                // goAsync() clears the receiver's pending result and finishes that same
+                // object later (often from SharedPreferences.apply on queued-work-looper).
+                // Finishing it here as well throws "Broadcast already finished".
+                boolean receiverInstalled = mReceiver != null;
+                boolean stillHeld = true;
+                if (receiverInstalled) {
+                    try {
+                        stillHeld = BRBroadcastReceiver.get(mReceiver).getPendingResult() != null;
+                    } catch (Throwable ignored) {
+                        stillHeld = true;
+                    }
+                }
+                if (top.niunaijun.blackbox.core.BroadcastFinishPolicy.shouldFinish(
+                        receiverInstalled, stillHeld)) {
+                    try {
+                        if (pendingResult != null) pendingResult.finish();
+                    } catch (Throwable ignored) {
+                    }
                 }
                 try {
                     BlackBoxCore.getBActivityManager().finishBroadcast(data.data);

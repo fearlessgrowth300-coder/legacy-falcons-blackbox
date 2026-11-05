@@ -3,6 +3,7 @@
 #include "Log.h"
 #include "xdl.h"
 #include "Dobby/dobby.h"
+#include "HookReentry.h"
 
 #include <cstdarg>
 #include <cerrno>
@@ -31,13 +32,14 @@ static int (*orig_clock_gettime)(clockid_t clock, struct timespec *ts) = nullptr
 
 static long g_uptime_offset_ms = 0;
 static bool g_installed = false;
-static thread_local int g_in_hook = 0;
+// Tag 2 is the file hooks. Separate from the syscall guard so a redirect
+// that opens a socket does not look like a nested connect.
+using FileGuard = HookReentry<2>;
 
 static const char *rewrite(const char *path) {
-    if (g_in_hook || path == nullptr) return path;
-    g_in_hook++;
+    if (path == nullptr || FileGuard::depth() > 0) return path;
+    FileGuard::Guard guard;
     const char *out = IO::redirectPath(path);
-    g_in_hook--;
     return out == nullptr ? path : out;
 }
 

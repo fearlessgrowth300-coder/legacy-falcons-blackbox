@@ -36,6 +36,7 @@
 #include <android/log.h>
 #include "./xdl.h"
 #include "Dobby/dobby.h"
+#include "../HookReentry.h"
 
 #define LOG_TAG "ProxyRedirect"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -634,12 +635,9 @@ static int startLoopbackRelay(int fd, const sockaddr *destination,
     return result;
 }
 
-static thread_local int g_proxy_reentry = 0;
-
-struct ProxyReentry {
-    ProxyReentry() { g_proxy_reentry++; }
-    ~ProxyReentry() { g_proxy_reentry--; }
-};
+// Tag 1 is the network hooks. Do not use thread_local here: the syscall hook
+// runs on jemalloc's futex path, and emulated TLS allocates on first touch.
+using ProxyGuard = HookReentry<1>;
 
 static ssize_t (*orig_sendto)(int, const void *, size_t, int, const sockaddr *, socklen_t) = nullptr;
 static ssize_t (*orig_sendmsg)(int, const struct msghdr *, int) = nullptr;
@@ -665,7 +663,7 @@ static ssize_t my_sendto(int fd, const void *buf, size_t len, int flags,
                          const sockaddr *addr, socklen_t addrlen) {
     bool enabled;
     { std::lock_guard<std::mutex> lk(g_lock); enabled = g_enabled; }
-    if (enabled && !g_proxy_reentry && nonLoopbackInternet(addr)) {
+    if (enabled && ProxyGuard::depth() == 0 && nonLoopbackInternet(addr)) {
         errno = ECONNREFUSED;
         return -1;
     }
@@ -676,7 +674,7 @@ static ssize_t my_sendmsg(int fd, const struct msghdr *msg, int flags) {
     bool enabled;
     { std::lock_guard<std::mutex> lk(g_lock); enabled = g_enabled; }
     const sockaddr *addr = msg ? (const sockaddr *) msg->msg_name : nullptr;
-    if (enabled && !g_proxy_reentry && nonLoopbackInternet(addr)) {
+    if (enabled && ProxyGuard::depth() == 0 && nonLoopbackInternet(addr)) {
         errno = ECONNREFUSED;
         return -1;
     }
@@ -686,23 +684,29 @@ static ssize_t my_sendmsg(int fd, const struct msghdr *msg, int flags) {
 static int my_connect(int fd, const sockaddr *addr, socklen_t len);
 
 static long my_syscall(long number, long a1, long a2, long a3, long a4, long a5, long a6) {
-    if (number == NR_CONNECT && !g_proxy_reentry) {
-        bool enabled;
-        { std::lock_guard<std::mutex> lk(g_lock); enabled = g_enabled; }
-        if (enabled) {
-            ProxyReentry guard;
-            return my_connect((int) a1, (const sockaddr *) a2, (socklen_t) a3);
-        }
-    }
+    // Fast path is every syscall except connect, including the futex inside malloc.
+    // No thread_local, lock, log, JNI, or allocation on this path.
     if (!orig_syscall) {
         errno = ENOSYS;
         return -1;
     }
-    return orig_syscall(number, a1, a2, a3, a4, a5, a6);
+    if (syscall_number_is_fast_path(number, NR_CONNECT) || ProxyGuard::depth() > 0) {
+        return orig_syscall(number, a1, a2, a3, a4, a5, a6);
+    }
+    ProxyGuard::Guard guard;
+    bool enabled;
+    {
+        std::lock_guard<std::mutex> lk(g_lock);
+        enabled = g_enabled;
+    }
+    if (!enabled) {
+        return orig_syscall(number, a1, a2, a3, a4, a5, a6);
+    }
+    return my_connect((int) a1, (const sockaddr *) a2, (socklen_t) a3);
 }
 
 static int my_connect(int fd, const sockaddr *addr, socklen_t len) {
-    ProxyReentry guard;
+    ProxyGuard::Guard guard;
     ProxySnapshot proxy;
     bool enabled;
     {

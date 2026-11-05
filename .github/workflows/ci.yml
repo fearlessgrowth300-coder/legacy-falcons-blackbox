@@ -88,6 +88,13 @@ jobs:
             Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/TaskIconPolicy.java \
             tools/diagnostics/TaskIconPolicyTest.java
           java -cp build/diagnostic-tests TaskIconPolicyTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/BroadcastFinishPolicy.java \
+            tools/diagnostics/BroadcastFinishPolicyTest.java
+          java -cp build/diagnostic-tests BroadcastFinishPolicyTest
+          g++ -std=c++17 -pthread -I. -o build/diagnostic-tests/syscall_hook_policy_test \
+            tools/diagnostics/syscall_hook_policy_test.cpp
+          build/diagnostic-tests/syscall_hook_policy_test
           node --test tools/diagnostics/request-summary.test.mjs
           node --check tools/diagnostics/capture-webview.mjs
 

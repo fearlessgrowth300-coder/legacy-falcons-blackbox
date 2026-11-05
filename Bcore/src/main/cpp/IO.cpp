@@ -5,10 +5,13 @@
 #include "IO.h"
 #include "Log.h"
 
+#include <atomic>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 jmethodID getAbsolutePathMethodId;
@@ -18,8 +21,31 @@ list<IO::RelocateInfo> relocate_rule;
 static int g_iso_user = -1;
 static std::string g_iso_root;
 static std::string g_iso_ext;
-static thread_local char g_iso_buf[4096];
-static thread_local char g_iso_deny[4096];
+
+// Static scratch instead of thread_local. The first touch of an emulated
+// TLS buffer calls malloc, and path hooks can run under the allocator.
+struct IsoScratch {
+    char buf[4096];
+    char deny[4096];
+    std::atomic<int32_t> tid;
+    IsoScratch() : tid(0) {}
+};
+static IsoScratch g_iso_scratch[32];
+
+static IsoScratch *iso_scratch() {
+    int32_t tid = (int32_t) gettid();
+    if (tid <= 0) return &g_iso_scratch[0];
+    uint32_t start = (uint32_t) tid & 31u;
+    for (uint32_t n = 0; n < 32; n++) {
+        IsoScratch *s = &g_iso_scratch[(start + n) & 31u];
+        int32_t cur = s->tid.load(std::memory_order_acquire);
+        if (cur == tid) return s;
+        if (cur != 0) continue;
+        int32_t empty = 0;
+        if (s->tid.compare_exchange_strong(empty, tid, std::memory_order_acq_rel)) return s;
+    }
+    return &g_iso_scratch[start];
+}
 
 static std::string strip_slash(std::string value) {
     while (value.size() > 1 && value.back() == '/') value.pop_back();
@@ -79,9 +105,10 @@ static bool id_matches(const char *rest, int user) {
 }
 
 static const char *deny_path() {
-    snprintf(g_iso_deny, sizeof(g_iso_deny), "%s/data/user/%d/.isolation-denied",
+    IsoScratch *scratch = iso_scratch();
+    snprintf(scratch->deny, sizeof(scratch->deny), "%s/data/user/%d/.isolation-denied",
              g_iso_root.empty() ? "/data/local/tmp" : g_iso_root.c_str(), g_iso_user);
-    return g_iso_deny;
+    return scratch->deny;
 }
 
 // 1 allow, 0 deny, -1 not our tree
@@ -109,14 +136,15 @@ static int confine_blackbox(const char *path) {
 static const char *confine_path(const char *path) {
     if (g_iso_user < 0 || !path) return path;
     if (!strstr(path, "/blackbox")) return path;
-    if (!normalize_path(path, g_iso_buf, sizeof(g_iso_buf))) return deny_path();
-    if ((!g_iso_root.empty() && strcmp(g_iso_buf, g_iso_root.c_str()) == 0)
-            || (!g_iso_ext.empty() && strcmp(g_iso_buf, g_iso_ext.c_str()) == 0)) {
+    IsoScratch *scratch = iso_scratch();
+    if (!normalize_path(path, scratch->buf, sizeof(scratch->buf))) return deny_path();
+    if ((!g_iso_root.empty() && strcmp(scratch->buf, g_iso_root.c_str()) == 0)
+            || (!g_iso_ext.empty() && strcmp(scratch->buf, g_iso_ext.c_str()) == 0)) {
         return deny_path();
     }
-    int verdict = confine_blackbox(g_iso_buf);
+    int verdict = confine_blackbox(scratch->buf);
     if (verdict == 0) return deny_path();
-    if (verdict == 1) return g_iso_buf;
+    if (verdict == 1) return scratch->buf;
     return path;
 }
 
