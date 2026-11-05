@@ -84,6 +84,10 @@ jobs:
             Bcore/src/main/java/top/niunaijun/blackbox/core/ProfileWorkApps.java \
             tools/diagnostics/ProfileWorkAppsTest.java
           java -cp build/diagnostic-tests ProfileWorkAppsTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/TaskIconPolicy.java \
+            tools/diagnostics/TaskIconPolicyTest.java
+          java -cp build/diagnostic-tests TaskIconPolicyTest
           node --test tools/diagnostics/request-summary.test.mjs
           node --check tools/diagnostics/capture-webview.mjs
 
