@@ -33,6 +33,11 @@ public class IOCore {
     private final Map<String, String> mRedirectMap = new LinkedHashMap<>();
 
     private static final Map<String, Map<String, String>> sCachePackageRedirect = new HashMap<>();
+    private volatile boolean mGuestIsolation;
+    private volatile boolean mBootIdSpoof = true;
+    private volatile int mGuestUser = -1;
+    private volatile String mVirtualRoot;
+    private volatile String mExternalRoot;
 
     public static IOCore get() {
         return sIOCore;
@@ -40,6 +45,10 @@ public class IOCore {
 
     
     public void addRedirect(String origPath, String redirectPath) {
+        if (origPath != null && (origPath.startsWith("/dev/ashmem")
+                || AshmemPathPolicy.blocksNativeRedirect(origPath))) {
+            return;
+        }
         if (TextUtils.isEmpty(origPath) || TextUtils.isEmpty(redirectPath) || mRedirectMap.get(origPath) != null)
             return;
         
@@ -52,17 +61,63 @@ public class IOCore {
         NativeCore.addIORule(origPath, redirectPath);
     }
 
+    /** Guest Java file APIs only. Native open() keeps the real kernel file. */
+    public void addJavaOnlyRedirect(String origPath, String redirectPath) {
+        if (TextUtils.isEmpty(origPath) || TextUtils.isEmpty(redirectPath) || mRedirectMap.get(origPath) != null)
+            return;
+        mTrieTree.add(origPath);
+        mRedirectMap.put(origPath, redirectPath);
+    }
+
+    public void disableBootIdSpoof() {
+        mBootIdSpoof = false;
+        try {
+            NativeCore.setBootIdSpoof(false);
+        } catch (Throwable ignored) {
+        }
+    }
+
     public void addBlackRedirect(String path) {
         if (TextUtils.isEmpty(path))
             return;
         sBlackTree.add(path);
     }
 
+    /**
+     * Guest-only. The server process keeps access to every virtual user.
+     * Failure to publish the native copy is logged; Java redirects still apply.
+     */
+    public synchronized void enableGuestIsolation(int userId) {
+        if (userId < 0) return;
+        mGuestUser = userId;
+        mGuestIsolation = true;
+        try {
+            mVirtualRoot = BEnvironment.getVirtualRoot().getAbsolutePath();
+            File external = BEnvironment.getExternalVirtualRoot();
+            mExternalRoot = external == null ? null : external.getAbsolutePath();
+        } catch (Throwable error) {
+            top.niunaijun.blackbox.utils.Slog.w(TAG, "path isolation roots unavailable");
+            return;
+        }
+        try {
+            NativeCore.setPathIsolation(mVirtualRoot, mExternalRoot, userId);
+        } catch (Throwable error) {
+            top.niunaijun.blackbox.utils.Slog.w(TAG, "native path isolation unavailable");
+        }
+    }
+
     public String redirectPath(String path) {
         if (TextUtils.isEmpty(path))
             return path;
-        if (path.contains("/blackbox/")) {
-            return path;
+        path = AshmemPathPolicy.canonicalAshmem(path);
+        if (AshmemPathPolicy.blocksNativeRedirect(path)) return path;
+        if (!mBootIdSpoof && AshmemPathPolicy.isKernelBootId(path)) return path;
+        if (!mGuestIsolation) {
+            if (path.contains("/blackbox/")) {
+                return path;
+            }
+        } else {
+            path = confineGuest(path);
         }
         String search = sBlackTree.search(path);
         if (!TextUtils.isEmpty(search))
@@ -73,6 +128,20 @@ public class IOCore {
         if (!TextUtils.isEmpty(key))
             path = path.replace(key, Objects.requireNonNull(mRedirectMap.get(key)));
 
+        if (mGuestIsolation) path = confineGuest(path);
+        return path;
+    }
+
+    private String confineGuest(String path) {
+        try {
+            PathIsolation.Decision decision = PathIsolation.decide(
+                    path, mVirtualRoot, mExternalRoot, mGuestUser);
+            if (!decision.applyRules && decision.path != null) return decision.path;
+        } catch (Throwable error) {
+            if (path != null && path.contains("/blackbox/")) {
+                return PathIsolation.denyPath(mVirtualRoot, mGuestUser);
+            }
+        }
         return path;
     }
 
@@ -86,12 +155,14 @@ public class IOCore {
     public String redirectPath(String path, Map<String, String> rule) {
         if (TextUtils.isEmpty(path))
             return path;
+        if (mGuestIsolation) path = confineGuest(path);
 
         
         String key = mTrieTree.search(path);
         if (!TextUtils.isEmpty(key))
             path = path.replace(key, Objects.requireNonNull(rule.get(key)));
 
+        if (mGuestIsolation) path = confineGuest(path);
         return path;
     }
 
@@ -108,6 +179,8 @@ public class IOCore {
      * for bindApplication(), where the guest package Context is available.
      */
     public synchronized boolean enableKernelIdentityRedirects() {
+        int userId = BlackBoxCore.getUserId();
+        enableGuestIsolation(userId);
         DeviceProfile profile = DeviceProfile.CURRENT;
         Map<String, String> kernelRules = new LinkedHashMap<>();
         if (profile == null || !profile.addKernelIdentityRedirects(kernelRules)) return false;
@@ -161,12 +234,21 @@ public class IOCore {
                 // into the clone's empty private volume and apps report a false permission error.
                 // Only user media is shared. Android/data, app databases, accounts and every
                 // other external path continue to use the per-BlackBox-user volume below.
-                String[] sharedMediaDirs = {"DCIM", "Pictures", "Movies"};
-                for (String dir : sharedMediaDirs) {
-                    String sdcardPath = "/sdcard/" + dir;
-                    String emulatedPath = String.format("/storage/emulated/%d/%s", systemUserId, dir);
-                    rule.put(sdcardPath, sdcardPath);
-                    rule.put(emulatedPath, emulatedPath);
+                boolean shareHostMedia = false;
+                try {
+                    shareHostMedia = ProfilePolicy.load(ProfilePolicy.fileFor(
+                            BEnvironment.getUserDir(BlackBoxCore.getUserId()))).shareHostMedia;
+                } catch (Throwable error) {
+                    top.niunaijun.blackbox.utils.Slog.w(TAG, "media policy unavailable; keeping media private");
+                }
+                if (shareHostMedia) {
+                    String[] sharedMediaDirs = {"DCIM", "Pictures", "Movies"};
+                    for (String dir : sharedMediaDirs) {
+                        String sdcardPath = "/sdcard/" + dir;
+                        String emulatedPath = String.format("/storage/emulated/%d/%s", systemUserId, dir);
+                        rule.put(sdcardPath, sdcardPath);
+                        rule.put(emulatedPath, emulatedPath);
+                    }
                 }
 
                 rule.put("/sdcard", external.getAbsolutePath());

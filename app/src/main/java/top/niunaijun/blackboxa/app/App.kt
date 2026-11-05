@@ -3,6 +3,7 @@ package top.niunaijun.blackboxa.app
 import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackboxa.cloud.CloudSync
@@ -22,6 +23,11 @@ class App : Application() {
         fun getContext(): Context {
             return mContext
         }
+    }
+
+    private fun isMainProcess(): Boolean {
+        val name = if (Build.VERSION.SDK_INT >= 28) getProcessName() else packageName
+        return name == packageName
     }
 
     override fun attachBaseContext(base: Context?) {
@@ -92,6 +98,13 @@ class App : Application() {
             }
             CrashReporter.flushAsync(this)
             Supabase.retryPendingLogoutAsync(this)
+            if (isMainProcess()) {
+                try {
+                    top.niunaijun.blackboxa.profile.ManagedProfileFinalizer.finalizeIfOwner(this)
+                } catch (error: Throwable) {
+                    Log.e("App", "work profile finalizer failed: ${error.message}")
+                }
+            }
             AppManager.doOnCreate(mContext)
         } catch (e: Exception) {
             Log.e("App", "Error in onCreate: ${e.message}")

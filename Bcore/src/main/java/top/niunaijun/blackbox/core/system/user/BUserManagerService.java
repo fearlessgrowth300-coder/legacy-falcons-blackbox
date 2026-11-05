@@ -20,9 +20,11 @@ import top.niunaijun.blackbox.core.system.ISystemService;
 import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
 import top.niunaijun.blackbox.utils.CloseUtils;
 import top.niunaijun.blackbox.utils.FileUtils;
+import top.niunaijun.blackbox.utils.Slog;
 
 
 public class BUserManagerService extends IBUserManagerService.Stub implements ISystemService {
+    private static final String TAG = "BUserManagerService";
     private static BUserManagerService sService = new BUserManagerService();
     public final HashMap<Integer, BUserInfo> mUsers = new HashMap<>();
     public final Object mUserLock = new Object();
@@ -129,6 +131,11 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
             saveUserInfoLocked();
         }
         // New users are safe from their first app launch.
+        if (!top.niunaijun.blackbox.core.ProfilePolicy.store(
+                top.niunaijun.blackbox.core.ProfilePolicy.fileFor(BEnvironment.getUserDir(userId)),
+                top.niunaijun.blackbox.core.ProfilePolicy.defaults())) {
+            Slog.w(TAG, "default isolation policy was not written for user " + userId);
+        }
         if (!KeystoreIsolation.markNewUser(userId)) {
             mUsers.remove(userId);
             synchronized (mUsers) { saveUserInfoLocked(); }

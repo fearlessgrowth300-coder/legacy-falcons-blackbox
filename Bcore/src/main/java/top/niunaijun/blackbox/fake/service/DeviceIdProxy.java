@@ -3,6 +3,7 @@ package top.niunaijun.blackbox.fake.service;
 import java.lang.reflect.Method;
 
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
+import top.niunaijun.blackbox.fake.hook.PineClassAttacher;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Slog;
@@ -30,7 +31,31 @@ public class DeviceIdProxy extends ClassInvocationStub {
         return false;
     }
 
+    @Override
+    protected Class<?> hookTargetClass() {
+        return android.telephony.TelephonyManager.class;
+    }
+
+    @Override
+    protected void afterPineHook(String methodName, Object self, Object[] args, Object frame) {
+        if (!"getDeviceId".equals(methodName) && !"getImei".equals(methodName)
+                && !"getMeid".equals(methodName)) {
+            return;
+        }
+        top.niunaijun.blackbox.core.DeviceProfile profile =
+                top.niunaijun.blackbox.core.DeviceProfile.CURRENT;
+        if (profile != null && profile.imei != null) {
+            PineClassAttacher.setResult(frame, profile.imei);
+        }
+    }
+
     
+    @ProxyMethod("getImei")
+    public static class GetImei extends GetDeviceId {}
+
+    @ProxyMethod("getMeid")
+    public static class GetMeid extends GetDeviceId {}
+
     @ProxyMethod("getDeviceId")
     public static class GetDeviceId extends MethodHook {
         @Override

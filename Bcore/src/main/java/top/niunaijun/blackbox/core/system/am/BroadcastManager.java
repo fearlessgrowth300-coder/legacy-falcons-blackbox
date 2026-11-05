@@ -88,9 +88,11 @@ public class BroadcastManager implements PackageMonitor {
                 List<BPackage.ActivityIntentInfo> intents = receiver.intents;
                 for (BPackage.ActivityIntentInfo intent : intents) {
                     ProxyBroadcastReceiver proxyBroadcastReceiver = new ProxyBroadcastReceiver();
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    // RECEIVER_EXPORTED is 0x2. Android 8 through 12 reject that bit as an
+                    // unknown flag, so only pass it once the flag exists (API 33).
+                    if (Build.VERSION.SDK_INT >= 33) {
                         BlackBoxCore.getContext().registerReceiver(proxyBroadcastReceiver, intent.intentFilter, Context.RECEIVER_EXPORTED);
-                    }else{
+                    } else {
                         BlackBoxCore.getContext().registerReceiver(proxyBroadcastReceiver, intent.intentFilter);
                     }
                     addReceiver(bPackage.packageName, proxyBroadcastReceiver);

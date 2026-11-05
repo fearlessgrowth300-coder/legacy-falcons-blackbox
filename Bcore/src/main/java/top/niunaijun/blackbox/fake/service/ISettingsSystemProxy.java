@@ -33,6 +33,11 @@ public class ISettingsSystemProxy extends ClassInvocationStub {
         return false;
     }
 
+    @Override
+    protected Class<?> hookTargetClass() {
+        return android.provider.Settings.System.class;
+    }
+
     
     @ProxyMethod("getStringForUser")
     public static class GetStringForUser extends MethodHook {

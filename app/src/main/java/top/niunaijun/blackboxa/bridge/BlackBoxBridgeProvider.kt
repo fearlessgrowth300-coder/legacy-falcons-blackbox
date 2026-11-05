@@ -110,8 +110,10 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     val username = e.getString("username", "")
                     val password = e.getString("password", "")
                     val countryIso = e.getString("countryIso", "")
+                    val listener = cloneEndpoint(e)
                     val validNode = server.isNotBlank() && port in 1..65535 &&
-                        type in setOf("http", "https", "socks", "socks5")
+                        type in setOf("http", "https", "socks", "socks5") &&
+                        GuestProxy.isCloneListener(listener.host, listener.port)
                     val knownUser = userId >= 0 && BlackBoxCore.get().users.any { it.id == userId }
                     val knownApp = pkg != null && knownUser && BlackBoxCore.get().isInstalled(pkg, userId)
                     val conflict = validNode && knownApp && GuestProxy.wouldConflictWithSharedGms(
@@ -154,8 +156,10 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     // Repeat the profile editor's read-only checks at the atomic launch boundary.
                     // A restored profile can outlive a deleted or moved clone, so an earlier
                     // successful preflight must not authorize a later write for the wrong user.
+                    val listener = cloneEndpoint(e)
                     val validNode = server.isNotBlank() && port in 1..65535 &&
-                        type in setOf("http", "https", "socks", "socks5")
+                        type in setOf("http", "https", "socks", "socks5") &&
+                        GuestProxy.isCloneListener(listener.host, listener.port)
                     val knownUser = userId >= 0 && BlackBoxCore.get().users.any { it.id == userId }
                     val knownApp = pkg != null && knownUser && BlackBoxCore.get().isInstalled(pkg, userId)
                     val validExitIp = !expectedExitIp.isNullOrBlank()
@@ -176,7 +180,9 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     val saved = validNode && knownApp && validExitIp && !conflict &&
                         (reuseRunningRoute || GuestProxy.save(
                             userId, pkg, type, server, port, username, password, countryIso,
-                            city, region, latitude, longitude, timezoneId
+                            city, region, latitude, longitude, timezoneId,
+                            listener.host, listener.port, listener.socksUser, listener.socksPassword,
+                            listener.locale, listener.tls
                         ))
                     val gmsRoute = if (saved && GuestProxy.isSharedGmsActive(userId)) {
                         GuestProxy.syncGmsRouteForUser(userId)
@@ -256,8 +262,10 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     val latitude = if (e.containsKey("latitude")) e.getDouble("latitude") else null
                     val longitude = if (e.containsKey("longitude")) e.getDouble("longitude") else null
                     val timezoneId = e.getString("timezoneId", "")
+                    val listener = cloneEndpoint(e)
                     val validNode = server.isNotBlank() && port in 1..65535 &&
-                        type in setOf("http", "https", "socks", "socks5")
+                        type in setOf("http", "https", "socks", "socks5") &&
+                        GuestProxy.isCloneListener(listener.host, listener.port)
                     val knownUser = userId >= 0 && BlackBoxCore.get().users.any { it.id == userId }
                     val knownApp = pkg == null || (knownUser && BlackBoxCore.get().isInstalled(pkg, userId))
                     val conflict = validNode && knownApp && pkg != null && GuestProxy.wouldConflictWithSharedGms(
@@ -265,7 +273,9 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     )
                     val saved = validNode && knownUser && knownApp && !conflict && GuestProxy.save(
                         userId, pkg, type, server, port, username, password, countryIso,
-                        city, region, latitude, longitude, timezoneId
+                        city, region, latitude, longitude, timezoneId,
+                        listener.host, listener.port, listener.socksUser, listener.socksPassword,
+                        listener.locale, listener.tls
                     )
                     val gmsRoute = if (saved && GuestProxy.isSharedGmsActive(userId)) {
                         GuestProxy.syncGmsRouteForUser(userId)
@@ -360,8 +370,41 @@ class BlackBoxBridgeProvider : ContentProvider() {
                             top.niunaijun.blackbox.core.GuestKeepAlive.isEnabled(userId)
                         )
                         res.putBoolean("sharedGmsActive", GuestProxy.isSharedGmsActive(userId))
+                        val policy = top.niunaijun.blackbox.core.ProfilePolicy.load(
+                            top.niunaijun.blackbox.core.ProfilePolicy.fileFor(
+                                top.niunaijun.blackbox.core.env.BEnvironment.getUserDir(userId)
+                            )
+                        )
+                        res.putBoolean("shareHostMedia", policy.shareHostMedia)
+                        res.putBoolean("shareHostGoogleProviders", policy.shareHostGoogleProviders)
+                        res.putBoolean("requireProxy", policy.requireProxy)
                     } else {
                         res.putString("err", "Unknown BlackBox user")
+                    }
+                }
+                "setProfilePolicy" -> {
+                    val userId = extras!!.getInt("userId", -1)
+                    val knownUser = userId >= 0 && BlackBoxCore.get().users.any { it.id == userId }
+                    if (!knownUser) {
+                        res.putBoolean("ok", false)
+                        res.putString("err", "Unknown BlackBox user")
+                    } else {
+                        val file = top.niunaijun.blackbox.core.ProfilePolicy.fileFor(
+                            top.niunaijun.blackbox.core.env.BEnvironment.getUserDir(userId)
+                        )
+                        val current = top.niunaijun.blackbox.core.ProfilePolicy.load(file)
+                        val updated = top.niunaijun.blackbox.core.ProfilePolicy(
+                            if (extras.containsKey("shareHostMedia")) extras.getBoolean("shareHostMedia")
+                            else current.shareHostMedia,
+                            if (extras.containsKey("shareHostGoogleProviders"))
+                                extras.getBoolean("shareHostGoogleProviders")
+                            else current.shareHostGoogleProviders,
+                            if (extras.containsKey("requireProxy")) extras.getBoolean("requireProxy")
+                            else current.requireProxy
+                        )
+                        val saved = top.niunaijun.blackbox.core.ProfilePolicy.store(file, updated)
+                        res.putBoolean("ok", saved)
+                        if (!saved) res.putString("err", "Could not store the profile policy")
                     }
                 }
                 "verifyRoute" -> {
@@ -494,11 +537,10 @@ class BlackBoxBridgeProvider : ContentProvider() {
                     res.putBoolean("running", running)
                 }
                 "setKeepAlive" -> {
-                    // Keep a clone receiving push in the background: installs GMS (FCM) + keeps the
-                    // container daemon alive for this User.
+                    // Per-clone opt-in. The default is off. This does not install GMS.
                     val e = extras!!
                     val uid = e.getInt("userId")
-                    val on = e.getBoolean("enabled", true)
+                    val on = e.getBoolean("enabled", false)
                     val enabled = top.niunaijun.blackbox.core.GuestKeepAlive.setEnabled(uid, on)
                     res.putBoolean("ok", enabled)
                     res.putBoolean("gms", BlackBoxCore.get().isInstallGms(uid))
@@ -513,6 +555,27 @@ class BlackBoxBridgeProvider : ContentProvider() {
             res.putString("err", ex.message)
         }
         return res
+    }
+
+    private class CloneEndpoint(
+        val host: String,
+        val port: Int,
+        val socksUser: String,
+        val socksPassword: String,
+        val locale: String,
+        val tls: Boolean?
+    )
+
+    private fun cloneEndpoint(e: Bundle): CloneEndpoint {
+        val tls = if (e.containsKey("tls")) e.getBoolean("tls") else null
+        return CloneEndpoint(
+            e.getString("localHost", "") ?: "",
+            if (e.containsKey("localPort")) e.getInt("localPort") else 0,
+            e.getString("socksUser", "") ?: "",
+            e.getString("socksPassword", "") ?: "",
+            e.getString("locale", "") ?: "",
+            tls
+        )
     }
 
     private fun verifyProxyRouteAfterStartup(

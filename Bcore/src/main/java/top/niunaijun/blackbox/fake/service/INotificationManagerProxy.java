@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationChannelGroup;
 import android.content.Context;
 import android.os.Build;
+import android.service.notification.StatusBarNotification;
 
 import androidx.annotation.RequiresApi;
 
@@ -19,6 +20,7 @@ import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
+import top.niunaijun.blackbox.core.system.notification.NotificationVisibility;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.ParceledListSliceCompat;
 
@@ -177,4 +179,52 @@ public class INotificationManagerProxy extends BinderInvocationStub {
             return ParceledListSliceCompat.create(notificationChannelGroups);
         }
     }
+
+    private static Object onlyOwnNotifications(Object result) {
+        int userId = BActivityThread.getUserId();
+        String packageName = BActivityThread.getAppPackageName();
+        try {
+            if (result == null) return null;
+            if (result instanceof StatusBarNotification[]) {
+                List<StatusBarNotification> kept = new java.util.ArrayList<>();
+                for (StatusBarNotification notification : (StatusBarNotification[]) result) {
+                    if (notification != null && NotificationVisibility.ownsPostedTag(
+                            notification.getTag(), userId, packageName)) {
+                        kept.add(notification);
+                    }
+                }
+                return kept.toArray(new StatusBarNotification[0]);
+            }
+            if (result instanceof List) {
+                List<Object> kept = new java.util.ArrayList<>();
+                for (Object item : (List<?>) result) {
+                    if (item instanceof StatusBarNotification && NotificationVisibility.ownsPostedTag(
+                            ((StatusBarNotification) item).getTag(), userId, packageName)) {
+                        kept.add(item);
+                    }
+                }
+                return kept;
+            }
+        } catch (Throwable ignored) {
+        }
+        return new StatusBarNotification[0];
+    }
+
+    @ProxyMethod("getActiveNotifications")
+    public static class GetActiveNotifications extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                return onlyOwnNotifications(method.invoke(who, args));
+            } catch (Throwable error) {
+                return new StatusBarNotification[0];
+            }
+        }
+    }
+
+    @ProxyMethod("getAppActiveNotifications")
+    public static class GetAppActiveNotifications extends GetActiveNotifications {}
+
+    @ProxyMethod("getHistoricalNotifications")
+    public static class GetHistoricalNotifications extends GetActiveNotifications {}
 }

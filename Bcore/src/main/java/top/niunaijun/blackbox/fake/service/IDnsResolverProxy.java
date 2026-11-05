@@ -23,10 +23,18 @@ public class IDnsResolverProxy extends BinderInvocationStub {
 
     @Override
     protected Object getWho() {
-        
-        
-        Slog.d(TAG, "IDnsResolverProxy: Returning null for getWho to avoid reflection issues");
-        return null;
+        try {
+            android.os.IBinder binder = BRServiceManager.get().getService(DNS_RESOLVER_SERVICE);
+            if (binder == null) {
+                Slog.w(TAG, "dnsresolver service missing; proxy not installed");
+                return null;
+            }
+            Class<?> stub = Class.forName("android.net.IDnsResolver$Stub");
+            return stub.getMethod("asInterface", android.os.IBinder.class).invoke(null, binder);
+        } catch (Throwable error) {
+            Slog.w(TAG, "dnsresolver proxy not installed: " + error.getClass().getSimpleName());
+            return null;
+        }
     }
 
     @Override
@@ -44,6 +52,20 @@ public class IDnsResolverProxy extends BinderInvocationStub {
         return false;
     }
 
+    private static boolean directDnsBlocked() {
+        try {
+            int userId = top.niunaijun.blackbox.app.BActivityThread.getUserId();
+            top.niunaijun.blackbox.core.ProfilePolicy policy =
+                    top.niunaijun.blackbox.core.ProfilePolicy.load(
+                            top.niunaijun.blackbox.core.ProfilePolicy.fileFor(
+                                    top.niunaijun.blackbox.core.env.BEnvironment.getUserDir(userId)));
+            if (policy.requireProxy) return true;
+            return top.niunaijun.blackbox.core.GuestProxy.CURRENT_ROUTE_ID != null;
+        } catch (Throwable ignored) {
+            return true;
+        }
+    }
+
     
     @ProxyMethod("resolveDns")
     public static class ResolveDns extends MethodHook {
@@ -51,7 +73,7 @@ public class IDnsResolverProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "Intercepting DNS resolution request");
             try {
-                
+                if (directDnsBlocked()) return new ArrayList<InetAddress>();
                 Object result = method.invoke(who, args);
                 if (result != null) {
                     return result;

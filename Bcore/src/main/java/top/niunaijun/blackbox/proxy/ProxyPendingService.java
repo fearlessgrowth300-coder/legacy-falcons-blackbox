@@ -31,12 +31,24 @@ public final class ProxyPendingService extends Service {
             NotificationManager manager = getSystemService(NotificationManager.class);
             manager.createNotificationChannel(new NotificationChannel(CHANNEL,
                     "Background delivery", NotificationManager.IMPORTANCE_MIN));
-            startForeground(ID, new NotificationCompat.Builder(this, CHANNEL)
+            android.app.Notification notification = new NotificationCompat.Builder(this, CHANNEL)
                     .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
                     .setContentTitle("BlackBox")
                     .setContentText("Delivering a background event")
                     .setPriority(NotificationCompat.PRIORITY_MIN)
-                    .build());
+                    .build();
+            try {
+                if (Build.VERSION.SDK_INT >= 34) {
+                    startForeground(ID, notification,
+                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+                } else {
+                    startForeground(ID, notification);
+                }
+            } catch (Throwable error) {
+                // Android 14+ can reject a missing type. Delivery still has to run.
+                android.util.Log.w("ProxyPendingService",
+                        "Foreground promotion skipped: " + error.getClass().getSimpleName());
+            }
         }
         if (record.mTarget != null) {
             BlackBoxCore.getBActivityManager().startService(record.mTarget, null,

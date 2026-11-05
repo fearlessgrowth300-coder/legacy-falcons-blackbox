@@ -1,6 +1,5 @@
 package top.niunaijun.blackbox.fake.service;
 
-import android.app.ActivityManager;
 import android.os.IBinder;
 
 import java.lang.reflect.Method;
@@ -90,10 +89,8 @@ public class IActivityClientProxy extends ClassInvocationStub {
     @ProxyMethod("setTaskDescription")
     public static class SetTaskDescription extends MethodHook {
         @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            ActivityManager.TaskDescription td = (ActivityManager.TaskDescription) args[1];
-            args[1] = TaskDescriptionCompat.fix(td);
-            return method.invoke(who, args);
+        protected Object hook(Object who, Method method, Object[] args) {
+            return TaskDescriptionCompat.publish(who, method, args);
         }
     }
 }

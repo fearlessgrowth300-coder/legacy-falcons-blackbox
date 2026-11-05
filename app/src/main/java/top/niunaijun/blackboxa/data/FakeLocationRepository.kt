@@ -34,7 +34,7 @@ class FakeLocationRepository {
     ) {
         val installedList = mutableListOf<FakeLocationBean>()
         val installedApplications: List<ApplicationInfo> =
-            BlackBoxCore.get().getInstalledApplications(0, userID)
+            BlackBoxCore.get().getInstalledApplications(0, userID) ?: return
         
         for (installedApplication in installedApplications) {
 
