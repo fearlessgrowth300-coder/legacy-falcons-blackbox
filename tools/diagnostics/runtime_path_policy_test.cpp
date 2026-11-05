@@ -22,7 +22,10 @@ int main() {
     check(strcmp(canonical_ashmem_path("/dev/binder"), "/dev/binder") == 0,
             "binder is not rewritten to ashmem");
     check(path_is_kernel_boot_id("/proc/sys/kernel/random/boot_id"), "boot id path is recognized");
-    check(!native_may_redirect_boot_id(), "native hooks do not spoof boot_id");
+    check(native_may_redirect_boot_id(), "guest boot_id stays on the per-user file");
+    set_native_boot_id_spoof(false);
+    check(!native_may_redirect_boot_id(), "a failed ashmem probe can disable boot_id spoof");
+    set_native_boot_id_spoof(true);
     check(path_is_runtime_device("/dev/binder"), "binder is protected");
     check(path_is_runtime_device("/dev/hwbinder"), "hwbinder is protected");
     check(path_is_runtime_device("/dev/__properties__"), "properties device is protected");

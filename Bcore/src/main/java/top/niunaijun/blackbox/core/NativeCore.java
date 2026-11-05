@@ -104,6 +104,9 @@ public class NativeCore {
 
     public static native void addIORule(String targetPath, String relocatePath);
 
+    /** Per-user boot_id for guest readers. Ashmem paths stay on /dev/ashmem either way. */
+    public static native void setBootIdSpoof(boolean enabled);
+
     /** Guest-only path jail. A failure here must not crash the process. */
     public static native void setPathIsolation(String virtualRoot, String externalRoot, int userId);
 

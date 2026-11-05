@@ -184,8 +184,11 @@ const char *IO::redirectPath(const char *__path) {
     if (__path == nullptr) return __path;
     const char *ashmem = canonical_ashmem_path(__path);
     if (ashmem != __path) return ashmem;
-    // Native readers, including libcutils, always see the real boot id.
-    if (path_is_kernel_boot_id(__path) || path_is_runtime_device(__path)) return __path;
+    // Binder, graphics, and /proc/self runtime files stay on the real node.
+    // boot_id is a per-user identity file when that spoof is enabled. Ashmem
+    // opens are already collapsed above, so a spoofed id cannot hide the device.
+    if (path_is_runtime_device(__path)) return __path;
+    if (path_is_kernel_boot_id(__path) && !native_may_redirect_boot_id()) return __path;
     const char *confined = confine_path(__path);
     if (confined != __path) return confined;
 
@@ -258,8 +261,10 @@ jobject IO::redirectPath(JNIEnv *env, jobject path) {
 
 void IO::addRule(const char *targetPath, const char *relocatePath) {
     if (targetPath == nullptr || relocatePath == nullptr) return;
-    if (path_is_kernel_boot_id(targetPath) || path_is_ashmem_device(targetPath)
-            || path_is_runtime_device(targetPath)) {
+    if (path_is_ashmem_device(targetPath) || path_is_runtime_device(targetPath)) {
+        return;
+    }
+    if (path_is_kernel_boot_id(targetPath) && !native_may_redirect_boot_id()) {
         return;
     }
     IO::RelocateInfo info{};

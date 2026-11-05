@@ -5,6 +5,7 @@
 #include "BoxCore.h"
 #include "Log.h"
 #include "IO.h"
+#include "RuntimePathPolicy.h"
 #include <jni.h>
 #include <JniHook/JniHook.h>
 #include <Hook/VMClassLoaderHook.h>
@@ -119,6 +120,12 @@ void init(JNIEnv *env, jobject clazz, jint api_level) {
                                                 "()[J");
 
     JniHook::InitJniHook(env, api_level);
+}
+
+void setBootIdSpoof(JNIEnv *env, jclass clazz, jboolean enabled) {
+    (void) env;
+    (void) clazz;
+    set_native_boot_id_spoof(enabled == JNI_TRUE);
 }
 
 void addIORule(JNIEnv *env, jclass clazz, jstring target_path,
@@ -254,6 +261,7 @@ static JNINativeMethod gMethods[] = {
         {"disableResourceLoading", "()Z",                         (void *) disableResourceLoading},
         {"hideXposed", "()V",                                     (void *) hideXposed},
         {"addIORule",  "(Ljava/lang/String;Ljava/lang/String;)V", (void *) addIORule},
+        {"setBootIdSpoof", "(Z)V", (void *) setBootIdSpoof},
         {"setPathIsolation", "(Ljava/lang/String;Ljava/lang/String;I)V", (void *) setPathIsolation},
         {"setUptimeOffsetMs", "(J)V", (void *) setUptimeOffsetMs},
         {"setCallerIdentity", "(II)V", (void *) setCallerIdentity},

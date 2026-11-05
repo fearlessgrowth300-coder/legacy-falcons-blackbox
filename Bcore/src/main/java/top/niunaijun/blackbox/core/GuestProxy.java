@@ -511,52 +511,41 @@ public class GuestProxy {
         CURRENT_ROUTE_ID = null;
         clearCurrentGeo();
         try {
-            // App launches never inherit the legacy per-user proxy. That fallback could silently
-            // route two apps through the same credentials and defeats deterministic isolation.
-            File f = file(userId, pkg);
-            if (!f.exists()) {
-                if (isRouteRequired(userId, pkg)) return ApplyStatus.INVALID_CONFIG;
+            // The route is per BlackBox user. Play Store and Google services dial the same
+            // loopback listener as the app ShieldProxy assigned for that user.
+            UserRoute.Decision decision = UserRoute.resolve(pkg, readAssignments(userId),
+                    profileRequiresProxy(userId));
+            if (decision.kind == UserRoute.Kind.DIRECT) {
                 updateUnregisteredWhatsAppCountry(userId, pkg, physicalCountryIso());
                 return ApplyStatus.NOT_CONFIGURED;
             }
-            if (!markRouteRequired(userId, pkg)) return ApplyStatus.INVALID_CONFIG;
-
-            JSONObject o = new JSONObject(ProxyConfigCrypto.readText(f, userId, pkg));
-            if (!o.optBoolean("enabled", false)) return ApplyStatus.INVALID_CONFIG;
-
-            String type = o.optString("type", "").trim().toLowerCase();
-            if (!(type.equals("http") || type.equals("https") || type.equals("socks") || type.equals("socks5")))
+            if (decision.kind != UserRoute.Kind.USE) {
+                NativeCore.disableProxy();
+                Slog.w(TAG, decision.message == null
+                        ? "refusing direct or upstream dial; clone listener missing"
+                        : decision.message);
                 return ApplyStatus.INVALID_CONFIG;
-            String server = o.optString("server", "").trim();
-            int port = o.optInt("port", 0);
-            if (server.isEmpty() || port <= 0 || port > 65535) return ApplyStatus.INVALID_CONFIG;
-            // Dial only this clone's loopback SOCKS listener. The upstream node, including TLS,
-            // is Mihomo's job. A missing or closed listener must not fall through to the phone
-            // network or to the upstream address.
-            int localPort = o.optInt("localPort", 0);
-            String localHost = o.optString("localHost", "");
-            if (!isCloneListener(localHost, localPort)) {
+            }
+            if (!markRouteRequired(userId, pkg)) return ApplyStatus.INVALID_CONFIG;
+            if (!isCloneListener(decision.localHost, decision.localPort)) {
                 NativeCore.disableProxy();
                 Slog.w(TAG, "refusing direct or upstream dial; clone listener missing");
                 return ApplyStatus.INVALID_CONFIG;
             }
-            String socksUser = o.optString("socksUser", "");
-            String socksPass = o.optString("socksPassword", "");
-            if (!NativeCore.setProxy(1, "127.0.0.1", localPort, socksUser, socksPass)) {
+            if (!NativeCore.setProxy(1, "127.0.0.1", decision.localPort,
+                    decision.socksUser, decision.socksPassword)) {
                 NativeCore.disableProxy();
                 return ApplyStatus.NATIVE_SETUP_FAILED;
             }
-            String routeId = routeIdFor(userId, pkg);
-            if (routeId == null) {
+            if (decision.routeId == null) {
                 NativeCore.disableProxy();
                 return ApplyStatus.INVALID_CONFIG;
             }
-            CURRENT_ROUTE_ID = routeId;
-            Slog.d(TAG, "guest proxy applied for user " + userId + " pkg " + pkg);
-
-            // Make the clock + language match the exit region so a US exit IP doesn't sit on an
-            // Africa/Lagos timezone (a detectable mismatch). Derived from the proxy's region/city.
-            applyGeoConsistency(o, userId);
+            CURRENT_ROUTE_ID = decision.routeId;
+            Slog.d(TAG, "guest proxy applied for user " + userId + " pkg " + pkg
+                    + " via " + (decision.sourcePkg == null ? "user" : decision.sourcePkg));
+            JSONObject source = readRouteJson(userId, decision.sourcePkg);
+            if (source != null) applyGeoConsistency(source, userId);
             return ApplyStatus.READY;
         } catch (Throwable e) {
             NativeCore.disableProxy();
@@ -564,6 +553,52 @@ public class GuestProxy {
             clearCurrentGeo();
             Slog.w(TAG, "guest proxy apply failed: " + e.getClass().getSimpleName());
             return ApplyStatus.INVALID_CONFIG;
+        }
+    }
+
+    private static boolean profileRequiresProxy(int userId) {
+        try {
+            return ProfilePolicy.load(ProfilePolicy.fileFor(BEnvironment.getUserDir(userId))).requireProxy;
+        } catch (Throwable ignored) {
+            return true;
+        }
+    }
+
+    private static java.util.List<UserRoute.Assignment> readAssignments(int userId) {
+        java.util.List<UserRoute.Assignment> rows = new java.util.ArrayList<>();
+        File legacy = file(userId, null);
+        if (legacy.isFile()) rows.add(readAssignment(userId, null, legacy));
+        File dir = BEnvironment.getUserDir(userId);
+        File[] configs = dir == null ? null : dir.listFiles();
+        if (configs == null) return rows;
+        for (File candidate : configs) {
+            String name = candidate.getName();
+            if (!candidate.isFile() || !name.startsWith("proxy_") || !name.endsWith(".json")) continue;
+            String owner = name.substring("proxy_".length(), name.length() - ".json".length());
+            if (!validPackage(owner)) continue;
+            rows.add(readAssignment(userId, owner, candidate));
+        }
+        return rows;
+    }
+
+    private static UserRoute.Assignment readAssignment(int userId, String pkg, File source) {
+        try {
+            JSONObject o = new JSONObject(ProxyConfigCrypto.readText(source, userId, pkg));
+            return new UserRoute.Assignment(pkg, o.optBoolean("enabled", false), routeId(o),
+                    o.optString("localHost", ""), o.optInt("localPort", 0),
+                    o.optString("socksUser", ""), o.optString("socksPassword", ""));
+        } catch (Throwable ignored) {
+            return new UserRoute.Assignment(pkg, true, null, "", 0, "", "");
+        }
+    }
+
+    private static JSONObject readRouteJson(int userId, String pkg) {
+        try {
+            File source = file(userId, pkg);
+            if (!source.isFile()) return null;
+            return new JSONObject(ProxyConfigCrypto.readText(source, userId, pkg));
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 
@@ -764,11 +799,24 @@ public class GuestProxy {
 
     /** Map a proxy username's country to a plausible carrier: {mccMnc, iso, operatorName}. */
     public static boolean isCloneListener(String host, int port) {
-        if (port < 20000 || port > 27999) return false;
-        if (host == null) return false;
-        String value = host.trim().toLowerCase(java.util.Locale.ROOT);
-        return value.isEmpty() || value.equals("127.0.0.1") || value.equals("localhost")
-                || value.equals("::1");
+        return UserRoute.validListener(host, port);
+    }
+
+    /**
+     * Why this user/package must not start, or null when its traffic can be placed on a
+     * loopback listener (its own, or the single listener assigned to the user).
+     */
+    public static String launchBlockReason(int userId, String pkg) {
+        try {
+            UserRoute.Decision decision = UserRoute.resolve(pkg, readAssignments(userId),
+                    profileRequiresProxy(userId));
+            if (decision.kind == UserRoute.Kind.USE || decision.kind == UserRoute.Kind.DIRECT) {
+                return null;
+            }
+            return decision.message;
+        } catch (Throwable error) {
+            return UserRoute.NO_ROUTE_MESSAGE;
+        }
     }
 
     private static String normalizeLocale(String locale) {
@@ -790,20 +838,25 @@ public class GuestProxy {
     private static String mergeUpstreamPreservingListener(String upstreamJson, int userId, String pkg) {
         try {
             JSONObject merged = new JSONObject(upstreamJson);
-            merged.remove("localHost");
-            merged.remove("localPort");
-            merged.remove("socksUser");
-            merged.remove("socksPassword");
-            File existing = file(userId, pkg);
-            if (existing.isFile()) {
-                JSONObject prior = new JSONObject(ProxyConfigCrypto.readText(existing, userId, pkg));
-                int port = prior.optInt("localPort", 0);
-                if (isCloneListener(prior.optString("localHost", ""), port)) {
-                    merged.put("localHost", "127.0.0.1");
-                    merged.put("localPort", port);
-                    merged.put("socksUser", prior.optString("socksUser", ""));
-                    merged.put("socksPassword", prior.optString("socksPassword", ""));
+            int port = merged.optInt("localPort", 0);
+            if (!isCloneListener(merged.optString("localHost", ""), port)) {
+                merged.remove("localHost");
+                merged.remove("localPort");
+                merged.remove("socksUser");
+                merged.remove("socksPassword");
+                File existing = file(userId, pkg);
+                if (existing.isFile()) {
+                    JSONObject prior = new JSONObject(ProxyConfigCrypto.readText(existing, userId, pkg));
+                    int priorPort = prior.optInt("localPort", 0);
+                    if (isCloneListener(prior.optString("localHost", ""), priorPort)) {
+                        merged.put("localHost", "127.0.0.1");
+                        merged.put("localPort", priorPort);
+                        merged.put("socksUser", prior.optString("socksUser", ""));
+                        merged.put("socksPassword", prior.optString("socksPassword", ""));
+                    }
                 }
+            } else {
+                merged.put("localHost", "127.0.0.1");
             }
             return merged.toString();
         } catch (Throwable ignored) {

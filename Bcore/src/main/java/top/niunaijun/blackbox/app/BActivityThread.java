@@ -230,7 +230,10 @@ public class BActivityThread extends IBActivityThread.Stub {
                 }
                 if (proxyStatus != top.niunaijun.blackbox.core.GuestProxy.ApplyStatus.READY
                         && proxyStatus != top.niunaijun.blackbox.core.GuestProxy.ApplyStatus.NOT_CONFIGURED) {
-                    throw new SecurityException("Assigned proxy is not ready: " + proxyStatus);
+                    String detail = top.niunaijun.blackbox.core.GuestProxy.launchBlockReason(
+                            appConfig.userId, appConfig.packageName);
+                    if (detail == null) detail = "Assigned proxy is not ready: " + proxyStatus;
+                    throw new SecurityException(detail);
                 }
             } catch (Throwable t) {
                 top.niunaijun.blackbox.utils.Slog.w("GuestProxy", "apply failed: " + t.getMessage());

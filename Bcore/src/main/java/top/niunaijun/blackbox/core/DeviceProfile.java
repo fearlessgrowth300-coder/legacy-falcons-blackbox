@@ -178,6 +178,7 @@ public class DeviceProfile {
         int idx;
         if (loaded) {
             idx = clampIdx(parseInt(props.getProperty("idx"), 0));
+            // Stored ids are the clone's login identity. An update must not replace them.
             p.androidId = props.getProperty("androidId");
             p.imei = props.getProperty("imei");
             p.imsi = props.getProperty("imsi");

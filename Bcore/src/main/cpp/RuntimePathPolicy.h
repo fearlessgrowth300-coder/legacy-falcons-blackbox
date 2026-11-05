@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstring>
 
 // libcutils builds "/dev/ashmem" + the boot id it just read. Both names are
@@ -45,10 +46,20 @@ inline bool path_is_runtime_device(const char *path) {
             || strncmp(path, "/proc/self/ns/", 14) == 0;
 }
 
-// Native hooks never substitute boot_id. The immediate caller of open() is
-// libc, so a library check cannot see libcutils.
+// Guest reads of boot_id stay on the persisted per-user value. Ashmem paths are
+// canonicalized before this matters, so libcutils still opens /dev/ashmem.
+// The self-test turns this off for a process whose ashmem probe fails.
+inline std::atomic<bool> &boot_id_spoof_flag() {
+    static std::atomic<bool> enabled{true};
+    return enabled;
+}
+
 inline bool native_may_redirect_boot_id() {
-    return false;
+    return boot_id_spoof_flag().load(std::memory_order_relaxed);
+}
+
+inline void set_native_boot_id_spoof(bool enabled) {
+    boot_id_spoof_flag().store(enabled, std::memory_order_relaxed);
 }
 
 inline bool clock_may_be_shifted(int clock_id) {

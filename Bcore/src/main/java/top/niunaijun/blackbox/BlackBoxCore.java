@@ -20,6 +20,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Process;
+import android.os.RemoteException;
 
 import java.io.File;
 import java.lang.reflect.Field;
@@ -389,6 +390,7 @@ public class BlackBoxCore extends ClientConfiguration {
             Slog.d(TAG, "getService: " + name + ", " + binder);
             if (binder != null) {
                 mServices.put(name, binder);
+                watchService(name, binder);
             } else {
                 Slog.w(TAG, "Failed to get binder for service: " + name);
                 
@@ -402,6 +404,45 @@ public class BlackBoxCore extends ClientConfiguration {
     }
     
     
+    private void watchService(final String name, final IBinder binder) {
+        try {
+            binder.linkToDeath(new IBinder.DeathRecipient() {
+                @Override
+                public void binderDied() {
+                    try {
+                        binder.unlinkToDeath(this, 0);
+                    } catch (Throwable ignored) {
+                    }
+                    IBinder current = mServices.get(name);
+                    if (current == binder) mServices.remove(name);
+                    mServicesInitialized = false;
+                    Slog.w(TAG, "Workspace service died (" + name + "); restarting it");
+                    try {
+                        startBlackProcess();
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }, 0);
+        } catch (RemoteException dead) {
+            mServices.remove(name);
+            mServicesInitialized = false;
+        }
+    }
+
+    /** Drop cached binders after a hung app-list call so the next attempt rebinds. */
+    public void rebindWorkspaceServices() {
+        mServices.clear();
+        mServicesInitialized = false;
+        try {
+            getBPackageManager().clearServiceCache();
+        } catch (Throwable ignored) {
+        }
+        try {
+            startBlackProcess();
+        } catch (Throwable ignored) {
+        }
+    }
+
     private IBinder createFallbackService(String name) {
         try {
             
@@ -1107,7 +1148,7 @@ public class BlackBoxCore extends ClientConfiguration {
         if (!ensureWhatsAppGoogleServices(packageName, userId)) {
             return false;
         }
-        String routeBlock = getLaunchBlockReason(userId);
+        String routeBlock = getLaunchBlockReason(userId, packageName);
         if (routeBlock != null) {
             Slog.e(TAG, "Blocked unsafe launch for user " + userId + " pkg "
                     + packageName + ": " + routeBlock);
@@ -1174,13 +1215,19 @@ public class BlackBoxCore extends ClientConfiguration {
      * direct-network behavior while still telling the UI how the user can repair the assignment.
      */
     public String getLaunchBlockReason(int userId) {
+        return getLaunchBlockReason(userId, null);
+    }
+
+    public String getLaunchBlockReason(int userId, String packageName) {
+        String route = GuestProxy.launchBlockReason(userId, packageName);
+        if (route != null) return route;
         if (!GuestProxy.isSharedGmsActive(userId)) return null;
-        GuestProxy.GmsRouteStatus route = GuestProxy.syncGmsRouteForUser(userId);
-        if (route == GuestProxy.GmsRouteStatus.CONFLICT) {
+        GuestProxy.GmsRouteStatus gmsRoute = GuestProxy.syncGmsRouteForUser(userId);
+        if (gmsRoute == GuestProxy.GmsRouteStatus.CONFLICT) {
             return "This BlackBox user has apps assigned to different proxies while Google services are shared. "
                     + "Move this app to a separate BlackBox user, or assign the same proxy to every app in this user.";
         }
-        if (route == GuestProxy.GmsRouteStatus.INVALID) {
+        if (gmsRoute == GuestProxy.GmsRouteStatus.INVALID) {
             return "This BlackBox user's protected Google-services route is missing or invalid. "
                     + "Reconnect the proxy in ShieldProxy before opening the clone.";
         }

@@ -45,10 +45,6 @@ public class IOCore {
 
     
     public void addRedirect(String origPath, String redirectPath) {
-        if (AshmemPathPolicy.isKernelBootId(origPath)) {
-            addJavaOnlyRedirect(origPath, redirectPath);
-            return;
-        }
         if (origPath != null && (origPath.startsWith("/dev/ashmem")
                 || AshmemPathPolicy.blocksNativeRedirect(origPath))) {
             return;
@@ -75,6 +71,10 @@ public class IOCore {
 
     public void disableBootIdSpoof() {
         mBootIdSpoof = false;
+        try {
+            NativeCore.setBootIdSpoof(false);
+        } catch (Throwable ignored) {
+        }
     }
 
     public void addBlackRedirect(String path) {

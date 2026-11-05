@@ -3,9 +3,27 @@
     android:layout_width="match_parent" android:layout_height="match_parent"
     android:background="@color/blackbox_background">
     <com.github.nukc.stateview.StateView android:id="@+id/stateView"
-        android:layout_width="match_parent" android:layout_height="match_parent" />
+        android:layout_width="match_parent" android:layout_height="match_parent"
+        android:visibility="gone" />
     <androidx.recyclerview.widget.RecyclerView android:id="@+id/recyclerView"
         android:layout_width="match_parent" android:layout_height="match_parent"
         android:clipToPadding="false" android:paddingStart="14dp" android:paddingTop="8dp"
         android:paddingEnd="14dp" android:paddingBottom="20dp" />
+
+    <LinearLayout android:id="@+id/listState"
+        android:layout_width="match_parent" android:layout_height="match_parent"
+        android:background="@color/blackbox_background" android:gravity="center"
+        android:orientation="vertical" android:padding="28dp" android:visibility="gone">
+        <ProgressBar android:id="@+id/listProgress"
+            android:layout_width="48dp" android:layout_height="48dp"
+            android:indeterminateTint="@color/blackbox_accent" />
+        <TextView android:id="@+id/listMessage"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginTop="16dp" android:gravity="center"
+            android:textColor="@color/blackbox_text" android:textSize="16sp" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/listRetry"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginTop="18dp" android:text="Retry" android:textAllCaps="false"
+            android:visibility="gone" />
+    </LinearLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>

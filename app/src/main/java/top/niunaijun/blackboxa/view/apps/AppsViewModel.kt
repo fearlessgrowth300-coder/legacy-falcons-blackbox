@@ -11,6 +11,8 @@ class AppsViewModel(private val repo: AppsRepository) : BaseViewModel() {
 
     val appsLiveData = MutableLiveData<List<AppInfo>>()
 
+    val loadState = MutableLiveData<top.niunaijun.blackbox.core.AppListLoad.Outcome>()
+
     val resultLiveData = MutableLiveData<String>()
 
     val launchLiveData = MutableLiveData<Boolean>()
@@ -20,7 +22,7 @@ class AppsViewModel(private val repo: AppsRepository) : BaseViewModel() {
 
     fun getInstalledApps(userId: Int) {
         launchOnUI {
-            repo.getVmInstallList(userId, appsLiveData)
+            repo.getVmInstallList(userId, appsLiveData, loadState)
         }
     }
     
@@ -30,7 +32,7 @@ class AppsViewModel(private val repo: AppsRepository) : BaseViewModel() {
         
         fun attemptLoad() {
             launchOnUI {
-                repo.getVmInstallList(userId, appsLiveData)
+                repo.getVmInstallList(userId, appsLiveData, loadState)
                 
                 
                 val currentApps = appsLiveData.value

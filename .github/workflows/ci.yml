@@ -102,6 +102,16 @@ jobs:
             Bcore/src/main/java/top/niunaijun/blackbox/core/AshmemPathPolicy.java \
             tools/diagnostics/AshmemPathPolicyTest.java
           java -cp build/diagnostic-tests AshmemPathPolicyTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/UserRoute.java \
+            tools/diagnostics/UserRouteTest.java
+          java -cp build/diagnostic-tests UserRouteTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/AppListLoad.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/WorkspaceIsolation.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/NetworkIdentity.java \
+            tools/diagnostics/LeakAuditTest.java
+          java -cp build/diagnostic-tests LeakAuditTest
           node --test tools/diagnostics/request-summary.test.mjs
           node --check tools/diagnostics/capture-webview.mjs
 

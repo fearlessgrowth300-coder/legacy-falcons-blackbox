@@ -44,7 +44,15 @@ static const char *rewrite(const char *path, bool allowGeneralRewrite) {
     if (path == nullptr) return path;
     const char *ashmem = canonical_ashmem_path(path);
     if (ashmem != path) return ashmem;
-    if (path_is_kernel_boot_id(path) || path_is_runtime_device(path)) return path;
+    if (path_is_runtime_device(path)) return path;
+    // boot_id is rewritten even on the API 36 variadic open hooks. Those hooks
+    // still skip every other path so Instagram's native pool is not rewritten.
+    if (path_is_kernel_boot_id(path)) {
+        if (!native_may_redirect_boot_id() || FileGuard::depth() > 0) return path;
+        FileGuard::Guard guard;
+        const char *out = IO::redirectPath(path);
+        return out == nullptr ? path : out;
+    }
     if (!allowGeneralRewrite || FileGuard::depth() > 0) return path;
     FileGuard::Guard guard;
     const char *out = IO::redirectPath(path);

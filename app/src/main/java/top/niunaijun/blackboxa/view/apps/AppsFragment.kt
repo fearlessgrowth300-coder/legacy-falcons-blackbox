@@ -76,7 +76,7 @@ class AppsFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         try {
-            viewBinding.stateView.showEmpty()
+            showListState(top.niunaijun.blackbox.core.AppListLoad.loading())
 
             mAdapter =
                 RVAdapter<AppInfo>(requireContext(), AppsAdapter()).bind(viewBinding.recyclerView)
@@ -511,19 +511,40 @@ class AppsFragment : Fragment() {
             .show()
     }
 
+    private fun showListState(outcome: top.niunaijun.blackbox.core.AppListLoad.Outcome) {
+        val kind = outcome.kind
+        val overlay = viewBinding.listState
+        if (kind == top.niunaijun.blackbox.core.AppListLoad.Kind.READY) {
+            overlay.visibility = View.GONE
+            return
+        }
+        overlay.visibility = View.VISIBLE
+        viewBinding.listProgress.visibility =
+            if (kind == top.niunaijun.blackbox.core.AppListLoad.Kind.LOADING) View.VISIBLE else View.GONE
+        viewBinding.listMessage.text = outcome.message ?: ""
+        viewBinding.listRetry.visibility =
+            if (kind == top.niunaijun.blackbox.core.AppListLoad.Kind.ERROR) View.VISIBLE else View.GONE
+    }
+
     private fun initData() {
         try {
-            viewBinding.stateView.showLoading()
+            showListState(top.niunaijun.blackbox.core.AppListLoad.loading())
+            viewBinding.listRetry.setOnClickListener {
+                showListState(top.niunaijun.blackbox.core.AppListLoad.loading())
+                viewModel.getInstalledApps(userID)
+            }
             viewModel.getInstalledApps(userID)
+            viewModel.loadState.observe(viewLifecycleOwner) { outcome ->
+                try {
+                    if (outcome != null) showListState(outcome)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error observing load state: ${e.message}")
+                }
+            }
             viewModel.appsLiveData.observe(viewLifecycleOwner) {
                 try {
                     if (it != null) {
                         mAdapter.setItems(it)
-                        if (it.isEmpty()) {
-                            viewBinding.stateView.showEmpty()
-                        } else {
-                            viewBinding.stateView.showContent()
-                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error observing apps data: ${e.message}")
