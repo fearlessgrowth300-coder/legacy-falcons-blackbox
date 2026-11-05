@@ -34,6 +34,7 @@ public class IOCore {
 
     private static final Map<String, Map<String, String>> sCachePackageRedirect = new HashMap<>();
     private volatile boolean mGuestIsolation;
+    private volatile boolean mBootIdSpoof = true;
     private volatile int mGuestUser = -1;
     private volatile String mVirtualRoot;
     private volatile String mExternalRoot;
@@ -44,6 +45,14 @@ public class IOCore {
 
     
     public void addRedirect(String origPath, String redirectPath) {
+        if (AshmemPathPolicy.isKernelBootId(origPath)) {
+            addJavaOnlyRedirect(origPath, redirectPath);
+            return;
+        }
+        if (origPath != null && (origPath.startsWith("/dev/ashmem")
+                || AshmemPathPolicy.blocksNativeRedirect(origPath))) {
+            return;
+        }
         if (TextUtils.isEmpty(origPath) || TextUtils.isEmpty(redirectPath) || mRedirectMap.get(origPath) != null)
             return;
         
@@ -54,6 +63,18 @@ public class IOCore {
             FileUtils.mkdirs(redirectPath);
         }
         NativeCore.addIORule(origPath, redirectPath);
+    }
+
+    /** Guest Java file APIs only. Native open() keeps the real kernel file. */
+    public void addJavaOnlyRedirect(String origPath, String redirectPath) {
+        if (TextUtils.isEmpty(origPath) || TextUtils.isEmpty(redirectPath) || mRedirectMap.get(origPath) != null)
+            return;
+        mTrieTree.add(origPath);
+        mRedirectMap.put(origPath, redirectPath);
+    }
+
+    public void disableBootIdSpoof() {
+        mBootIdSpoof = false;
     }
 
     public void addBlackRedirect(String path) {
@@ -88,6 +109,9 @@ public class IOCore {
     public String redirectPath(String path) {
         if (TextUtils.isEmpty(path))
             return path;
+        path = AshmemPathPolicy.canonicalAshmem(path);
+        if (AshmemPathPolicy.blocksNativeRedirect(path)) return path;
+        if (!mBootIdSpoof && AshmemPathPolicy.isKernelBootId(path)) return path;
         if (!mGuestIsolation) {
             if (path.contains("/blackbox/")) {
                 return path;

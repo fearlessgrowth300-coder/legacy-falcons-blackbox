@@ -4,6 +4,7 @@
 
 #include "IO.h"
 #include "Log.h"
+#include "RuntimePathPolicy.h"
 
 #include <atomic>
 #include <cstdint>
@@ -181,8 +182,10 @@ char *replace(const char *str, const char *src, const char *dst) {
 
 const char *IO::redirectPath(const char *__path) {
     if (__path == nullptr) return __path;
-    // libcutils builds "/dev/ashmem" + the real boot id. Never rewrite that node.
-    if (strncmp(__path, "/dev/ashmem", 11) == 0) return __path;
+    const char *ashmem = canonical_ashmem_path(__path);
+    if (ashmem != __path) return ashmem;
+    // Native readers, including libcutils, always see the real boot id.
+    if (path_is_kernel_boot_id(__path) || path_is_runtime_device(__path)) return __path;
     const char *confined = confine_path(__path);
     if (confined != __path) return confined;
 
@@ -254,6 +257,11 @@ jobject IO::redirectPath(JNIEnv *env, jobject path) {
 }
 
 void IO::addRule(const char *targetPath, const char *relocatePath) {
+    if (targetPath == nullptr || relocatePath == nullptr) return;
+    if (path_is_kernel_boot_id(targetPath) || path_is_ashmem_device(targetPath)
+            || path_is_runtime_device(targetPath)) {
+        return;
+    }
     IO::RelocateInfo info{};
     info.targetPath = targetPath;
     info.relocatePath = relocatePath;

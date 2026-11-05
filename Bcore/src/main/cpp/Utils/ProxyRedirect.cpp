@@ -37,6 +37,7 @@
 #include "./xdl.h"
 #include "Dobby/dobby.h"
 #include "../HookReentry.h"
+#include "../RuntimePathPolicy.h"
 
 #define LOG_TAG "ProxyRedirect"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -653,6 +654,16 @@ static const long NR_CONNECT = 42;
 static const long NR_CONNECT = 203;
 #endif
 
+#if defined(__aarch64__)
+static const int kSyscallArch = 0;
+#elif defined(__arm__)
+static const int kSyscallArch = 1;
+#elif defined(__x86_64__)
+static const int kSyscallArch = 2;
+#else
+static const int kSyscallArch = 0;
+#endif
+
 static bool nonLoopbackInternet(const sockaddr *addr) {
     if (!addr) return false;
     if (addr->sa_family != AF_INET && addr->sa_family != AF_INET6) return false;
@@ -689,6 +700,13 @@ static long my_syscall(long number, long a1, long a2, long a3, long a4, long a5,
     if (!orig_syscall) {
         errno = ENOSYS;
         return -1;
+    }
+    // openat-family syscalls carry a path. Collapse any /dev/ashmem<id> onto
+    // /dev/ashmem before the kernel sees it. No lock and no allocation.
+    if (syscall_is_openat_family(number, kSyscallArch)) {
+        const char *fixed = canonical_ashmem_path((const char *) a2);
+        if (fixed != (const char *) a2) a2 = (long) fixed;
+        return orig_syscall(number, a1, a2, a3, a4, a5, a6);
     }
     if (syscall_number_is_fast_path(number, NR_CONNECT) || ProxyGuard::depth() > 0) {
         return orig_syscall(number, a1, a2, a3, a4, a5, a6);

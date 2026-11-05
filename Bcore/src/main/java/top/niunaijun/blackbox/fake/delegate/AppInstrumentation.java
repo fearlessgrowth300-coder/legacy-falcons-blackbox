@@ -244,6 +244,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
             return;
         }
         checkHCallback();
+        top.niunaijun.blackbox.core.GuestAshmemCheck.verifyOrDisableBootIdSpoof();
         try {
             super.callApplicationOnCreate(app);
             ApplicationOnCreateGuard.markInvoked(app);

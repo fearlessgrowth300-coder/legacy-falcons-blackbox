@@ -98,6 +98,10 @@ jobs:
           g++ -std=c++17 -pthread -I. -o build/diagnostic-tests/runtime_path_policy_test \
             tools/diagnostics/runtime_path_policy_test.cpp
           build/diagnostic-tests/runtime_path_policy_test
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/AshmemPathPolicy.java \
+            tools/diagnostics/AshmemPathPolicyTest.java
+          java -cp build/diagnostic-tests AshmemPathPolicyTest
           node --test tools/diagnostics/request-summary.test.mjs
           node --check tools/diagnostics/capture-webview.mjs
 
