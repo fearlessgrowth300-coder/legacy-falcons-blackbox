@@ -684,8 +684,8 @@ static ssize_t my_sendmsg(int fd, const struct msghdr *msg, int flags) {
 static int my_connect(int fd, const sockaddr *addr, socklen_t len);
 
 static long my_syscall(long number, long a1, long a2, long a3, long a4, long a5, long a6) {
-    // Fast path is every syscall except connect, including the futex inside malloc.
-    // No thread_local, lock, log, JNI, or allocation on this path.
+    // Fast path is every syscall except connect, including futex, memfd_create,
+    // and mmap. No thread_local, lock, log, JNI, or allocation on this path.
     if (!orig_syscall) {
         errno = ENOSYS;
         return -1;

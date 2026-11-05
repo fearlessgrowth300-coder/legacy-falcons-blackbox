@@ -514,11 +514,8 @@ public class DeviceProfile {
         setBuild("BOOTLOADER", serial);
         setBuild("RADIO", "unknown");
         setBuildLong("TIME", buildTime);
-        try {
-            NativeCore.setUptimeOffsetMs(uptimeOffsetMs);
-        } catch (Throwable t) {
-            Slog.w(TAG, "uptime offset unavailable: " + t.getClass().getSimpleName());
-        }
+        // uptimeOffsetMs is kept on the profile but not applied. CLOCK_MONOTONIC
+        // and CLOCK_BOOTTIME must match SurfaceFlinger's vsync clock.
         if (!model.equals(Build.MODEL) || !brand.equals(Build.BRAND)
                 || !device.equals(Build.DEVICE) || !product.equals(Build.PRODUCT)
                 || !manufacturer.equals(Build.MANUFACTURER) || !board.equals(Build.BOARD)

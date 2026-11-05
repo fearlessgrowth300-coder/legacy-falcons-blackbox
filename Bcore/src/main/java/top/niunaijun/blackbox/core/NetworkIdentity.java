@@ -45,7 +45,10 @@ public final class NetworkIdentity {
         return out.toString();
     }
 
-    /** A few seconds to two minutes. Intervals stay correct; absolute uptime does not match the phone. */
+    /**
+     * Stored for older profiles. It is not added to CLOCK_MONOTONIC or
+     * CLOCK_BOOTTIME, because those clocks must stay aligned with vsync.
+     */
     public static long uptimeOffsetMs(String seed) {
         int hash = mix(seed, 0x0A17);
         return 1000L + Math.floorMod(hash, 119000);

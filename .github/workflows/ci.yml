@@ -95,6 +95,9 @@ jobs:
           g++ -std=c++17 -pthread -I. -o build/diagnostic-tests/syscall_hook_policy_test \
             tools/diagnostics/syscall_hook_policy_test.cpp
           build/diagnostic-tests/syscall_hook_policy_test
+          g++ -std=c++17 -pthread -I. -o build/diagnostic-tests/runtime_path_policy_test \
+            tools/diagnostics/runtime_path_policy_test.cpp
+          build/diagnostic-tests/runtime_path_policy_test
           node --test tools/diagnostics/request-summary.test.mjs
           node --check tools/diagnostics/capture-webview.mjs
 

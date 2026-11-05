@@ -4,6 +4,7 @@
 #include "xdl.h"
 #include "Dobby/dobby.h"
 #include "HookReentry.h"
+#include "RuntimePathPolicy.h"
 
 #include <cstdarg>
 #include <cerrno>
@@ -12,6 +13,7 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <ctime>
+#include <dlfcn.h>
 
 // open/openat are variadic and crashed Instagram's native pool on Android 16.
 // Those two stay off on API 36+. The non-variadic calls below still rewrite paths.
@@ -30,14 +32,24 @@ static ssize_t (*orig_readlinkat)(int dirfd, const char *pathname, char *buf, si
 static DIR *(*orig_opendir)(const char *name) = nullptr;
 static int (*orig_clock_gettime)(clockid_t clock, struct timespec *ts) = nullptr;
 
-static long g_uptime_offset_ms = 0;
 static bool g_installed = false;
 // Tag 2 is the file hooks. Separate from the syscall guard so a redirect
 // that opens a socket does not look like a nested connect.
 using FileGuard = HookReentry<2>;
 
-static const char *rewrite(const char *path) {
+static bool caller_needs_real_boot_id(const void *return_address) {
+    if (return_address == nullptr) return true;
+    Dl_info info{};
+    if (dladdr(return_address, &info) == 0 || info.dli_fname == nullptr) return true;
+    return library_needs_real_boot_id(info.dli_fname);
+}
+
+static const char *rewrite(const char *path, const void *caller) {
     if (path == nullptr || FileGuard::depth() > 0) return path;
+    // Never rename ashmem nodes. libcutils also must read the real boot id,
+    // because that id is part of the device path. App opens still redirect.
+    if (path_is_ashmem_device(path)) return path;
+    if (path_is_kernel_boot_id(path) && caller_needs_real_boot_id(caller)) return path;
     FileGuard::Guard guard;
     const char *out = IO::redirectPath(path);
     return out == nullptr ? path : out;
@@ -51,7 +63,7 @@ static int my_open(const char *pathname, int flags, ...) {
         mode = static_cast<mode_t>(va_arg(args, int));
         va_end(args);
     }
-    const char *path = rewrite(pathname);
+    const char *path = rewrite(pathname, __builtin_return_address(0));
     if (path == nullptr) {
         errno = ENOENT;
         return -1;
@@ -67,7 +79,7 @@ static int my_openat(int dirfd, const char *pathname, int flags, ...) {
         mode = static_cast<mode_t>(va_arg(args, int));
         va_end(args);
     }
-    const char *path = rewrite(pathname);
+    const char *path = rewrite(pathname, __builtin_return_address(0));
     if (path == nullptr) {
         errno = ENOENT;
         return -1;
@@ -79,7 +91,7 @@ static int my_openat(int dirfd, const char *pathname, int flags, ...) {
 }
 
 static int my_open_2(const char *pathname, int flags) {
-    const char *path = rewrite(pathname);
+    const char *path = rewrite(pathname, __builtin_return_address(0));
     if (path == nullptr) {
         errno = ENOENT;
         return -1;
@@ -88,7 +100,7 @@ static int my_open_2(const char *pathname, int flags) {
 }
 
 static int my_openat_2(int dirfd, const char *pathname, int flags) {
-    const char *path = rewrite(pathname);
+    const char *path = rewrite(pathname, __builtin_return_address(0));
     if (path == nullptr) {
         errno = ENOENT;
         return -1;
@@ -100,7 +112,7 @@ static int my_openat_2(int dirfd, const char *pathname, int flags) {
 }
 
 static FILE *my_fopen(const char *pathname, const char *mode) {
-    const char *path = rewrite(pathname);
+    const char *path = rewrite(pathname, __builtin_return_address(0));
     if (path == nullptr) {
         errno = ENOENT;
         return nullptr;
@@ -109,7 +121,7 @@ static FILE *my_fopen(const char *pathname, const char *mode) {
 }
 
 static int my_access(const char *pathname, int mode) {
-    const char *path = rewrite(pathname);
+    const char *path = rewrite(pathname, __builtin_return_address(0));
     if (path == nullptr) {
         errno = ENOENT;
         return -1;
@@ -118,7 +130,7 @@ static int my_access(const char *pathname, int mode) {
 }
 
 static int my_stat(const char *pathname, struct stat *buf) {
-    const char *path = rewrite(pathname);
+    const char *path = rewrite(pathname, __builtin_return_address(0));
     if (path == nullptr) {
         errno = ENOENT;
         return -1;
@@ -127,7 +139,7 @@ static int my_stat(const char *pathname, struct stat *buf) {
 }
 
 static int my_lstat(const char *pathname, struct stat *buf) {
-    const char *path = rewrite(pathname);
+    const char *path = rewrite(pathname, __builtin_return_address(0));
     if (path == nullptr) {
         errno = ENOENT;
         return -1;
@@ -136,7 +148,7 @@ static int my_lstat(const char *pathname, struct stat *buf) {
 }
 
 static int my_faccessat(int dirfd, const char *pathname, int mode, int flags) {
-    const char *path = rewrite(pathname);
+    const char *path = rewrite(pathname, __builtin_return_address(0));
     if (path == nullptr) {
         errno = ENOENT;
         return -1;
@@ -148,7 +160,7 @@ static int my_faccessat(int dirfd, const char *pathname, int mode, int flags) {
 }
 
 static int my_fstatat(int dirfd, const char *pathname, struct stat *buf, int flags) {
-    const char *path = rewrite(pathname);
+    const char *path = rewrite(pathname, __builtin_return_address(0));
     if (path == nullptr) {
         errno = ENOENT;
         return -1;
@@ -160,7 +172,7 @@ static int my_fstatat(int dirfd, const char *pathname, struct stat *buf, int fla
 }
 
 static ssize_t my_readlinkat(int dirfd, const char *pathname, char *buf, size_t size) {
-    const char *path = rewrite(pathname);
+    const char *path = rewrite(pathname, __builtin_return_address(0));
     if (path == nullptr) {
         errno = ENOENT;
         return -1;
@@ -169,7 +181,7 @@ static ssize_t my_readlinkat(int dirfd, const char *pathname, char *buf, size_t 
 }
 
 static DIR *my_opendir(const char *name) {
-    const char *path = rewrite(name);
+    const char *path = rewrite(name, __builtin_return_address(0));
     if (path == nullptr) {
         errno = ENOENT;
         return nullptr;
@@ -177,23 +189,12 @@ static DIR *my_opendir(const char *name) {
     return orig_opendir ? orig_opendir(path) : nullptr;
 }
 
-static void add_offset(struct timespec *ts) {
-    if (ts == nullptr || g_uptime_offset_ms == 0) return;
-    long sec = g_uptime_offset_ms / 1000;
-    long nsec = (g_uptime_offset_ms % 1000) * 1000000L;
-    ts->tv_sec += sec;
-    ts->tv_nsec += nsec;
-    if (ts->tv_nsec >= 1000000000L) {
-        ts->tv_sec += 1;
-        ts->tv_nsec -= 1000000000L;
-    }
-}
-
 static int my_clock_gettime(clockid_t clock, struct timespec *ts) {
     int result = orig_clock_gettime ? orig_clock_gettime(clock, ts) : -1;
-    if (result == 0 && (clock == CLOCK_MONOTONIC || clock == CLOCK_MONOTONIC_RAW
-            || clock == CLOCK_MONOTONIC_COARSE || clock == CLOCK_BOOTTIME)) {
-        add_offset(ts);
+    // clock_may_be_shifted is false for every clock. A constant offset on
+    // CLOCK_MONOTONIC disagrees with SurfaceFlinger's vsync timestamps.
+    if (result == 0 && clock_may_be_shifted(static_cast<int>(clock))) {
+        return result;
     }
     return result;
 }
@@ -211,8 +212,9 @@ static void hook_one(void *handle, const char *name, void *replacement, void **o
 }
 
 void FileSystemHook::setUptimeOffsetMs(long offsetMs) {
-    if (offsetMs < 0) offsetMs = 0;
-    g_uptime_offset_ms = offsetMs;
+    // Kept so older callers still link. The value is not applied: shifting
+    // CLOCK_MONOTONIC or CLOCK_BOOTTIME breaks vsync and elapsedRealtime.
+    (void) offsetMs;
 }
 
 void FileSystemHook::init(int apiLevel) {

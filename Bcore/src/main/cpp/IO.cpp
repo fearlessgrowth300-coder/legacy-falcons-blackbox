@@ -181,6 +181,8 @@ char *replace(const char *str, const char *src, const char *dst) {
 
 const char *IO::redirectPath(const char *__path) {
     if (__path == nullptr) return __path;
+    // libcutils builds "/dev/ashmem" + the real boot id. Never rewrite that node.
+    if (strncmp(__path, "/dev/ashmem", 11) == 0) return __path;
     const char *confined = confine_path(__path);
     if (confined != __path) return confined;
 
