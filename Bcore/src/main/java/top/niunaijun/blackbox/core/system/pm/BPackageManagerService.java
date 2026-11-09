@@ -672,7 +672,15 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
     }
 
     public void logOrphanedPackageData() {
-        mSettings.logOrphanedData();
+        Thread thread = new Thread(() -> {
+            try {
+                mSettings.logOrphanedData();
+            } catch (Throwable error) {
+                Slog.w(TAG, "orphan scan failed: " + error.getClass().getSimpleName());
+            }
+        }, "BlackBox-OrphanScan");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     public boolean hasInstalledPackage(int userId) {

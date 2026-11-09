@@ -2,6 +2,8 @@ package top.niunaijun.blackbox.core.system.user;
 
 import android.os.Parcel;
 import android.os.RemoteException;
+import android.system.ErrnoException;
+import android.system.Os;
 
 import androidx.core.util.AtomicFile;
 
@@ -10,6 +12,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -176,19 +179,108 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
     }
 
     private boolean deleteUserFiles(int userId) {
+        if (userId < 0) return false;
         File deviceProtected = new File(BEnvironment.getVirtualRoot(), "data/user_de/" + userId);
-        boolean cleared = deleteTree(BEnvironment.getUserDir(userId));
-        cleared &= deleteTree(deviceProtected);
-        cleared &= deleteTree(BEnvironment.getExternalUserDir(userId));
+        boolean cleared = deleteUserTree(BEnvironment.getUserDir(userId), userId, "user");
+        cleared &= deleteUserTree(deviceProtected, userId, "user_de");
+        cleared &= deleteUserTree(BEnvironment.getExternalUserDir(userId), userId, "emulated");
         return cleared;
     }
 
-    private boolean deleteTree(File dir) {
-        if (dir == null || !dir.exists()) return true;
-        FileUtils.deleteDir(dir);
-        if (!dir.exists()) return true;
-        Slog.e(TAG, "files remain after delete: " + dir.getAbsolutePath());
+    /**
+     * Delete one user's directory. Refuses any path whose parent is not the
+     * expected user folder, so a bad path cannot reach another user.
+     */
+    private boolean deleteUserTree(File dir, int userId, String parentName) {
+        if (dir == null || !existsOrLink(dir)) return true;
+        File parent = dir.getParentFile();
+        if (parent == null || !parentName.equals(parent.getName())
+                || !String.valueOf(userId).equals(dir.getName())) {
+            Slog.e(TAG, "refusing to delete unexpected path " + dir);
+            return false;
+        }
+        // The shared parent only needs to be writable so this one directory can be unlinked.
+        parent.setWritable(true);
+        String failure = wipeUserTree(dir);
+        if (!existsOrLink(dir)) return true;
+        Slog.e(TAG, "files remain after delete: " + dir.getAbsolutePath()
+                + (failure == null ? "" : " first=" + failure));
         return false;
+    }
+
+    /**
+     * FileUtils.deleteDir stops when a listing comes back null, skips a directory
+     * its symlink check misreads, and cannot unlink a read-only entry. Walk this
+     * one tree: make each directory readable, unlink real symlinks without
+     * following them, then remove children before the parent.
+     */
+    private String wipeUserTree(File root) {
+        ArrayDeque<File> pending = new ArrayDeque<>();
+        ArrayDeque<File> removeOrder = new ArrayDeque<>();
+        pending.push(root);
+        String firstFailure = null;
+        while (!pending.isEmpty()) {
+            File node = pending.pop();
+            removeOrder.push(node);
+            if (isLink(node) || !node.isDirectory()) continue;
+            makeDeletable(node, true);
+            File[] children = node.listFiles();
+            if (children == null) {
+                makeDeletable(node, true);
+                children = node.listFiles();
+            }
+            if (children == null) {
+                if (firstFailure == null) firstFailure = node.getAbsolutePath() + " unlistable";
+                continue;
+            }
+            for (File child : children) {
+                pending.push(child);
+            }
+        }
+        while (!removeOrder.isEmpty()) {
+            File node = removeOrder.pop();
+            if (!isLink(node)) makeDeletable(node, node.isDirectory());
+            String failure = unlinkFile(node);
+            if (failure != null && firstFailure == null) firstFailure = failure;
+        }
+        return firstFailure;
+    }
+
+    private static boolean isLink(File file) {
+        try {
+            Os.readlink(file.getAbsolutePath());
+            return true;
+        } catch (ErrnoException ignored) {
+            return false;
+        }
+    }
+
+    private static boolean existsOrLink(File file) {
+        return file.exists() || isLink(file);
+    }
+
+    private static void makeDeletable(File file, boolean directory) {
+        if (file == null || isLink(file)) return;
+        file.setReadable(true);
+        file.setWritable(true);
+        if (directory) file.setExecutable(true);
+        try {
+            Os.chmod(file.getAbsolutePath(), directory ? 0700 : 0600);
+        } catch (ErrnoException ignored) {
+        }
+    }
+
+    private static String unlinkFile(File file) {
+        if (file.delete() && !existsOrLink(file)) return null;
+        try {
+            Os.remove(file.getAbsolutePath());
+        } catch (ErrnoException error) {
+            if (existsOrLink(file)) {
+                return file.getAbsolutePath() + " errno=" + error.errno;
+            }
+            return null;
+        }
+        return existsOrLink(file) ? file.getAbsolutePath() : null;
     }
 
     private BUserInfo createUserLocked(int userId) {

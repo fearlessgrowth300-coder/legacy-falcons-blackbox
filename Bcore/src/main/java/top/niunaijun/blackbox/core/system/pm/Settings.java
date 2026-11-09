@@ -188,13 +188,28 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
         }
     }
 
-    /** Package data still on disk after its install record was removed. */
+    /**
+     * Names of package directories only. Does not open or walk the files inside them.
+     * The installed-package snapshot is taken under the lock; the disk walk is not.
+     */
     void logOrphanedData() {
+        Map<String, Set<Integer>> installed = new HashMap<>();
+        synchronized (mPackages) {
+            for (Map.Entry<String, BPackageSettings> entry : mPackages.entrySet()) {
+                BPackageSettings settings = entry.getValue();
+                if (settings == null) continue;
+                Set<Integer> users = new HashSet<>();
+                for (Integer userId : settings.userState.keySet()) {
+                    if (userId != null && settings.getInstalled(userId)) users.add(userId);
+                }
+                installed.put(entry.getKey(), users);
+            }
+        }
         int orphans = 0;
-        orphans += logPackageTree(new File(BEnvironment.getVirtualRoot(), "data/user"), false, "data/user");
-        orphans += logPackageTree(new File(BEnvironment.getVirtualRoot(), "data/user_de"), false, "data/user_de");
+        orphans += logPackageTree(installed, new File(BEnvironment.getVirtualRoot(), "data/user"), false, "data/user");
+        orphans += logPackageTree(installed, new File(BEnvironment.getVirtualRoot(), "data/user_de"), false, "data/user_de");
         File externalUsers = BEnvironment.getExternalUserDir(0).getParentFile();
-        orphans += logPackageTree(externalUsers, true, "external");
+        orphans += logPackageTree(installed, externalUsers, true, "external");
         Slog.w(TAG, "orphaned package data directories=" + orphans);
         for (BUserInfo user : BUserManagerService.get().getUsers()) {
             File internal = BEnvironment.getUserDir(user.id);
@@ -205,7 +220,8 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
         }
     }
 
-    private int logPackageTree(File userRoot, boolean external, String place) {
+    private int logPackageTree(Map<String, Set<Integer>> installed, File userRoot,
+                               boolean external, String place) {
         File[] users = userRoot == null ? null : userRoot.listFiles();
         if (users == null) {
             Slog.w(TAG, "data root absent: " + place + " path=" + userRoot);
@@ -221,15 +237,14 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
                 continue;
             }
             File packageRoot = external ? new File(userDir, "Android/data") : userDir;
-            File[] packages = packageRoot.listFiles();
+            String[] packages = packageRoot.list();
             if (packages == null) continue;
-            for (File packageDir : packages) {
-                if (!packageDir.isDirectory() || packageDir.getName().indexOf('.') < 0) continue;
-                String packageName = packageDir.getName();
-                BPackageSettings settings = mPackages.get(packageName);
-                boolean installed = settings != null && settings.userState.containsKey(userId)
-                        && settings.getInstalled(userId);
-                if (installed) continue;
+            for (String packageName : packages) {
+                if (packageName.indexOf('.') < 0) continue;
+                File packageDir = new File(packageRoot, packageName);
+                if (!packageDir.isDirectory()) continue;
+                Set<Integer> usersWithPackage = installed.get(packageName);
+                if (usersWithPackage != null && usersWithPackage.contains(userId)) continue;
                 orphans++;
                 Slog.w(TAG, "orphaned data user=" + userId + " pkg=" + packageName
                         + " place=" + place + " path=" + packageDir.getAbsolutePath());

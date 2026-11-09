@@ -69,7 +69,6 @@ public class BlackBoxSystem {
         // Package records are loaded now, so this can tell a recovered empty
         // user from one that still has an installed clone.
         BUserManagerService.get().dropRecoveredEmptyUsers();
-        BPackageManagerService.get().logOrphanedPackageData();
 
         List<String> preInstallPackages = AppSystemEnv.getPreInstallPackages();
         for (String preInstallPackage : preInstallPackages) {
@@ -83,6 +82,9 @@ public class BlackBoxSystem {
         }
         
         JarManager.getInstance().initializeAsync();
+        // Shallow directory names only, and not on this thread. The scan logs
+        // surviving clone data without holding startup.
+        BPackageManagerService.get().logOrphanedPackageData();
         
         
      
