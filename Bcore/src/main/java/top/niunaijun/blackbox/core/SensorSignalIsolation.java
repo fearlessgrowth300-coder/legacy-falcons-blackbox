@@ -35,6 +35,7 @@ import top.niunaijun.jnihook.jni.JniHook;
  * accelerometer/gyroscope/magnetometer samples while preserving magnitude and normal app motion
  * behaviour. It does not pretend the underlying physical sensor or its timing is independent.
  */
+@androidx.annotation.Keep
 public final class SensorSignalIsolation {
     private static final String TAG = "SensorSignalIsolation";
     private static volatile boolean sInstalled;
@@ -115,10 +116,16 @@ public final class SensorSignalIsolation {
     private static boolean installServiceHook() {
         try {
             if (!artMethodSizeOk()) return false;
-            Method probe = SensorSignalIsolation.class.getDeclaredMethod("probeTarget");
-            Method probeBody = SensorSignalIsolation.class.getDeclaredMethod("probeReplacement");
-            if (!redirect(probe, probeBody) || probeTarget() != 2) {
-                noteInactive("method redirect did not take effect");
+            Method[] probes = artProbes();
+            if (probes == null) {
+                noteInactive("art probe methods missing");
+                Slog.w(TAG, "sensor calibration inactive: " + sReason);
+                return false;
+            }
+            if (!redirect(probes[0], probes[1])) return false;
+            int redirected = invokeInt(probes[0]);
+            if (redirected != 2) {
+                noteInactive("method redirect did not take effect, value=" + redirected);
                 return false;
             }
             List<Method> found = new ArrayList<>();
@@ -278,12 +285,42 @@ public final class SensorSignalIsolation {
         }
     }
 
+    @androidx.annotation.Keep
     public static int probeTarget() {
         return 1;
     }
 
+    @androidx.annotation.Keep
     public static int probeReplacement() {
         return 2;
+    }
+
+    /** Find the two probe methods without a reflective name lookup. */
+    private static Method[] artProbes() {
+        Method returnsOne = null;
+        Method returnsTwo = null;
+        for (Method method : SensorSignalIsolation.class.getDeclaredMethods()) {
+            if (method.getParameterTypes().length != 0 || method.getReturnType() != int.class) continue;
+            if (!Modifier.isStatic(method.getModifiers()) || method.isSynthetic()) continue;
+            method.setAccessible(true);
+            int value;
+            try {
+                value = invokeInt(method);
+            } catch (Throwable error) {
+                Slog.w(TAG, "skipping probe " + method.getName() + ": " + error.getClass().getSimpleName());
+                continue;
+            }
+            if (value == 1 && returnsOne == null) returnsOne = method;
+            else if (value == 2 && returnsTwo == null) returnsTwo = method;
+        }
+        if (returnsOne == null || returnsTwo == null) return null;
+        Slog.w(TAG, "found member " + returnsOne.getName() + "()I and " + returnsTwo.getName() + "()I");
+        return new Method[]{returnsOne, returnsTwo};
+    }
+
+    private static int invokeInt(Method method) throws Exception {
+        Object value = method.invoke(null);
+        return value instanceof Integer ? (Integer) value : Integer.MIN_VALUE;
     }
 
     private static boolean artMethodSizeOk() {
@@ -342,6 +379,7 @@ public final class SensorSignalIsolation {
     }
 
     /** Bodies installed in place of SensorManager's public registration methods. */
+    @androidx.annotation.Keep
     public static class Hooks {
         private static final Class<?>[] EVENT = {SensorEventListener.class};
         private static final Class<?>[] EVENT_SENSOR = {SensorEventListener.class, Sensor.class};
@@ -402,6 +440,7 @@ public final class SensorSignalIsolation {
     }
 
     /** Receives the original ArtMethod bytes. The Java bodies are never executed. */
+    @androidx.annotation.Keep
     public static class Originals {
         public boolean registerListener(SensorEventListener listener, Sensor sensor, int samplingPeriodUs) {
             return false;
