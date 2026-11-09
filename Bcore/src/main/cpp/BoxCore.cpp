@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 #include <JniHook/JniHook.h>
 #include <Hook/VMClassLoaderHook.h>
@@ -105,13 +106,19 @@ static int ipc_calling_pid() {
     return g_ipc_calling_pid(self);
 }
 
+// libc open() is redirected into the guest data dir. These files live in the
+// host blackbox directory, so the read must be the raw openat syscall.
+static int raw_openat(const char *path, int flags, int mode) {
+    return (int) syscall(SYS_openat, AT_FDCWD, path, flags, mode);
+}
+
 static int lookup_published_uid(int pid, int *err_out) {
     if (err_out != nullptr) *err_out = 0;
     if (g_uid_dir[0] == '\0' || pid <= 0) return -1;
     char path[640];
     int wrote = std::snprintf(path, sizeof(path), "%s/%d", g_uid_dir, pid);
     if (wrote <= 0 || wrote >= (int) sizeof(path)) return -1;
-    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    int fd = raw_openat(path, O_RDONLY | O_CLOEXEC, 0);
     if (fd < 0) {
         if (err_out != nullptr) *err_out = errno;
         return -1;
@@ -130,7 +137,7 @@ static void publish_self_uid() {
     char path[640];
     int wrote = std::snprintf(path, sizeof(path), "%s/%d", g_uid_dir, getpid());
     if (wrote <= 0 || wrote >= (int) sizeof(path)) return;
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    int fd = raw_openat(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (fd < 0) {
         ALOGE("CallerUid publish failed pid=%d uid=%d path=%s errno=%d",
               getpid(), g_virtual_uid, path, errno);
