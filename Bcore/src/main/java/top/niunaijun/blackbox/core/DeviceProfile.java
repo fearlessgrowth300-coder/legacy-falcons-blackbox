@@ -531,20 +531,41 @@ public class DeviceProfile {
         CURRENT = this;
         // Android 16 ART native-crashes inside Pine 0.3.0's object bridge. android_id is
         // served by the settings provider instead, and the advertising-id binder is
-        // already swapped without Pine. Sensor and Widevine calibration degrade rather
-        // than taking the process down.
+        // already swapped without Pine. Sensor calibration uses the SystemSensorManager
+        // listener path on that runtime. Widevine calibration stays off rather than
+        // taking the process down.
         if (PineRuntime.hooksCrashThisRuntime(android.os.Build.VERSION.SDK_INT, pageSize())) {
-            sensorIsolationActive = false;
+            // Pine's object bridge crashes on this runtime. Sensor calibration still has to
+            // run: install() uses the SystemSensorManager listener path instead of Pine.
+            sensorIsolationActive = activateSensorIsolation();
             Slog.w(TAG, "Skipping Pine identity hooks on API "
                     + android.os.Build.VERSION.SDK_INT
-                    + "; settings provider serves android_id");
+                    + "; sensor=" + sensorIsolationActive
+                    + (sensorIsolationActive ? ""
+                    : " reason=" + SensorSignalIsolation.inactiveReason()));
             return true;
         }
-        sensorIsolationActive = SensorSignalIsolation.install(this);
+        sensorIsolationActive = activateSensorIsolation();
         boolean androidIdReady = hookAndroidId();
         hookGaid();
         boolean mediaDrmReady = hookMediaDrm();
         return sensorIsolationActive && androidIdReady && mediaDrmReady;
+    }
+
+    private boolean activateSensorIsolation() {
+        try {
+            ProfilePolicy policy = ProfilePolicy.load(
+                    ProfilePolicy.fileFor(BEnvironment.getUserDir(userId)));
+            if (!policy.sensorIsolation) {
+                SensorSignalIsolation.noteInactive("profile sensorIsolation is false");
+                return false;
+            }
+        } catch (Throwable error) {
+            SensorSignalIsolation.noteInactive("profile policy unreadable: "
+                    + error.getClass().getSimpleName());
+            return false;
+        }
+        return SensorSignalIsolation.install(this);
     }
 
     /** Compatibility entry point for callers that are not inside the provider handshake. */

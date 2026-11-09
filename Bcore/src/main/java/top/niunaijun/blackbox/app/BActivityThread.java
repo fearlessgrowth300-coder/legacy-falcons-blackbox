@@ -1523,6 +1523,7 @@ public class BActivityThread extends IBActivityThread.Stub {
         boolean udpGuard = false;
         boolean kernelGuard = false;
         boolean sensorGuard = false;
+        top.niunaijun.blackbox.core.DeviceProfile profile = null;
         try {
             String probe = "route-" + android.os.Process.myPid() + "-"
                     + SystemClock.elapsedRealtime() + ".invalid";
@@ -1550,8 +1551,7 @@ public class BActivityThread extends IBActivityThread.Stub {
             if (socket != null) socket.close();
         }
         try {
-            top.niunaijun.blackbox.core.DeviceProfile profile =
-                    top.niunaijun.blackbox.core.DeviceProfile.CURRENT;
+            profile = top.niunaijun.blackbox.core.DeviceProfile.CURRENT;
             String bootPath = "/proc/sys/kernel/random/boot_id";
             String expected = profile == null ? "" : profile.virtualKernelBootId();
             String observed = readFirstLine(bootPath);
@@ -1580,6 +1580,12 @@ public class BActivityThread extends IBActivityThread.Stub {
         out.putBoolean("udpGuard", udpGuard);
         out.putBoolean("kernelGuard", kernelGuard);
         out.putBoolean("sensorGuard", sensorGuard);
+        if (!sensorGuard) {
+            top.niunaijun.blackbox.utils.Slog.w(TAG, "sensor guard inactive: "
+                    + top.niunaijun.blackbox.core.SensorSignalIsolation.inactiveReason()
+                    + " profileFlag=" + (profile != null && profile.sensorIsolationActive)
+                    + " hook=" + top.niunaijun.blackbox.core.SensorSignalIsolation.isActive());
+        }
         StringBuilder failures = new StringBuilder();
         if (!dnsGuard) failures.append("dns");
         if (!udpGuard) {

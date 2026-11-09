@@ -45,11 +45,13 @@ public final class IsolationBoundaryTest {
         check(!defaults.shareHostMedia, "media is private by default");
         check(!defaults.shareHostGoogleProviders, "google providers are private by default");
         check(defaults.requireProxy, "direct network is blocked by default");
+        check(defaults.sensorIsolation, "sensor isolation is on when the profile does not say");
         Properties properties = new Properties();
         properties.setProperty("shareHostMedia", "true");
         properties.setProperty("requireProxy", "0");
         ProfilePolicy parsed = ProfilePolicy.parse(properties);
         check(parsed.shareHostMedia && !parsed.requireProxy, "explicit policy flags are honored");
+        check(parsed.sensorIsolation, "missing sensor flag stays enabled");
         check(!parsed.shareHostGoogleProviders, "missing google flag stays isolated");
 
         check(!ProviderIsolation.useHostProvider("media", defaults), "media provider is not the phone's");

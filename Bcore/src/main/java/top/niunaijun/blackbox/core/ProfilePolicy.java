@@ -15,15 +15,23 @@ public final class ProfilePolicy {
     public final boolean shareHostMedia;
     public final boolean shareHostGoogleProviders;
     public final boolean requireProxy;
+    /** Per-clone sensor calibration. Missing on older profiles means enabled. */
+    public final boolean sensorIsolation;
 
-    public ProfilePolicy(boolean shareHostMedia, boolean shareHostGoogleProviders, boolean requireProxy) {
+    public ProfilePolicy(boolean shareHostMedia, boolean shareHostGoogleProviders,
+                         boolean requireProxy, boolean sensorIsolation) {
         this.shareHostMedia = shareHostMedia;
         this.shareHostGoogleProviders = shareHostGoogleProviders;
         this.requireProxy = requireProxy;
+        this.sensorIsolation = sensorIsolation;
+    }
+
+    public ProfilePolicy(boolean shareHostMedia, boolean shareHostGoogleProviders, boolean requireProxy) {
+        this(shareHostMedia, shareHostGoogleProviders, requireProxy, true);
     }
 
     public static ProfilePolicy defaults() {
-        return new ProfilePolicy(false, false, true);
+        return new ProfilePolicy(false, false, true, true);
     }
 
     public static File fileFor(File userDir) {
@@ -32,14 +40,19 @@ public final class ProfilePolicy {
 
     public static ProfilePolicy load(File file) {
         Properties properties = new Properties();
+        boolean writeSensorFlag = false;
         if (file != null && file.isFile()) {
             try (FileInputStream in = new FileInputStream(file)) {
                 properties.load(in);
             } catch (Throwable ignored) {
                 return defaults();
             }
+            // Older profiles predate the flag. Record the isolated default in place.
+            writeSensorFlag = properties.getProperty("sensorIsolation") == null;
         }
-        return parse(properties);
+        ProfilePolicy policy = parse(properties);
+        if (writeSensorFlag) store(file, policy);
+        return policy;
     }
 
     public static ProfilePolicy parse(Properties properties) {
@@ -47,7 +60,8 @@ public final class ProfilePolicy {
         return new ProfilePolicy(
                 flag(properties, "shareHostMedia", false),
                 flag(properties, "shareHostGoogleProviders", false),
-                flag(properties, "requireProxy", true));
+                flag(properties, "requireProxy", true),
+                flag(properties, "sensorIsolation", true));
     }
 
     public static boolean store(File file, ProfilePolicy policy) {
@@ -56,17 +70,31 @@ public final class ProfilePolicy {
         properties.setProperty("shareHostMedia", Boolean.toString(policy.shareHostMedia));
         properties.setProperty("shareHostGoogleProviders", Boolean.toString(policy.shareHostGoogleProviders));
         properties.setProperty("requireProxy", Boolean.toString(policy.requireProxy));
+        properties.setProperty("sensorIsolation", Boolean.toString(policy.sensorIsolation));
         File parent = file.getParentFile();
+        File temporary = null;
         try {
             if (parent != null && !parent.isDirectory() && !parent.mkdirs() && !parent.isDirectory()) {
                 return false;
             }
-            try (FileOutputStream out = new FileOutputStream(file)) {
+            temporary = File.createTempFile("profile_policy", ".tmp", parent);
+            try (FileOutputStream out = new FileOutputStream(temporary)) {
                 properties.store(out, "per-profile isolation");
+                out.getFD().sync();
+            }
+            if (!temporary.renameTo(file)) {
+                try (FileOutputStream out = new FileOutputStream(file)) {
+                    properties.store(out, "per-profile isolation");
+                    out.getFD().sync();
+                }
             }
             return true;
         } catch (Throwable ignored) {
             return false;
+        } finally {
+            if (temporary != null && temporary.exists() && !temporary.equals(file)) {
+                temporary.delete();
+            }
         }
     }
 

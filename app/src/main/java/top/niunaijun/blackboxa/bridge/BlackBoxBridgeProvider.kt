@@ -400,7 +400,9 @@ class BlackBoxBridgeProvider : ContentProvider() {
                                 extras.getBoolean("shareHostGoogleProviders")
                             else current.shareHostGoogleProviders,
                             if (extras.containsKey("requireProxy")) extras.getBoolean("requireProxy")
-                            else current.requireProxy
+                            else current.requireProxy,
+                            if (extras.containsKey("sensorIsolation")) extras.getBoolean("sensorIsolation")
+                            else current.sensorIsolation
                         )
                         val saved = top.niunaijun.blackbox.core.ProfilePolicy.store(file, updated)
                         res.putBoolean("ok", saved)
