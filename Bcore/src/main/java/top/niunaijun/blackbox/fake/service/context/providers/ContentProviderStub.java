@@ -39,6 +39,14 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                     BActivityThread.getBUid(), BlackBoxCore.getHostUid());
             String pkg = virtual ? BActivityThread.getAppPackageName() : BlackBoxCore.getHostPkg();
             if (pkg == null) throw new IllegalStateException("Provider caller is not initialized");
+            if ("query".equals(method.getName()) || "call".equals(method.getName())
+                    || "insert".equals(method.getName())) {
+                Slog.i(TAG, "provider " + method.getName()
+                        + " virtual=" + virtual
+                        + " attrUid=" + uid
+                        + " callerPkg=" + pkg
+                        + " providerPkg=" + mProviderPackage);
+            }
             ProviderCallIdentity.rewriteLegacyCaller(args, pkg);
             if (args != null) {
                 for (int i = 0; i < args.length; i++) {

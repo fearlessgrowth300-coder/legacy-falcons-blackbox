@@ -193,17 +193,17 @@ public class BActivityThread extends IBActivityThread.Stub {
             }
             this.mAppConfig = appConfig;
             try {
+                java.io.File uidDir = top.niunaijun.blackbox.core.CallerUidMap.directory(
+                        top.niunaijun.blackbox.core.env.BEnvironment.getSystemDir());
+                NativeCore.setCallerUidDirectory(uidDir.getAbsolutePath());
                 NativeCore.setCallerIdentity(BlackBoxCore.getHostUid(), appConfig.buid);
-                try {
-                    java.io.File uidDir = top.niunaijun.blackbox.core.CallerUidMap.directory(
-                            top.niunaijun.blackbox.core.env.BEnvironment.getSystemDir());
-                    NativeCore.setCallerUidDirectory(uidDir.getAbsolutePath());
-                    top.niunaijun.blackbox.core.CallerUidMap.publish(
-                            uidDir, android.os.Process.myPid(), appConfig.buid);
-                } catch (Throwable ignored) {
-                }
+                boolean published = top.niunaijun.blackbox.core.CallerUidMap.publish(
+                        uidDir, android.os.Process.myPid(), appConfig.buid);
+                Slog.i(TAG, "CallerUid publish pid=" + android.os.Process.myPid()
+                        + " uid=" + appConfig.buid + " ok=" + published
+                        + " dir=" + uidDir.getAbsolutePath());
             } catch (Throwable error) {
-                Slog.w(TAG, "caller identity was not published: " + error.getClass().getSimpleName());
+                Slog.e(TAG, "CallerUid publish failed: " + error);
             }
             // Apply this clone's unique, persistent device identity as early as
             // possible (before the guest app loads / references Build.*).

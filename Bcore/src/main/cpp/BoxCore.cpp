@@ -11,7 +11,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <dlfcn.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <JniHook/JniHook.h>
 #include <Hook/VMClassLoaderHook.h>
@@ -52,10 +55,12 @@ JNIEnv *ensureEnvCreated() {
 static int g_host_uid = 0;
 static int g_virtual_uid = 0;
 static char g_uid_dir[512];
+static void publish_self_uid();
 
 void BoxCore::setCallerIdentity(int hostUid, int virtualUid) {
     g_host_uid = hostUid;
     g_virtual_uid = virtualUid;
+    publish_self_uid();
 }
 
 void BoxCore::setCallerUidDirectory(const char *path) {
@@ -64,15 +69,53 @@ void BoxCore::setCallerUidDirectory(const char *path) {
         return;
     }
     std::snprintf(g_uid_dir, sizeof(g_uid_dir), "%s", path);
+    if (mkdir(g_uid_dir, 0755) != 0 && errno != EEXIST) {
+        ALOGE("CallerUid mkdir failed dir=%s errno=%d", g_uid_dir, errno);
+    }
+    ALOGE("CallerUid directory=%s", g_uid_dir);
+    publish_self_uid();
 }
 
-static int lookup_published_uid(int pid) {
+static int (*g_ipc_calling_pid)(void *) = nullptr;
+static void *(*g_ipc_self)() = nullptr;
+static bool g_ipc_resolved = false;
+
+static void resolve_ipc_calling_pid() {
+    if (g_ipc_resolved) return;
+    g_ipc_resolved = true;
+    void *lib = dlopen("libbinder.so", RTLD_NOW);
+    if (lib == nullptr) {
+        ALOGE("CallerUid libbinder unavailable");
+        return;
+    }
+    g_ipc_self = reinterpret_cast<void *(*)()>(
+            dlsym(lib, "_ZN7android14IPCThreadState4selfEv"));
+    g_ipc_calling_pid = reinterpret_cast<int (*)(void *)>(
+            dlsym(lib, "_ZNK7android14IPCThreadState13getCallingPidEv"));
+    if (g_ipc_self == nullptr || g_ipc_calling_pid == nullptr) {
+        ALOGE("CallerUid IPCThreadState symbols missing");
+    }
+}
+
+static int ipc_calling_pid() {
+    resolve_ipc_calling_pid();
+    if (g_ipc_self == nullptr || g_ipc_calling_pid == nullptr) return 0;
+    void *self = g_ipc_self();
+    if (self == nullptr) return 0;
+    return g_ipc_calling_pid(self);
+}
+
+static int lookup_published_uid(int pid, int *err_out) {
+    if (err_out != nullptr) *err_out = 0;
     if (g_uid_dir[0] == '\0' || pid <= 0) return -1;
     char path[640];
     int wrote = std::snprintf(path, sizeof(path), "%s/%d", g_uid_dir, pid);
     if (wrote <= 0 || wrote >= (int) sizeof(path)) return -1;
     int fd = open(path, O_RDONLY | O_CLOEXEC);
-    if (fd < 0) return -1;
+    if (fd < 0) {
+        if (err_out != nullptr) *err_out = errno;
+        return -1;
+    }
     char buf[16];
     ssize_t got = read(fd, buf, sizeof(buf) - 1);
     close(fd);
@@ -80,6 +123,50 @@ static int lookup_published_uid(int pid) {
     buf[got] = '\0';
     int uid = std::atoi(buf);
     return uid >= 10000 ? uid : -1;
+}
+
+static void publish_self_uid() {
+    if (g_uid_dir[0] == '\0' || g_virtual_uid < 10000) return;
+    char path[640];
+    int wrote = std::snprintf(path, sizeof(path), "%s/%d", g_uid_dir, getpid());
+    if (wrote <= 0 || wrote >= (int) sizeof(path)) return;
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    if (fd < 0) {
+        ALOGE("CallerUid publish failed pid=%d uid=%d path=%s errno=%d",
+              getpid(), g_virtual_uid, path, errno);
+        return;
+    }
+    char buf[16];
+    int n = std::snprintf(buf, sizeof(buf), "%d", g_virtual_uid);
+    if (n > 0) write(fd, buf, (size_t) n);
+    close(fd);
+    ALOGE("CallerUid publish pid=%d uid=%d path=%s", getpid(), g_virtual_uid, path);
+}
+
+static void log_calling_uid(int orig, int jni_pid, int raw_pid, int looked,
+                            int look_errno, int returned) {
+    // The GMS provider transaction is the one that must be visible. Log each
+    // distinct sender once, and every time we would answer with our own uid
+    // for somebody else's process.
+    static int seen_pids[16];
+    static int seen_count = 0;
+    static int fallback_logs = 0;
+    bool cross = raw_pid > 0 && raw_pid != getpid();
+    bool fallback = cross && returned == g_virtual_uid;
+    bool known = false;
+    int key = raw_pid != 0 ? raw_pid : jni_pid;
+    for (int i = 0; i < seen_count; i++) {
+        if (seen_pids[i] == key) {
+            known = true;
+            break;
+        }
+    }
+    if (!known && seen_count < 16) seen_pids[seen_count++] = key;
+    if (known && !fallback) return;
+    if (fallback && fallback_logs++ > 40) return;
+    ALOGE("CallerUid hook proc=%d own=%d orig=%d jniPid=%d rawPid=%d looked=%d errno=%d dir=%s return=%d",
+          getpid(), g_virtual_uid, orig, jni_pid, raw_pid, looked, look_errno,
+          g_uid_dir[0] == '\0' ? "(empty)" : g_uid_dir, returned);
 }
 
 int BoxCore::getCallingUid(JNIEnv *env, int orig) {
@@ -90,12 +177,18 @@ int BoxCore::getCallingUid(JNIEnv *env, int orig) {
     // Play Store call (uid 10004) fail inside GMS (uid 10005). Read the sender pid.
     if (VMEnv.api_level >= 36) {
         if (g_host_uid <= 0 || orig != g_host_uid) return orig;
-        int pid = BinderHook::callingPid(env);
+        int jni_pid = BinderHook::callingPid(env);
+        int raw_pid = ipc_calling_pid();
+        int pid = raw_pid > 0 ? raw_pid : jni_pid;
+        int looked = -1;
+        int look_errno = 0;
+        int returned = g_virtual_uid >= 10000 ? g_virtual_uid : orig;
         if (pid > 0 && pid != getpid()) {
-            int sender = lookup_published_uid(pid);
-            if (sender >= 10000) return sender;
+            looked = lookup_published_uid(pid, &look_errno);
+            if (looked >= 10000) returned = looked;
         }
-        return g_virtual_uid >= 10000 ? g_virtual_uid : orig;
+        log_calling_uid(orig, jni_pid, raw_pid, looked, look_errno, returned);
+        return returned;
     }
     env = ensureEnvCreated();
     if (env == nullptr || env->ExceptionCheck()) return orig;
