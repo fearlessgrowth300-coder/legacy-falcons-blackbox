@@ -1,25 +1,31 @@
 package top.niunaijun.blackbox.core;
 
-import android.content.Context;
 import android.hardware.Sensor;
 import android.hardware.SensorAdditionalInfo;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventCallback;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorEventListener2;
+import android.hardware.SensorManager;
+import android.hardware.TriggerEvent;
+import android.hardware.TriggerEventListener;
 import android.os.Build;
+import android.os.Handler;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 
 import top.canyie.pine.Pine;
 import top.canyie.pine.callback.MethodHook;
-import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.jnihook.jni.JniHook;
 
@@ -34,8 +40,11 @@ public final class SensorSignalIsolation {
     private static volatile boolean sInstalled;
     private static volatile long sSeed;
     private static volatile String sReason = "not installed";
-    private static volatile Map<String, Object> sFetchers;
-    private static volatile Method sGetService;
+    private static final Map<String, Method> BACKUPS = new HashMap<>();
+    private static final Map<SensorEventListener, SensorEventListener> EVENT_WRAPS =
+            new IdentityHashMap<>();
+    private static final Map<TriggerEventListener, TriggerEventListener> TRIGGER_WRAPS =
+            new IdentityHashMap<>();
 
     private SensorSignalIsolation() {
     }
@@ -99,168 +108,173 @@ public final class SensorSignalIsolation {
     }
 
     /**
-     * Android 16 cannot use Pine. Every sensor manager is created by
-     * SystemServiceRegistry, so that lookup arms the manager: listeners registered
-     * later are wrapped and their 3-axis samples are calibrated before delivery.
+     * Android 16 cannot use Pine. Every SensorManager the guest gets from
+     * getSystemService still dispatches through these public methods, so wrapping
+     * the listener there calibrates samples without a private signature.
      */
     private static boolean installServiceHook() {
         try {
-            Class<?> registry = Class.forName("android.app.SystemServiceRegistry");
-            Field fetchersField = registry.getDeclaredField("SYSTEM_SERVICE_FETCHERS");
-            fetchersField.setAccessible(true);
-            Object raw = fetchersField.get(null);
-            if (!(raw instanceof Map)) {
-                noteInactive("sensor service registry is missing");
-                return false;
-            }
-            @SuppressWarnings("unchecked")
-            Map<String, Object> fetchers = (Map<String, Object>) raw;
-            if (fetchers.get(Context.SENSOR_SERVICE) == null) {
-                noteInactive("sensor service fetcher is missing");
-                return false;
-            }
-            sFetchers = fetchers;
-            serviceGetter(fetchers.get(Context.SENSOR_SERVICE));
             if (!artMethodSizeOk()) return false;
             Method probe = SensorSignalIsolation.class.getDeclaredMethod("probeTarget");
             Method probeBody = SensorSignalIsolation.class.getDeclaredMethod("probeReplacement");
-            if (!redirect(probe, probeBody)) return false;
-            if (probeTarget() != 2) {
+            if (!redirect(probe, probeBody) || probeTarget() != 2) {
                 noteInactive("method redirect did not take effect");
                 return false;
             }
-            Method target = registry.getDeclaredMethod("getSystemService",
-                    Class.forName("android.app.ContextImpl"), String.class);
-            Method replacement = SensorSignalIsolation.class.getDeclaredMethod(
-                    "serviceForContext", Object.class, String.class);
-            target.setAccessible(true);
-            replacement.setAccessible(true);
-            if (!redirect(target, replacement)) {
-                noteInactive("SystemServiceRegistry redirect failed");
+            List<Method> found = new ArrayList<>();
+            collectListenerMethods(SensorManager.class, found);
+            try {
+                collectListenerMethods(Class.forName("android.hardware.SystemSensorManager"), found);
+            } catch (Throwable error) {
+                Slog.w(TAG, "SystemSensorManager members unavailable: "
+                        + error.getClass().getSimpleName() + ": " + error.getMessage());
+            }
+            int hooked = 0;
+            String first = null;
+            for (Method method : found) {
+                Slog.w(TAG, "found member " + method.toGenericString());
+                Method hook = match(Hooks.class, method);
+                Method backup = match(Originals.class, method);
+                if (hook == null || backup == null) {
+                    noteInactive("no wrapper for " + method.toGenericString());
+                    Slog.w(TAG, "sensor calibration inactive: " + sReason);
+                    return false;
+                }
+                hook.setAccessible(true);
+                backup.setAccessible(true);
+                method.setAccessible(true);
+                if (!redirect(backup, method) || !redirect(method, hook)) {
+                    noteInactive("could not hook " + method.toGenericString()
+                            + " (" + sReason + ")");
+                    return false;
+                }
+                BACKUPS.put(signature(method), backup);
+                hooked++;
+                if (first == null) first = method.toGenericString();
+                Slog.w(TAG, "hooked member " + method.toGenericString());
+            }
+            if (hooked == 0) {
+                noteInactive("no registerListener member hooked; saw " + describe(found));
                 return false;
             }
-            Context context = BlackBoxCore.getContext();
-            if (context == null) {
-                noteInactive("guest context is missing");
-                return false;
-            }
-            Object manager = context.getSystemService(Context.SENSOR_SERVICE);
-            if (!(manager instanceof android.hardware.SensorManager) || !sInstalled) {
-                if (!sInstalled) noteInactive(sReason == null ? "sensor manager was not armed" : sReason);
-                return false;
-            }
-            sReason = "active via SystemSensorManager listener wrap";
-            Slog.w(TAG, "per-clone 3-axis sensor calibration active without Pine");
+            sInstalled = true;
+            sReason = "active via " + first;
+            Slog.w(TAG, "per-clone sensor calibration active via " + hooked + " members, first=" + first);
             return true;
         } catch (Throwable error) {
-            noteInactive("SystemSensorManager path failed: " + error.getClass().getSimpleName());
+            noteInactive(error.getClass().getSimpleName() + ": " + error.getMessage());
             Slog.w(TAG, "sensor calibration inactive: " + sReason);
             return false;
         }
     }
 
-    /** Replaces SystemServiceRegistry.getSystemService. Must not call that method. */
-    @SuppressWarnings("unused")
-    public static Object serviceForContext(Object context, String name) {
-        try {
-            Map<String, Object> fetchers = sFetchers;
-            if (fetchers == null || name == null) return null;
-            Object fetcher = fetchers.get(name);
-            if (fetcher == null) return null;
-            Method getService = serviceGetter(fetcher);
-            Object service;
-            try {
-                service = getService.invoke(fetcher, context);
-            } catch (InvocationTargetException error) {
-                Throwable cause = error.getCause();
-                if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-                if (cause instanceof Error) throw (Error) cause;
-                return null;
+    private static void collectListenerMethods(Class<?> type, List<Method> into) {
+        if (type == null) return;
+        for (Method method : type.getDeclaredMethods()) {
+            if (method.isBridge() || method.isSynthetic() || Modifier.isStatic(method.getModifiers())) {
+                continue;
             }
-            if (Context.SENSOR_SERVICE.equals(name)) arm(service);
-            return service;
-        } catch (RuntimeException error) {
-            throw error;
-        } catch (Throwable error) {
-            Slog.w(TAG, "sensor service lookup failed: " + error.getClass().getSimpleName());
-            return null;
+            if (!Modifier.isPublic(method.getModifiers())) continue;
+            if (!takesListener(method)) continue;
+            if (!containsSignature(into, method)) into.add(method);
         }
     }
 
-    private static Method serviceGetter(Object fetcher) throws NoSuchMethodException {
-        Method cached = sGetService;
-        if (cached != null && cached.getDeclaringClass().isInstance(fetcher)) return cached;
-        for (Method method : fetcher.getClass().getMethods()) {
-            if ("getService".equals(method.getName()) && method.getParameterTypes().length == 1) {
-                method.setAccessible(true);
-                sGetService = method;
+    private static boolean takesListener(Method method) {
+        String name = method.getName();
+        if (!"registerListener".equals(name) && !"unregisterListener".equals(name)
+                && !"flush".equals(name) && !"requestTriggerSensor".equals(name)
+                && !"cancelTriggerSensor".equals(name)) {
+            return false;
+        }
+        for (Class<?> parameter : method.getParameterTypes()) {
+            if (parameter == SensorEventListener.class || parameter == TriggerEventListener.class) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsSignature(List<Method> methods, Method candidate) {
+        for (Method method : methods) {
+            if (method.getName().equals(candidate.getName())
+                    && java.util.Arrays.equals(method.getParameterTypes(), candidate.getParameterTypes())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Method match(Class<?> type, Method original) {
+        for (Method method : type.getDeclaredMethods()) {
+            if (method.getName().equals(original.getName())
+                    && java.util.Arrays.equals(method.getParameterTypes(), original.getParameterTypes())) {
                 return method;
-            }
-        }
-        throw new NoSuchMethodException("getService");
-    }
-
-    private static void arm(Object manager) {
-        if (manager == null) {
-            noteInactive("sensor manager was not created");
-            return;
-        }
-        try {
-            Field listeners = findField(manager.getClass(), "mSensorListeners");
-            if (listeners == null) {
-                noteInactive("SystemSensorManager listener map is missing");
-                return;
-            }
-            makeWritable(listeners);
-            Object current = listeners.get(manager);
-            if (current instanceof CalibratedListeners) {
-                sInstalled = true;
-                return;
-            }
-            CalibratedListeners wrapped = new CalibratedListeners();
-            if (current instanceof Map) {
-                for (Map.Entry<?, ?> entry : ((Map<?, ?>) current).entrySet()) {
-                    wrapped.putRaw(entry.getKey(), entry.getValue());
-                }
-            }
-            listeners.set(manager, wrapped);
-            sInstalled = true;
-        } catch (Throwable error) {
-            noteInactive("could not arm SystemSensorManager: " + error.getClass().getSimpleName());
-        }
-    }
-
-    private static Field findField(Class<?> type, String name) {
-        for (Class<?> cursor = type; cursor != null && cursor != Object.class; cursor = cursor.getSuperclass()) {
-            try {
-                return cursor.getDeclaredField(name);
-            } catch (NoSuchFieldException ignored) {
             }
         }
         return null;
     }
 
-    private static void makeWritable(Field field) {
-        try {
-            JniHook.setAccessible(field.getDeclaringClass(), field);
-        } catch (Throwable ignored) {
+    private static String signature(Method method) {
+        StringBuilder builder = new StringBuilder(method.getName());
+        for (Class<?> parameter : method.getParameterTypes()) {
+            builder.append('#').append(parameter.getName());
         }
-        field.setAccessible(true);
+        return builder.toString();
     }
 
-    private static void rewriteListener(Object queue, Object key) {
-        if (!(key instanceof SensorEventListener) || queue == null) return;
-        Field listener = findField(queue.getClass(), "mListener");
-        if (listener == null) return;
+    private static String describe(List<Method> methods) {
+        if (methods.isEmpty()) return "(none)";
+        StringBuilder builder = new StringBuilder();
+        for (Method method : methods) {
+            if (builder.length() > 0) builder.append(" | ");
+            builder.append(method.toGenericString());
+        }
+        return builder.toString();
+    }
+
+    private static Object callOriginal(Object self, String name, Class<?>[] types, Object[] args) {
+        Method backup = BACKUPS.get(signature(name, types));
+        if (backup == null) {
+            throw new IllegalStateException("backup missing for " + name);
+        }
         try {
-            makeWritable(listener);
-            Object current = listener.get(queue);
-            if (current instanceof CalibratedListener) return;
-            if (current instanceof SensorEventListener) {
-                listener.set(queue, new CalibratedListener((SensorEventListener) current));
-            }
-        } catch (Throwable error) {
-            noteInactive("sensor listener was not wrapped: " + error.getClass().getSimpleName());
+            return backup.invoke(self, args);
+        } catch (InvocationTargetException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+            if (cause instanceof Error) throw (Error) cause;
+            throw new IllegalStateException(cause);
+        } catch (IllegalAccessException error) {
+            throw new IllegalStateException(error);
+        }
+    }
+
+    private static String signature(String name, Class<?>[] types) {
+        StringBuilder builder = new StringBuilder(name);
+        for (Class<?> type : types) builder.append('#').append(type.getName());
+        return builder.toString();
+    }
+
+    private static SensorEventListener wrap(SensorEventListener listener) {
+        if (listener == null || listener instanceof CalibratedListener) return listener;
+        synchronized (EVENT_WRAPS) {
+            SensorEventListener existing = EVENT_WRAPS.get(listener);
+            if (existing != null) return existing;
+            CalibratedListener created = new CalibratedListener(listener);
+            EVENT_WRAPS.put(listener, created);
+            return created;
+        }
+    }
+
+    private static TriggerEventListener wrap(TriggerEventListener listener) {
+        if (listener == null || listener instanceof CalibratedTrigger) return listener;
+        synchronized (TRIGGER_WRAPS) {
+            TriggerEventListener existing = TRIGGER_WRAPS.get(listener);
+            if (existing != null) return existing;
+            CalibratedTrigger created = new CalibratedTrigger(listener);
+            TRIGGER_WRAPS.put(listener, created);
+            return created;
         }
     }
 
@@ -327,15 +341,119 @@ public final class SensorSignalIsolation {
         }
     }
 
-    private static final class CalibratedListeners extends HashMap<Object, Object> {
-        @Override
-        public Object put(Object key, Object value) {
-            rewriteListener(value, key);
-            return super.put(key, value);
+    /** Bodies installed in place of SensorManager's public registration methods. */
+    public static class Hooks {
+        private static final Class<?>[] EVENT = {SensorEventListener.class};
+        private static final Class<?>[] EVENT_SENSOR = {SensorEventListener.class, Sensor.class};
+        private static final Class<?>[] EVENT_SENSOR_INT = {
+                SensorEventListener.class, Sensor.class, int.class};
+        private static final Class<?>[] EVENT_SENSOR_INT_INT = {
+                SensorEventListener.class, Sensor.class, int.class, int.class};
+        private static final Class<?>[] EVENT_SENSOR_INT_HANDLER = {
+                SensorEventListener.class, Sensor.class, int.class, Handler.class};
+        private static final Class<?>[] EVENT_SENSOR_INT_INT_HANDLER = {
+                SensorEventListener.class, Sensor.class, int.class, int.class, Handler.class};
+        private static final Class<?>[] TRIGGER = {TriggerEventListener.class, Sensor.class};
+
+        public boolean registerListener(SensorEventListener listener, Sensor sensor, int samplingPeriodUs) {
+            return (Boolean) callOriginal(this, "registerListener", EVENT_SENSOR_INT,
+                    new Object[]{wrap(listener), sensor, samplingPeriodUs});
         }
 
-        void putRaw(Object key, Object value) {
-            super.put(key, value);
+        public boolean registerListener(SensorEventListener listener, Sensor sensor,
+                                        int samplingPeriodUs, int maxReportLatencyUs) {
+            return (Boolean) callOriginal(this, "registerListener", EVENT_SENSOR_INT_INT,
+                    new Object[]{wrap(listener), sensor, samplingPeriodUs, maxReportLatencyUs});
+        }
+
+        public boolean registerListener(SensorEventListener listener, Sensor sensor,
+                                        int samplingPeriodUs, Handler handler) {
+            return (Boolean) callOriginal(this, "registerListener", EVENT_SENSOR_INT_HANDLER,
+                    new Object[]{wrap(listener), sensor, samplingPeriodUs, handler});
+        }
+
+        public boolean registerListener(SensorEventListener listener, Sensor sensor,
+                                        int samplingPeriodUs, int maxReportLatencyUs, Handler handler) {
+            return (Boolean) callOriginal(this, "registerListener", EVENT_SENSOR_INT_INT_HANDLER,
+                    new Object[]{wrap(listener), sensor, samplingPeriodUs, maxReportLatencyUs, handler});
+        }
+
+        public void unregisterListener(SensorEventListener listener) {
+            callOriginal(this, "unregisterListener", EVENT, new Object[]{wrap(listener)});
+        }
+
+        public void unregisterListener(SensorEventListener listener, Sensor sensor) {
+            callOriginal(this, "unregisterListener", EVENT_SENSOR, new Object[]{wrap(listener), sensor});
+        }
+
+        public boolean flush(SensorEventListener listener) {
+            return (Boolean) callOriginal(this, "flush", EVENT, new Object[]{wrap(listener)});
+        }
+
+        public boolean requestTriggerSensor(TriggerEventListener listener, Sensor sensor) {
+            return (Boolean) callOriginal(this, "requestTriggerSensor", TRIGGER,
+                    new Object[]{wrap(listener), sensor});
+        }
+
+        public boolean cancelTriggerSensor(TriggerEventListener listener, Sensor sensor) {
+            return (Boolean) callOriginal(this, "cancelTriggerSensor", TRIGGER,
+                    new Object[]{wrap(listener), sensor});
+        }
+    }
+
+    /** Receives the original ArtMethod bytes. The Java bodies are never executed. */
+    public static class Originals {
+        public boolean registerListener(SensorEventListener listener, Sensor sensor, int samplingPeriodUs) {
+            return false;
+        }
+
+        public boolean registerListener(SensorEventListener listener, Sensor sensor,
+                                        int samplingPeriodUs, int maxReportLatencyUs) {
+            return false;
+        }
+
+        public boolean registerListener(SensorEventListener listener, Sensor sensor,
+                                        int samplingPeriodUs, Handler handler) {
+            return false;
+        }
+
+        public boolean registerListener(SensorEventListener listener, Sensor sensor,
+                                        int samplingPeriodUs, int maxReportLatencyUs, Handler handler) {
+            return false;
+        }
+
+        public void unregisterListener(SensorEventListener listener) {
+        }
+
+        public void unregisterListener(SensorEventListener listener, Sensor sensor) {
+        }
+
+        public boolean flush(SensorEventListener listener) {
+            return false;
+        }
+
+        public boolean requestTriggerSensor(TriggerEventListener listener, Sensor sensor) {
+            return false;
+        }
+
+        public boolean cancelTriggerSensor(TriggerEventListener listener, Sensor sensor) {
+            return false;
+        }
+    }
+
+    private static final class CalibratedTrigger extends TriggerEventListener {
+        private final TriggerEventListener delegate;
+
+        CalibratedTrigger(TriggerEventListener delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void onTrigger(TriggerEvent event) {
+            if (event != null && event.values != null && event.values.length == 3) {
+                transform(event.values, event.timestamp, sSeed);
+            }
+            delegate.onTrigger(event);
         }
     }
 

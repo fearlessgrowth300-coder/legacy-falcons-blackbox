@@ -5,6 +5,8 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.util.Properties;
 
+import top.niunaijun.blackbox.utils.Slog;
+
 /**
  * Per-virtual-user isolation switches. Missing keys use the isolated defaults:
  * private media, private Google providers, and no direct network.
@@ -40,18 +42,23 @@ public final class ProfilePolicy {
 
     public static ProfilePolicy load(File file) {
         Properties properties = new Properties();
-        boolean writeSensorFlag = false;
-        if (file != null && file.isFile()) {
+        boolean existed = file != null && file.isFile();
+        if (existed) {
             try (FileInputStream in = new FileInputStream(file)) {
                 properties.load(in);
-            } catch (Throwable ignored) {
+            } catch (Throwable error) {
+                Slog.w("ProfilePolicy", "could not read " + file + ": " + error);
                 return defaults();
             }
-            // Older profiles predate the flag. Record the isolated default in place.
-            writeSensorFlag = properties.getProperty("sensorIsolation") == null;
         }
         ProfilePolicy policy = parse(properties);
-        if (writeSensorFlag) store(file, policy);
+        boolean missingSensor = !existed || properties.getProperty("sensorIsolation") == null;
+        File parent = file == null ? null : file.getParentFile();
+        if (missingSensor && parent != null && parent.isDirectory()) {
+            boolean wrote = store(file, policy);
+            Slog.w("ProfilePolicy", "sensorIsolation=" + policy.sensorIsolation
+                    + " path=" + file.getAbsolutePath() + " wrote=" + wrote);
+        }
         return policy;
     }
 
@@ -89,7 +96,8 @@ public final class ProfilePolicy {
                 }
             }
             return true;
-        } catch (Throwable ignored) {
+        } catch (Throwable error) {
+            Slog.w("ProfilePolicy", "could not write " + file + ": " + error);
             return false;
         } finally {
             if (temporary != null && temporary.exists() && !temporary.equals(file)) {

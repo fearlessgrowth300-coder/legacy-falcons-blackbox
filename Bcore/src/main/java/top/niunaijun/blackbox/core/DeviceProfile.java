@@ -536,33 +536,42 @@ public class DeviceProfile {
         // taking the process down.
         if (PineRuntime.hooksCrashThisRuntime(android.os.Build.VERSION.SDK_INT, pageSize())) {
             // Pine's object bridge crashes on this runtime. Sensor calibration still has to
-            // run: install() uses the SystemSensorManager listener path instead of Pine.
-            sensorIsolationActive = activateSensorIsolation();
+            // run: install() wraps the public SensorManager registration methods.
+            boolean hook = activateSensorIsolation();
             Slog.w(TAG, "Skipping Pine identity hooks on API "
                     + android.os.Build.VERSION.SDK_INT
-                    + "; sensor=" + sensorIsolationActive
-                    + (sensorIsolationActive ? ""
-                    : " reason=" + SensorSignalIsolation.inactiveReason()));
+                    + "; policy=" + sensorIsolationActive
+                    + " hook=" + hook
+                    + (hook ? "" : " reason=" + SensorSignalIsolation.inactiveReason()));
             return true;
         }
-        sensorIsolationActive = activateSensorIsolation();
+        boolean hook = activateSensorIsolation();
         boolean androidIdReady = hookAndroidId();
         hookGaid();
         boolean mediaDrmReady = hookMediaDrm();
-        return sensorIsolationActive && androidIdReady && mediaDrmReady;
+        return hook && androidIdReady && mediaDrmReady;
     }
 
+    /** The profile flag is the file value. Hook success is returned separately. */
     private boolean activateSensorIsolation() {
+        java.io.File file = ProfilePolicy.fileFor(BEnvironment.getUserDir(userId));
+        ProfilePolicy policy;
         try {
-            ProfilePolicy policy = ProfilePolicy.load(
-                    ProfilePolicy.fileFor(BEnvironment.getUserDir(userId)));
-            if (!policy.sensorIsolation) {
-                SensorSignalIsolation.noteInactive("profile sensorIsolation is false");
-                return false;
-            }
+            policy = ProfilePolicy.load(file);
         } catch (Throwable error) {
+            sensorIsolationActive = true;
             SensorSignalIsolation.noteInactive("profile policy unreadable: "
-                    + error.getClass().getSimpleName());
+                    + error.getClass().getSimpleName() + ": " + error.getMessage());
+            Slog.w(TAG, "sensor policy user=" + userId + " unreadable " + file);
+            return false;
+        }
+        sensorIsolationActive = policy.sensorIsolation;
+        Slog.w(TAG, "sensor policy user=" + userId
+                + " sensorIsolation=" + policy.sensorIsolation
+                + " path=" + file.getAbsolutePath()
+                + " exists=" + file.isFile());
+        if (!policy.sensorIsolation) {
+            SensorSignalIsolation.noteInactive("profile sensorIsolation is false");
             return false;
         }
         return SensorSignalIsolation.install(this);
