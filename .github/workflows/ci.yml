@@ -48,6 +48,10 @@ jobs:
             Bcore/src/main/java/top/niunaijun/blackbox/fake/service/context/providers/ProviderCallIdentity.java \
             tools/diagnostics/IdentityPolicyTest.java
           java -cp build/diagnostic-tests IdentityPolicyTest
+          javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/GuestPermission.java \
+            tools/diagnostics/GuestPermissionTest.java
+          java -cp build/diagnostic-tests GuestPermissionTest
           javac -d build/diagnostic-tests Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ApplicationCreationCompat.java tools/diagnostics/ApplicationCreationCompatTest.java
           java -cp build/diagnostic-tests ApplicationCreationCompatTest
           javac -d build/diagnostic-tests \

@@ -966,8 +966,10 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class checkPermission extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            MethodParameterUtils.replaceLastUid(args);
             String permission = (String) args[0];
+            Integer virtual = virtualPermission(permission, args, 2);
+            if (virtual != null) return virtual;
+            MethodParameterUtils.replaceLastUid(args);
             if (permission.equals(Manifest.permission.ACCOUNT_MANAGER)
                     || permission.equals(Manifest.permission.SEND_SMS)) {
                 return PackageManager.PERMISSION_GRANTED;
@@ -994,6 +996,8 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String permission = args != null && args.length > 0 ? (String) args[0] : null;
+            Integer virtual = virtualPermission(permission, args, 2);
+            if (virtual != null) return virtual;
             if (isAudioPermission(permission)
                     || isStorageOrMediaPermission(permission)
                     || Manifest.permission.CAMERA.equals(permission)) {
@@ -1010,6 +1014,13 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     }
 
     
+    private static Integer virtualPermission(String permission, Object[] args, int uidIndex) {
+        if (args == null || args.length <= uidIndex || !(args[uidIndex] instanceof Integer)) {
+            return null;
+        }
+        return GuestPermissionBridge.grantedOrNull(permission, (Integer) args[uidIndex]);
+    }
+
     private static boolean isAudioPermission(String permission) {
         if (permission == null) return false;
         return permission.equals(Manifest.permission.RECORD_AUDIO)

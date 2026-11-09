@@ -604,8 +604,22 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 Slog.d(TAG, "SimpleAudioPermissionHook: Granting notification/Xiaomi permission: " + permission + " to " + packageName);
                 return PackageManager.PERMISSION_GRANTED;
             }
+            Integer virtual = GuestPermissionBridge.grantedForPackageOrNull(permission, packageName);
+            if (virtual != null) return virtual;
             
-            
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("checkUidPermission")
+    public static class CheckUidPermission extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            String permission = args != null && args.length > 0 ? (String) args[0] : null;
+            int uid = args != null && args.length > 1 && args[1] instanceof Integer
+                    ? (Integer) args[1] : -1;
+            Integer virtual = GuestPermissionBridge.grantedOrNull(permission, uid);
+            if (virtual != null) return virtual;
             return method.invoke(who, args);
         }
     }
