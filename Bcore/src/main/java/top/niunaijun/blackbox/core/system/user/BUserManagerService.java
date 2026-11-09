@@ -145,6 +145,58 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
         return bUserInfo;
     }
 
+    /**
+     * A user directory or keep-alive entry can outlive the user list. Put the
+     * record back. This does not delete or rewrite that user's files.
+     */
+    private int recoverMissingUsersLocked() {
+        int recovered = 0;
+        recovered += recoverUserDirectory(BEnvironment.getUserDir(0).getParentFile());
+        try {
+            for (Integer userId : top.niunaijun.blackbox.core.GuestKeepAlive.userIds()) {
+                if (userId == null) continue;
+                recovered += rememberUser(userId, "keep-alive");
+            }
+        } catch (Throwable error) {
+            Slog.w(TAG, "keep-alive user list unavailable: " + error.getClass().getSimpleName());
+        }
+        return recovered;
+    }
+
+    private int recoverUserDirectory(File parent) {
+        File[] children = parent == null ? null : parent.listFiles();
+        if (children == null) {
+            Slog.w(TAG, "user directory could not be listed: " + parent);
+            return 0;
+        }
+        int recovered = 0;
+        for (File child : children) {
+            if (!child.isDirectory()) continue;
+            int userId;
+            try {
+                userId = Integer.parseInt(child.getName());
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            recovered += rememberUser(userId, "directory");
+        }
+        return recovered;
+    }
+
+    private int rememberUser(int userId, String source) {
+        if (userId < 0) return 0;
+        synchronized (mUsers) {
+            if (mUsers.containsKey(userId)) return 0;
+            BUserInfo info = new BUserInfo();
+            info.id = userId;
+            info.status = BUserStatus.ENABLE;
+            info.createTime = System.currentTimeMillis();
+            mUsers.put(userId, info);
+        }
+        Slog.w(TAG, "recovered user " + userId + " from " + source + "; its files were left in place");
+        return 1;
+    }
+
     private void saveUserInfoLocked() {
         Parcel parcel = Parcel.obtain();
         AtomicFile atomicFile = new AtomicFile(BEnvironment.getUserInfoConf());
@@ -174,6 +226,15 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
             try {
                 File userInfoConf = BEnvironment.getUserInfoConf();
                 if (!userInfoConf.exists()) {
+                    Slog.w(TAG, "user list file is missing; recovering from directories");
+                    int recovered = recoverMissingUsersLocked();
+                    if (recovered > 0) {
+                        synchronized (mUsers) {
+                            saveUserInfoLocked();
+                        }
+                    }
+                    Slog.w(TAG, "users ready total=" + mUsers.size()
+                            + " recovered=" + recovered + " ids=" + mUsers.keySet());
                     return;
                 }
                 is = new FileInputStream(BEnvironment.getUserInfoConf());
@@ -182,16 +243,40 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
                 parcel.setDataPosition(0);
 
                 ArrayList<BUserInfo> loadUsers = parcel.createTypedArrayList(BUserInfo.CREATOR);
-                if (loadUsers == null)
-                    return;
-                synchronized (mUsers) {
-                    mUsers.clear();
-                    for (BUserInfo loadUser : loadUsers) {
-                        mUsers.put(loadUser.id, loadUser);
+                if (loadUsers == null) {
+                    Slog.e(TAG, "user list was empty or unreadable; the file was kept");
+                } else {
+                    synchronized (mUsers) {
+                        mUsers.clear();
+                        int skipped = 0;
+                        for (BUserInfo loadUser : loadUsers) {
+                            if (loadUser == null || loadUser.id < 0) {
+                                skipped++;
+                                Slog.w(TAG, "skipped a user record with no id");
+                                continue;
+                            }
+                            mUsers.put(loadUser.id, loadUser);
+                        }
+                        Slog.w(TAG, "users read from file=" + loadUsers.size()
+                                + " kept=" + mUsers.size() + " skipped=" + skipped);
                     }
                 }
+                int recovered = recoverMissingUsersLocked();
+                if (recovered > 0) {
+                    synchronized (mUsers) {
+                        saveUserInfoLocked();
+                    }
+                }
+                Slog.w(TAG, "users ready total=" + mUsers.size()
+                        + " recovered=" + recovered + " ids=" + mUsers.keySet());
             } catch (Exception e) {
-                e.printStackTrace();
+                Slog.e(TAG, "user list could not be read; the file was kept: " + e);
+                int recovered = recoverMissingUsersLocked();
+                if (recovered > 0) {
+                    synchronized (mUsers) {
+                        saveUserInfoLocked();
+                    }
+                }
             } finally {
                 parcel.recycle();
                 CloseUtils.close(is);

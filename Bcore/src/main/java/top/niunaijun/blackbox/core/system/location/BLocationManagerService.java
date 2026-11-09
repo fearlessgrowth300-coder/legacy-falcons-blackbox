@@ -316,8 +316,7 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
             }
         } catch (Exception e) {
             e.printStackTrace();
-            Slog.d(TAG, "bad config");
-            FileUtils.deleteDir(BEnvironment.getFakeLocationConf());
+            Slog.e(TAG, "location config could not be read; the file was kept: " + e);
         } finally {
             parcel.recycle();
             CloseUtils.close(is);

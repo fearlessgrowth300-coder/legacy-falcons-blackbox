@@ -104,6 +104,12 @@ public class GuestKeepAlive {
         return sUsers.contains(userId);
     }
 
+    /** Snapshot of opted-in users. Used to restore a user record whose directory still exists. */
+    public static synchronized java.util.Set<Integer> userIds() {
+        reload();
+        return new java.util.HashSet<>(sUsers);
+    }
+
     private static void persist() {
         StringBuilder sb = new StringBuilder();
         for (int u : sUsers) { if (sb.length() > 0) sb.append(","); sb.append(u); }
