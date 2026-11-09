@@ -139,37 +139,6 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
         }
     }
 
-    /**
-     * Users 3, 7, 8, 9 and 10 were put back from leftover directories. Remove
-     * them once, only when that recovery created the record and no package is
-     * installed for them.
-     */
-    public void dropRecoveredEmptyUsers() {
-        int[] recoveredIds = {3, 7, 8, 9, 10};
-        for (int userId : recoveredIds) {
-            if (!isRecoveredStub(userId)) {
-                BUserInfo info = getUserInfo(userId);
-                if (info == null) {
-                    Slog.w(TAG, "recovered user " + userId + " is not in the user list");
-                } else {
-                    Slog.w(TAG, "keeping user " + userId
-                            + "; it was not restored from a leftover directory");
-                }
-                continue;
-            }
-            if (BPackageManagerService.get().hasInstalledPackage(userId)) {
-                Slog.w(TAG, "keeping recovered user " + userId + " because a package is still installed");
-                continue;
-            }
-            try {
-                deleteUser(userId);
-                Slog.w(TAG, "removed recovered empty user " + userId);
-            } catch (Throwable error) {
-                Slog.e(TAG, "could not remove recovered user " + userId + ": " + error);
-            }
-        }
-    }
-
     /** True when this record was inserted from a leftover directory, not created by the user. */
     public boolean isRecoveredStub(int userId) {
         if (userId != 3 && userId != 7 && userId != 8 && userId != 9 && userId != 10) return false;
