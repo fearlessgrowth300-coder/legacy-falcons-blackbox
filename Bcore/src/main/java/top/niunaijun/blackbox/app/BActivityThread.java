@@ -194,6 +194,14 @@ public class BActivityThread extends IBActivityThread.Stub {
             this.mAppConfig = appConfig;
             try {
                 NativeCore.setCallerIdentity(BlackBoxCore.getHostUid(), appConfig.buid);
+                try {
+                    java.io.File uidDir = top.niunaijun.blackbox.core.CallerUidMap.directory(
+                            top.niunaijun.blackbox.core.env.BEnvironment.getSystemDir());
+                    NativeCore.setCallerUidDirectory(uidDir.getAbsolutePath());
+                    top.niunaijun.blackbox.core.CallerUidMap.publish(
+                            uidDir, android.os.Process.myPid(), appConfig.buid);
+                } catch (Throwable ignored) {
+                }
             } catch (Throwable error) {
                 Slog.w(TAG, "caller identity was not published: " + error.getClass().getSimpleName());
             }

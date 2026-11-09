@@ -119,6 +119,9 @@ public class NativeCore {
      */
     public static native void setCallerIdentity(int hostUid, int virtualUid);
 
+    /** Directory of pid files read by the Android 16 Binder.getCallingUid hook. */
+    public static native void setCallerUidDirectory(String path);
+
     public static native void hideXposed();
 
     public static native boolean disableHiddenApi();

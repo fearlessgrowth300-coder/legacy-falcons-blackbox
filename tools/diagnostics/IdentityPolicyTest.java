@@ -10,7 +10,7 @@ public final class IdentityPolicyTest {
             throw new AssertionError("Expected " + expected + ", got " + actual);
         }
     }
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         AtomicInteger lookups = new AtomicInteger();
         java.util.function.IntUnaryOperator lookup = pid -> {
             lookups.incrementAndGet();
@@ -41,6 +41,19 @@ public final class IdentityPolicyTest {
         equal("data", modern[2]);
         ProviderCallIdentity.rewriteLegacyCaller(null, "caller.pkg");
         ProviderCallIdentity.rewriteLegacyCaller(new Object[0], "caller.pkg");
+        equal(10004, ProviderCallIdentity.attributionUid(26, true, 10004, 10477));
+        equal(10477, ProviderCallIdentity.attributionUid(26, false, 10004, 10477));
+        equal(10004, ProviderCallIdentity.attributionUid(31, true, 10004, 10477));
+        equal(10004, ProviderCallIdentity.attributionUid(36, true, 10004, 10477));
+        equal(10477, ProviderCallIdentity.attributionUid(36, false, 10004, 10477));
+        java.io.File dir = java.nio.file.Files.createTempDirectory("caller-uid").toFile();
+        equal(true, top.niunaijun.blackbox.core.CallerUidMap.publish(dir, 16258, 10004));
+        equal(true, top.niunaijun.blackbox.core.CallerUidMap.publish(dir, 16314, 10005));
+        equal(10004, top.niunaijun.blackbox.core.CallerUidMap.lookup(dir, 16258));
+        equal(10005, top.niunaijun.blackbox.core.CallerUidMap.lookup(dir, 16314));
+        equal(-1, top.niunaijun.blackbox.core.CallerUidMap.lookup(dir, 1));
+        top.niunaijun.blackbox.core.CallerUidMap.clear(dir, 16258);
+        equal(-1, top.niunaijun.blackbox.core.CallerUidMap.lookup(dir, 16258));
         System.out.println("PASS: " + checks + " identity/payload checks");
     }
 }

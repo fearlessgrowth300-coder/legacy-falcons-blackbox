@@ -136,6 +136,12 @@ public class BProcessManagerService implements ISystemService {
                 app = null;
             } else {
                 app.pid = getPid(BlackBoxCore.getContext(), ProxyManifest.getProcessName(app.bpid));
+                try {
+                    java.io.File uidDir = top.niunaijun.blackbox.core.CallerUidMap.directory(
+                            top.niunaijun.blackbox.core.env.BEnvironment.getSystemDir());
+                    top.niunaijun.blackbox.core.CallerUidMap.publish(uidDir, app.pid, app.buid);
+                } catch (Throwable ignored) {
+                }
             }
         }
         return app;
@@ -312,6 +318,13 @@ public class BProcessManagerService implements ISystemService {
                 }
             }
             mPidsSelfLocked.remove(record);
+            try {
+                top.niunaijun.blackbox.core.CallerUidMap.clear(
+                        top.niunaijun.blackbox.core.CallerUidMap.directory(
+                                top.niunaijun.blackbox.core.env.BEnvironment.getSystemDir()),
+                        record.pid);
+            } catch (Throwable ignored) {
+            }
 
             removeProc(record);
             BNotificationManagerService.get().deletePackageNotification(record.getPackageName(), record.userId);

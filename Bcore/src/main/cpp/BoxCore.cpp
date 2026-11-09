@@ -6,7 +6,13 @@
 #include "Log.h"
 #include "IO.h"
 #include "RuntimePathPolicy.h"
+#include "Hook/BinderHook.h"
 #include <jni.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
+#include <unistd.h>
 #include <JniHook/JniHook.h>
 #include <Hook/VMClassLoaderHook.h>
 #include <Hook/UnixFileSystemHook.h>
@@ -45,19 +51,51 @@ JNIEnv *ensureEnvCreated() {
 
 static int g_host_uid = 0;
 static int g_virtual_uid = 0;
+static char g_uid_dir[512];
 
 void BoxCore::setCallerIdentity(int hostUid, int virtualUid) {
     g_host_uid = hostUid;
     g_virtual_uid = virtualUid;
 }
 
+void BoxCore::setCallerUidDirectory(const char *path) {
+    if (path == nullptr) {
+        g_uid_dir[0] = '\0';
+        return;
+    }
+    std::snprintf(g_uid_dir, sizeof(g_uid_dir), "%s", path);
+}
+
+static int lookup_published_uid(int pid) {
+    if (g_uid_dir[0] == '\0' || pid <= 0) return -1;
+    char path[640];
+    int wrote = std::snprintf(path, sizeof(path), "%s/%d", g_uid_dir, pid);
+    if (wrote <= 0 || wrote >= (int) sizeof(path)) return -1;
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    char buf[16];
+    ssize_t got = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (got <= 0) return -1;
+    buf[got] = '\0';
+    int uid = std::atoi(buf);
+    return uid >= 10000 ? uid : -1;
+}
+
 int BoxCore::getCallingUid(JNIEnv *env, int orig) {
     // Android 16 crashes if this hook calls back into Java. Binder.getCallingUid can run
     // while ART is resolving a method, and the upcall through NativeCore.getCallingUid
     // SIGSEGVs the guest (seen on SM-S918U1, SDK 36, process :p2). Resolve locally.
+    // Returning this process's own virtual uid for every host-uid caller makes a
+    // Play Store call (uid 10004) fail inside GMS (uid 10005). Read the sender pid.
     if (VMEnv.api_level >= 36) {
-        if (g_host_uid > 0 && orig == g_host_uid && g_virtual_uid >= 10000) return g_virtual_uid;
-        return orig;
+        if (g_host_uid <= 0 || orig != g_host_uid) return orig;
+        int pid = BinderHook::callingPid(env);
+        if (pid > 0 && pid != getpid()) {
+            int sender = lookup_published_uid(pid);
+            if (sender >= 10000) return sender;
+        }
+        return g_virtual_uid >= 10000 ? g_virtual_uid : orig;
     }
     env = ensureEnvCreated();
     if (env == nullptr || env->ExceptionCheck()) return orig;
@@ -148,7 +186,16 @@ void setUptimeOffsetMs(JNIEnv *env, jclass clazz, jlong offset) {
 }
 
 void setCallerIdentity(JNIEnv *env, jclass clazz, jint hostUid, jint virtualUid) {
+    (void) env;
+    (void) clazz;
     BoxCore::setCallerIdentity(hostUid, virtualUid);
+}
+
+void setCallerUidDirectory(JNIEnv *env, jclass clazz, jstring path) {
+    (void) clazz;
+    const char *chars = path ? env->GetStringUTFChars(path, nullptr) : nullptr;
+    BoxCore::setCallerUidDirectory(chars);
+    if (path && chars) env->ReleaseStringUTFChars(path, chars);
 }
 
 void enableIO(JNIEnv *env, jclass clazz) {
@@ -265,6 +312,7 @@ static JNINativeMethod gMethods[] = {
         {"setPathIsolation", "(Ljava/lang/String;Ljava/lang/String;I)V", (void *) setPathIsolation},
         {"setUptimeOffsetMs", "(J)V", (void *) setUptimeOffsetMs},
         {"setCallerIdentity", "(II)V", (void *) setCallerIdentity},
+        {"setCallerUidDirectory", "(Ljava/lang/String;)V", (void *) setCallerUidDirectory},
         {"enableIO",   "()V",                                     (void *) enableIO},
         {"init",       "(I)V",                                    (void *) init},
 };

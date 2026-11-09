@@ -1,5 +1,6 @@
 package top.niunaijun.blackbox.fake.service.context.providers;
 
+import android.os.Build;
 import android.os.IInterface;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -32,7 +33,10 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
             boolean virtual = mProviderPackage != null
                     && !BlackBoxCore.getHostPkg().equals(mProviderPackage);
             // This process sends the transaction. Its original launcher is unrelated.
-            int uid = virtual ? BActivityThread.getBUid() : BlackBoxCore.getHostUid();
+            // GMS and GSF are virtual providers, so they must see this caller's uid,
+            // the same uid Binder.getCallingUid returns in their process.
+            int uid = ProviderCallIdentity.attributionUid(Build.VERSION.SDK_INT, virtual,
+                    BActivityThread.getBUid(), BlackBoxCore.getHostUid());
             String pkg = virtual ? BActivityThread.getAppPackageName() : BlackBoxCore.getHostPkg();
             if (pkg == null) throw new IllegalStateException("Provider caller is not initialized");
             ProviderCallIdentity.rewriteLegacyCaller(args, pkg);

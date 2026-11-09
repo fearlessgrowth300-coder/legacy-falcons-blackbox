@@ -15,6 +15,7 @@ public:
     static int getApiLevel();
     static int getCallingUid(JNIEnv *env, int orig);
     static void setCallerIdentity(int hostUid, int virtualUid);
+    static void setCallerUidDirectory(const char *path);
     static jstring redirectPathString(JNIEnv *env, jstring path);
     static jobject redirectPathFile(JNIEnv *env, jobject path);
     static jlongArray loadEmptyDex(JNIEnv *env);
