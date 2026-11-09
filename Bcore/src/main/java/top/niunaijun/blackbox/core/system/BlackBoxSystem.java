@@ -51,8 +51,8 @@ public class BlackBoxSystem {
             return;
         BEnvironment.load();
 
-        mServices.add(BPackageManagerService.get());
         mServices.add(BUserManagerService.get());
+        mServices.add(BPackageManagerService.get());
         mServices.add(BActivityManagerService.get());
         mServices.add(BJobManagerService.get());
         mServices.add(BStorageManagerService.get());
@@ -66,6 +66,10 @@ public class BlackBoxSystem {
         for (ISystemService service : mServices) {
             service.systemReady();
         }
+        // Package records are loaded now, so this can tell a recovered empty
+        // user from one that still has an installed clone.
+        BUserManagerService.get().dropRecoveredEmptyUsers();
+        BPackageManagerService.get().logOrphanedPackageData();
 
         List<String> preInstallPackages = AppSystemEnv.getPreInstallPackages();
         for (String preInstallPackage : preInstallPackages) {

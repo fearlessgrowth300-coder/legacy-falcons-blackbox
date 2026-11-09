@@ -14,9 +14,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
+import top.niunaijun.blackbox.core.GuestKeepAlive;
 import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.core.KeystoreIsolation;
 import top.niunaijun.blackbox.core.system.ISystemService;
+import top.niunaijun.blackbox.core.system.accounts.BAccountManagerService;
+import top.niunaijun.blackbox.core.system.location.BLocationManagerService;
 import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
 import top.niunaijun.blackbox.utils.CloseUtils;
 import top.niunaijun.blackbox.utils.FileUtils;
@@ -108,18 +111,84 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
     public void deleteUser(int userId) throws RemoteException {
         synchronized (mUserLock) {
             synchronized (mUsers) {
-                if (!KeystoreIsolation.deleteForUser(userId)) {
-                    throw new IllegalStateException(
-                            "Could not safely delete encrypted keys for User " + userId);
-                }
-                BPackageManagerService.get().deleteUser(userId);
-
+                if (mUsers.get(userId) == null) return;
+            }
+            if (!KeystoreIsolation.deleteForUser(userId)) {
+                throw new IllegalStateException(
+                        "Could not safely delete encrypted keys for User " + userId);
+            }
+            // Uninstall while the user still exists so running clones release their files.
+            BPackageManagerService.get().deleteUser(userId);
+            // keepalive.txt, fake-location.conf and data/user_de/<id> were never
+            // touched here, and a failed directory listing aborted the rest after
+            // the user record had already been saved. Clear those first, and keep
+            // the user record until every directory is actually gone.
+            GuestKeepAlive.forget(userId);
+            BLocationManagerService.get().deleteUser(userId);
+            BAccountManagerService.get().deleteUser(userId);
+            if (!deleteUserFiles(userId)) {
+                throw new IllegalStateException("Could not delete all files for User " + userId);
+            }
+            synchronized (mUsers) {
                 mUsers.remove(userId);
                 saveUserInfoLocked();
-                FileUtils.deleteDir(BEnvironment.getUserDir(userId));
-                FileUtils.deleteDir(BEnvironment.getExternalUserDir(userId));
             }
         }
+    }
+
+    /**
+     * Users 3, 7, 8, 9 and 10 were put back from leftover directories. Remove
+     * them once, only when that recovery created the record and no package is
+     * installed for them.
+     */
+    public void dropRecoveredEmptyUsers() {
+        int[] recoveredIds = {3, 7, 8, 9, 10};
+        for (int userId : recoveredIds) {
+            if (!isRecoveredStub(userId)) {
+                BUserInfo info = getUserInfo(userId);
+                if (info == null) {
+                    Slog.w(TAG, "recovered user " + userId + " is not in the user list");
+                } else {
+                    Slog.w(TAG, "keeping user " + userId
+                            + "; it was not restored from a leftover directory");
+                }
+                continue;
+            }
+            if (BPackageManagerService.get().hasInstalledPackage(userId)) {
+                Slog.w(TAG, "keeping recovered user " + userId + " because a package is still installed");
+                continue;
+            }
+            try {
+                deleteUser(userId);
+                Slog.w(TAG, "removed recovered empty user " + userId);
+            } catch (Throwable error) {
+                Slog.e(TAG, "could not remove recovered user " + userId + ": " + error);
+            }
+        }
+    }
+
+    /** True when this record was inserted from a leftover directory, not created by the user. */
+    public boolean isRecoveredStub(int userId) {
+        if (userId != 3 && userId != 7 && userId != 8 && userId != 9 && userId != 10) return false;
+        BUserInfo info = getUserInfo(userId);
+        // createUser leaves createTime at 0. Directory recovery was the only writer.
+        return info != null && info.createTime > 0;
+    }
+
+    private boolean deleteUserFiles(int userId) {
+        File deviceProtected = new File(BEnvironment.getVirtualRoot(), "data/user_de/" + userId);
+        boolean cleared = deleteTree(BEnvironment.getUserDir(userId));
+        cleared &= deleteTree(deviceProtected);
+        cleared &= deleteTree(BEnvironment.getExternalUserDir(userId));
+        return cleared;
+    }
+
+    private boolean deleteTree(File dir) {
+        if (dir == null || !dir.exists()) return true;
+        FileUtils.deleteDir(dir);
+        if (!dir.exists()) return true;
+        Slog.e(TAG, "files remain after delete: " + dir.getAbsolutePath());
+        return false;
     }
 
     private BUserInfo createUserLocked(int userId) {
@@ -143,72 +212,6 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
             throw new IllegalStateException("Could not create isolated key namespace for User " + userId);
         }
         return bUserInfo;
-    }
-
-    /**
-     * A user directory or keep-alive entry can outlive the user list. Put the
-     * record back. This does not delete or rewrite that user's files.
-     */
-    private int recoverMissingUsersLocked() {
-        int recovered = 0;
-        recovered += recoverUserDirectory(BEnvironment.getUserDir(0).getParentFile(), "data/user");
-        recovered += recoverUserDirectory(new File(BEnvironment.getVirtualRoot(), "data/user_de"), "data/user_de");
-        File externalUsers = BEnvironment.getExternalUserDir(0).getParentFile();
-        recovered += recoverUserDirectory(externalUsers, "external");
-        try {
-            for (Integer userId : top.niunaijun.blackbox.core.GuestKeepAlive.userIds()) {
-                if (userId == null) continue;
-                recovered += rememberUser(userId, "keep-alive");
-            }
-        } catch (Throwable error) {
-            Slog.w(TAG, "keep-alive user list unavailable: " + error.getClass().getSimpleName());
-        }
-        return recovered;
-    }
-
-    private int recoverUserDirectory(File parent, String source) {
-        File[] children = parent == null ? null : parent.listFiles();
-        if (children == null) {
-            Slog.w(TAG, "user directory could not be listed: " + parent + " (" + source + ")");
-            return 0;
-        }
-        int recovered = 0;
-        for (File child : children) {
-            if (!child.isDirectory()) continue;
-            int userId;
-            try {
-                userId = Integer.parseInt(child.getName());
-            } catch (NumberFormatException ignored) {
-                continue;
-            }
-            recovered += rememberUser(userId, source);
-        }
-        return recovered;
-    }
-
-    /** Keep a user that still has saved state outside the user list. Does not delete files. */
-    public void preserveUser(int userId, String source) {
-        synchronized (mUserLock) {
-            if (rememberUser(userId, source) > 0) {
-                synchronized (mUsers) {
-                    saveUserInfoLocked();
-                }
-            }
-        }
-    }
-
-    private int rememberUser(int userId, String source) {
-        if (userId < 0) return 0;
-        synchronized (mUsers) {
-            if (mUsers.containsKey(userId)) return 0;
-            BUserInfo info = new BUserInfo();
-            info.id = userId;
-            info.status = BUserStatus.ENABLE;
-            info.createTime = System.currentTimeMillis();
-            mUsers.put(userId, info);
-        }
-        Slog.w(TAG, "recovered user " + userId + " from " + source + "; its files were left in place");
-        return 1;
     }
 
     private void saveUserInfoLocked() {
@@ -240,15 +243,7 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
             try {
                 File userInfoConf = BEnvironment.getUserInfoConf();
                 if (!userInfoConf.exists()) {
-                    Slog.w(TAG, "user list file is missing; recovering from directories");
-                    int recovered = recoverMissingUsersLocked();
-                    if (recovered > 0) {
-                        synchronized (mUsers) {
-                            saveUserInfoLocked();
-                        }
-                    }
-                    Slog.w(TAG, "users ready total=" + mUsers.size()
-                            + " recovered=" + recovered + " ids=" + mUsers.keySet());
+                    Slog.w(TAG, "user list file is missing; no users were created");
                     return;
                 }
                 is = new FileInputStream(BEnvironment.getUserInfoConf());
@@ -275,22 +270,11 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
                                 + " kept=" + mUsers.size() + " skipped=" + skipped);
                     }
                 }
-                int recovered = recoverMissingUsersLocked();
-                if (recovered > 0) {
-                    synchronized (mUsers) {
-                        saveUserInfoLocked();
-                    }
+                synchronized (mUsers) {
+                    Slog.w(TAG, "users ready total=" + mUsers.size() + " ids=" + mUsers.keySet());
                 }
-                Slog.w(TAG, "users ready total=" + mUsers.size()
-                        + " recovered=" + recovered + " ids=" + mUsers.keySet());
             } catch (Exception e) {
                 Slog.e(TAG, "user list could not be read; the file was kept: " + e);
-                int recovered = recoverMissingUsersLocked();
-                if (recovered > 0) {
-                    synchronized (mUsers) {
-                        saveUserInfoLocked();
-                    }
-                }
             } finally {
                 parcel.recycle();
                 CloseUtils.close(is);

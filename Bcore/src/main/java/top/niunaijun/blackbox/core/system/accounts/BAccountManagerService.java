@@ -127,6 +127,53 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
         return new File(accountDirectory(), "user-" + userId + ".parcel");
     }
 
+    /** Remove one user's accounts from memory and from disk. Other users stay. */
+    public void deleteUser(int userId) {
+        synchronized (mUserAccountsMap) {
+            mUserAccountsMap.remove(userId);
+            synchronized (mTokenCaches) {
+                Iterator<TokenCache> tokens = mTokenCaches.iterator();
+                while (tokens.hasNext()) {
+                    if (tokens.next().userId == userId) tokens.remove();
+                }
+            }
+            File file = accountFile(userId);
+            if (file.exists() && !file.delete()) {
+                Slog.w(TAG, "account file remains for user " + userId + ": " + file.getAbsolutePath());
+            }
+            stripLegacyAccount(userId);
+        }
+    }
+
+    private void stripLegacyAccount(int userId) {
+        File legacy = BEnvironment.getAccountsConf();
+        if (!legacy.isFile()) return;
+        HashMap<Integer, BUserAccounts> legacyAccounts = readLegacyAccounts(legacy);
+        if (legacyAccounts == null || !legacyAccounts.containsKey(userId)) return;
+        legacyAccounts.remove(userId);
+        if (legacyAccounts.isEmpty()) {
+            if (!legacy.delete()) {
+                Slog.w(TAG, "combined accounts.conf still contains deleted user " + userId);
+            }
+            return;
+        }
+        Parcel parcel = Parcel.obtain();
+        AtomicFile atomicFile = new AtomicFile(legacy);
+        FileOutputStream out = null;
+        try {
+            parcel.writeMap(legacyAccounts);
+            out = atomicFile.startWrite();
+            FileUtils.writeParcelToOutput(parcel, out);
+            atomicFile.finishWrite(out);
+            out = null;
+        } catch (Throwable error) {
+            if (out != null) atomicFile.failWrite(out);
+            Slog.w(TAG, "could not remove user " + userId + " from accounts.conf: " + error.getClass().getSimpleName());
+        } finally {
+            parcel.recycle();
+        }
+    }
+
     private void loadAccounts() {
         synchronized (mUserAccountsMap) {
             mUserAccountsMap.clear();

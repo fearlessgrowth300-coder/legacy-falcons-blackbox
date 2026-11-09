@@ -18,6 +18,8 @@ import java.util.Set;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.core.system.BProcessManagerService;
+import top.niunaijun.blackbox.core.system.user.BUserInfo;
+import top.niunaijun.blackbox.core.system.user.BUserManagerService;
 import top.niunaijun.blackbox.entity.pm.InstallOption;
 import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.Slog;
@@ -183,18 +185,24 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
             Slog.w(TAG, "package scan finished: directories=" + apps.length
                     + " loaded=" + loaded + " skipped=" + skipped
                     + " inMemory=" + mPackages.size());
-            logOrphanedData();
         }
     }
 
-    /** Package data that is still on disk after its install record was removed. */
-    private void logOrphanedData() {
+    /** Package data still on disk after its install record was removed. */
+    void logOrphanedData() {
         int orphans = 0;
         orphans += logPackageTree(new File(BEnvironment.getVirtualRoot(), "data/user"), false, "data/user");
         orphans += logPackageTree(new File(BEnvironment.getVirtualRoot(), "data/user_de"), false, "data/user_de");
         File externalUsers = BEnvironment.getExternalUserDir(0).getParentFile();
         orphans += logPackageTree(externalUsers, true, "external");
         Slog.w(TAG, "orphaned package data directories=" + orphans);
+        for (BUserInfo user : BUserManagerService.get().getUsers()) {
+            File internal = BEnvironment.getUserDir(user.id);
+            File deviceProtected = new File(BEnvironment.getVirtualRoot(), "data/user_de/" + user.id);
+            Slog.w(TAG, "user data present user=" + user.id
+                    + " data/user=" + internal.isDirectory()
+                    + " user_de=" + deviceProtected.isDirectory());
+        }
     }
 
     private int logPackageTree(File userRoot, boolean external, String place) {
@@ -307,6 +315,9 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
                 continue;
             }
             if (userId < 0 || settings.userState.containsKey(userId)) continue;
+            if (!BUserManagerService.get().exists(userId)) continue;
+            // Leftover directories must not turn a deleted user back into an install.
+            if (BUserManagerService.get().isRecoveredStub(userId)) continue;
             File data = BEnvironment.getDataDir(settings.pkg.packageName, userId);
             if (!data.isDirectory()) continue;
             settings.setInstalled(true, userId);

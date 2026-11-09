@@ -658,11 +658,30 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
 
     @Override
     public void deleteUser(int userId) throws RemoteException {
+        String[] names;
         synchronized (mPackages) {
+            names = new String[mPackages.size()];
+            int index = 0;
             for (BPackageSettings ps : mPackages.values()) {
-                uninstallPackageAsUser(ps.pkg.packageName, userId);
+                names[index++] = ps.pkg == null ? null : ps.pkg.packageName;
             }
         }
+        for (String name : names) {
+            if (name != null) uninstallPackageAsUser(name, userId);
+        }
+    }
+
+    public void logOrphanedPackageData() {
+        mSettings.logOrphanedData();
+    }
+
+    public boolean hasInstalledPackage(int userId) {
+        synchronized (mPackages) {
+            for (BPackageSettings ps : mPackages.values()) {
+                if (ps.userState.containsKey(userId) && ps.getInstalled(userId)) return true;
+            }
+        }
+        return false;
     }
 
     @Override

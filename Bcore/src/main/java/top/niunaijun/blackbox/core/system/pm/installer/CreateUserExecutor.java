@@ -17,8 +17,8 @@ public class CreateUserExecutor implements Executor {
         String packageName = ps.pkg.packageName;
         File data = BEnvironment.getDataDir(packageName, userId);
         boolean reuse = data.isDirectory();
-        // mkdir does not empty a directory that is already there. Nothing under
-        // data/user/<id>/<pkg> is deleted on install, including a re-add.
+        // mkdir does not empty a directory that is already there. Install and
+        // re-add leave data/user/<id>/<pkg> untouched, including databases and prefs.
         FileUtils.mkdirs(data);
         FileUtils.mkdirs(BEnvironment.getDataCacheDir(packageName, userId));
         FileUtils.mkdirs(BEnvironment.getDataFilesDir(packageName, userId));

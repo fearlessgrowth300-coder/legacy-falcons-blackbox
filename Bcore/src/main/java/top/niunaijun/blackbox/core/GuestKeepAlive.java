@@ -104,10 +104,12 @@ public class GuestKeepAlive {
         return sUsers.contains(userId);
     }
 
-    /** Snapshot of opted-in users. Used to restore a user record whose directory still exists. */
-    public static synchronized java.util.Set<Integer> userIds() {
+    /** Drop one deleted user. Reloads first so the rewrite cannot erase other users. */
+    public static synchronized void forget(int userId) {
         reload();
-        return new java.util.HashSet<>(sUsers);
+        if (!sUsers.remove(userId)) return;
+        persist();
+        Slog.d(TAG, "removed keep-alive for deleted user " + userId);
     }
 
     private static void persist() {
