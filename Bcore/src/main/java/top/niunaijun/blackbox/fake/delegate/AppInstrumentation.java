@@ -207,6 +207,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
 
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle, PersistableBundle persistentState) {
+        top.niunaijun.blackbox.core.SensorSignalIsolation.wrapBase(activity);
         checkActivity(activity);
         fixActivityStateClassLoader(activity, icicle);
         deferInputFocusUntilActivityReady(activity);
@@ -222,6 +223,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
 
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle) {
+        top.niunaijun.blackbox.core.SensorSignalIsolation.wrapBase(activity);
         checkActivity(activity);
         fixActivityStateClassLoader(activity, icicle);
         deferInputFocusUntilActivityReady(activity);

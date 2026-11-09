@@ -353,7 +353,7 @@ public class BActivityThread extends IBActivityThread.Stub {
             );
             BRContextImpl.get(context).setOuterContext(service);
             BRService.get(service).attach(
-                    context,
+                    top.niunaijun.blackbox.core.SensorSignalIsolation.wrapContext(context),
                     BlackBoxCore.mainThread(),
                     serviceInfo.name,
                     token,
@@ -428,7 +428,7 @@ public class BActivityThread extends IBActivityThread.Stub {
             );
             BRContextImpl.get(context).setOuterContext(service);
             BRService.get(service).attach(
-                    context,
+                    top.niunaijun.blackbox.core.SensorSignalIsolation.wrapContext(context),
                     BlackBoxCore.mainThread(),
                     serviceInfo.name,
                     BActivityThread.currentActivityThread().getActivityThread(),
@@ -594,6 +594,7 @@ public class BActivityThread extends IBActivityThread.Stub {
             }
             
             mInitialApplication = application;
+            top.niunaijun.blackbox.core.SensorSignalIsolation.wrapBase(mInitialApplication);
             BRActivityThread.get(BlackBoxCore.mainThread())._set_mInitialApplication(mInitialApplication);
             ContextCompat.fix((Context) BRActivityThread.get(BlackBoxCore.mainThread()).getSystemContext());
             ContextCompat.fix(mInitialApplication);
@@ -1693,7 +1694,8 @@ public class BActivityThread extends IBActivityThread.Stub {
                     
                     java.lang.reflect.Method attachBaseContext = Activity.class.getDeclaredMethod("attachBaseContext", Context.class);
                     attachBaseContext.setAccessible(true);
-                    attachBaseContext.invoke(activity, packageContext);
+                    attachBaseContext.invoke(activity,
+                            top.niunaijun.blackbox.core.SensorSignalIsolation.wrapContext(packageContext));
                     Slog.d(TAG, "Successfully attached package context to activity: " + activity.getClass().getName());
                 } catch (Exception e) {
                     Slog.w(TAG, "Could not attach base context to activity: " + e.getMessage());
