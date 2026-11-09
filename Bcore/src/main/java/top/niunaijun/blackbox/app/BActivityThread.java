@@ -1447,7 +1447,12 @@ public class BActivityThread extends IBActivityThread.Stub {
 
     private boolean verifyGeoConsistency(Bundle out) {
         boolean ready = verifyGeoConsistencyOnce(out);
-        if (!ready && top.niunaijun.blackbox.core.GuestProxy.refreshGeoConsistency(
+        boolean localeReady = out.getBoolean("localeGuard", true);
+        if (!localeReady) {
+            android.util.Log.w(TAG, "locale drifted to '" + java.util.Locale.getDefault().toLanguageTag()
+                    + "' expected country " + top.niunaijun.blackbox.core.GuestProxy.CURRENT_COUNTRY_ISO);
+        }
+        if ((!ready || !localeReady) && top.niunaijun.blackbox.core.GuestProxy.refreshGeoConsistency(
                 getUserId(), getAppPackageName())) {
             out.putBoolean("geoRefreshed", true);
             ready = verifyGeoConsistencyOnce(out);
@@ -1499,7 +1504,9 @@ public class BActivityThread extends IBActivityThread.Stub {
         out.putBoolean("localeGuard", localeReady);
         out.putBoolean("timezoneGuard", timezoneReady);
         out.putBoolean("locationGuard", locationReady);
-        boolean ready = simReady && localeReady && timezoneReady && locationReady;
+        // Apps may set their own display language, which clears the region. It is not a network
+        // leak, so verifyGeoConsistency re-applies the locale instead of closing the clone.
+        boolean ready = simReady && timezoneReady && locationReady;
         StringBuilder failures = new StringBuilder();
         if (!simReady) failures.append("SIM");
         if (!localeReady) {
