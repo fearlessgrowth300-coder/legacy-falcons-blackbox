@@ -183,7 +183,51 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
             Slog.w(TAG, "package scan finished: directories=" + apps.length
                     + " loaded=" + loaded + " skipped=" + skipped
                     + " inMemory=" + mPackages.size());
+            logOrphanedData();
         }
+    }
+
+    /** Package data that is still on disk after its install record was removed. */
+    private void logOrphanedData() {
+        int orphans = 0;
+        orphans += logPackageTree(new File(BEnvironment.getVirtualRoot(), "data/user"), false, "data/user");
+        orphans += logPackageTree(new File(BEnvironment.getVirtualRoot(), "data/user_de"), false, "data/user_de");
+        File externalUsers = BEnvironment.getExternalUserDir(0).getParentFile();
+        orphans += logPackageTree(externalUsers, true, "external");
+        Slog.w(TAG, "orphaned package data directories=" + orphans);
+    }
+
+    private int logPackageTree(File userRoot, boolean external, String place) {
+        File[] users = userRoot == null ? null : userRoot.listFiles();
+        if (users == null) {
+            Slog.w(TAG, "data root absent: " + place + " path=" + userRoot);
+            return 0;
+        }
+        int orphans = 0;
+        for (File userDir : users) {
+            if (!userDir.isDirectory()) continue;
+            int userId;
+            try {
+                userId = Integer.parseInt(userDir.getName());
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            File packageRoot = external ? new File(userDir, "Android/data") : userDir;
+            File[] packages = packageRoot.listFiles();
+            if (packages == null) continue;
+            for (File packageDir : packages) {
+                if (!packageDir.isDirectory() || packageDir.getName().indexOf('.') < 0) continue;
+                String packageName = packageDir.getName();
+                BPackageSettings settings = mPackages.get(packageName);
+                boolean installed = settings != null && settings.userState.containsKey(userId)
+                        && settings.getInstalled(userId);
+                if (installed) continue;
+                orphans++;
+                Slog.w(TAG, "orphaned data user=" + userId + " pkg=" + packageName
+                        + " place=" + place + " path=" + packageDir.getAbsolutePath());
+            }
+        }
+        return orphans;
     }
 
     public boolean scanPackage(String packageName) {

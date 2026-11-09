@@ -151,7 +151,10 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
      */
     private int recoverMissingUsersLocked() {
         int recovered = 0;
-        recovered += recoverUserDirectory(BEnvironment.getUserDir(0).getParentFile());
+        recovered += recoverUserDirectory(BEnvironment.getUserDir(0).getParentFile(), "data/user");
+        recovered += recoverUserDirectory(new File(BEnvironment.getVirtualRoot(), "data/user_de"), "data/user_de");
+        File externalUsers = BEnvironment.getExternalUserDir(0).getParentFile();
+        recovered += recoverUserDirectory(externalUsers, "external");
         try {
             for (Integer userId : top.niunaijun.blackbox.core.GuestKeepAlive.userIds()) {
                 if (userId == null) continue;
@@ -163,10 +166,10 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
         return recovered;
     }
 
-    private int recoverUserDirectory(File parent) {
+    private int recoverUserDirectory(File parent, String source) {
         File[] children = parent == null ? null : parent.listFiles();
         if (children == null) {
-            Slog.w(TAG, "user directory could not be listed: " + parent);
+            Slog.w(TAG, "user directory could not be listed: " + parent + " (" + source + ")");
             return 0;
         }
         int recovered = 0;
@@ -178,9 +181,20 @@ public class BUserManagerService extends IBUserManagerService.Stub implements IS
             } catch (NumberFormatException ignored) {
                 continue;
             }
-            recovered += rememberUser(userId, "directory");
+            recovered += rememberUser(userId, source);
         }
         return recovered;
+    }
+
+    /** Keep a user that still has saved state outside the user list. Does not delete files. */
+    public void preserveUser(int userId, String source) {
+        synchronized (mUserLock) {
+            if (rememberUser(userId, source) > 0) {
+                synchronized (mUsers) {
+                    saveUserInfoLocked();
+                }
+            }
+        }
     }
 
     private int rememberUser(int userId, String source) {

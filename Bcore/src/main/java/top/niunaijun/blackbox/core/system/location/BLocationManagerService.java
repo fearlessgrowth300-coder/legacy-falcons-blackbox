@@ -312,6 +312,8 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
                     HashMap<String, BLocationConfig> configArrayMap = parcel.readHashMap(BLocationConfig.class.getClassLoader());
                     mLocationConfigs.put(userId, configArrayMap);
                     Slog.d(TAG, "load userId: " + userId + ", config: " + configArrayMap);
+                    top.niunaijun.blackbox.core.system.user.BUserManagerService.get()
+                            .preserveUser(userId, "location");
                 }
             }
         } catch (Exception e) {
