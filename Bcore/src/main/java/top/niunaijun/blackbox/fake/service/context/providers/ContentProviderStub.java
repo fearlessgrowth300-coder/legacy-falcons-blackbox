@@ -29,17 +29,19 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        // A guest calling its own provider stays inside this process, where Binder reports the
-        // real uid. Rewriting the caller there makes apps such as Facebook reject themselves.
+        // A guest calling its own provider is checked against the uid Binder really reports
+        // (the host uid), so it must carry the guest package with that uid. Apps such as
+        // Facebook reject any other pairing and crash.
         boolean ownProvider = mProviderPackage != null
                 && mProviderPackage.equals(BActivityThread.getAppPackageName());
-        if (!ownProvider && !"asBinder".equals(method.getName())) {
+        if (!"asBinder".equals(method.getName())) {
             boolean virtual = mProviderPackage != null
                     && !BlackBoxCore.getHostPkg().equals(mProviderPackage);
             // This process sends the transaction. Its original launcher is unrelated.
             // GMS and GSF are virtual providers, so they must see this caller's uid,
             // the same uid Binder.getCallingUid returns in their process.
-            int uid = ProviderCallIdentity.attributionUid(Build.VERSION.SDK_INT, virtual,
+            int uid = ownProvider ? BlackBoxCore.getHostUid()
+                    : ProviderCallIdentity.attributionUid(Build.VERSION.SDK_INT, virtual,
                     BActivityThread.getBUid(), BlackBoxCore.getHostUid());
             String pkg = virtual ? BActivityThread.getAppPackageName() : BlackBoxCore.getHostPkg();
             if (pkg == null) throw new IllegalStateException("Provider caller is not initialized");
