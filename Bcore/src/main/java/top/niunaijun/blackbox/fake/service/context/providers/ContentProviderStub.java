@@ -29,7 +29,11 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        if (!"asBinder".equals(method.getName())) {
+        // A guest calling its own provider stays inside this process, where Binder reports the
+        // real uid. Rewriting the caller there makes apps such as Facebook reject themselves.
+        boolean ownProvider = mProviderPackage != null
+                && mProviderPackage.equals(BActivityThread.getAppPackageName());
+        if (!ownProvider && !"asBinder".equals(method.getName())) {
             boolean virtual = mProviderPackage != null
                     && !BlackBoxCore.getHostPkg().equals(mProviderPackage);
             // This process sends the transaction. Its original launcher is unrelated.
