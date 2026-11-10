@@ -89,7 +89,10 @@ public class ContentProviderDelegate {
             Object holder = top.niunaijun.blackbox.utils.Reflector.with(record).field("mHolder").get();
             android.content.pm.ProviderInfo info = holder == null ? null
                     : top.niunaijun.blackbox.utils.Reflector.with(holder).field("info").get();
-            if (info != null && info.packageName != null) return info.packageName;
+            String guest = top.niunaijun.blackbox.app.BActivityThread.getAppPackageName();
+            // Only the guest's own providers. System providers (settings) in this map must keep
+            // the host identity, or Android rejects the guest package for the host uid.
+            if (info != null && guest != null && guest.equals(info.packageName)) return guest;
         } catch (Throwable ignored) {
         }
         return BlackBoxCore.getHostPkg();
