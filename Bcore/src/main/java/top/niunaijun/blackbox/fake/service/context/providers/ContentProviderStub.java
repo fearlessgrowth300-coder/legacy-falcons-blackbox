@@ -124,7 +124,15 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
         NativeCore.enterSelfProviderCall();
         long identity = Binder.clearCallingIdentity();
         try {
-            Slog.i(TAG, "direct self provider " + name + " callerPkg=" + packageName);
+            // Values exactly as the guest's provider code reads them, after
+            // clearCallingIdentity and before the provider method runs.
+            Slog.i(TAG, "self-call " + name
+                    + " callingUid=" + Binder.getCallingUid()
+                    + " callingPid=" + Binder.getCallingPid()
+                    + " myUid=" + android.os.Process.myUid()
+                    + " myPid=" + android.os.Process.myPid()
+                    + " javaDepth=" + NativeCore.javaSelfProviderDepth()
+                    + " nativeDepth=" + NativeCore.selfProviderNativeDepth());
             direct.setAccessible(true);
             return direct.invoke(provider, directArgs);
         } catch (InvocationTargetException error) {

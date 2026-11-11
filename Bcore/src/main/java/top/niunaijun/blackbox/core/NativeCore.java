@@ -127,6 +127,21 @@ public class NativeCore {
 
     private static native void nativeExitSelfProviderCall();
 
+    private static native int nativeSelfProviderDepth();
+
+    /** 1 when this thread's native caller hook is inside a self-provider call. */
+    public static int selfProviderNativeDepth() {
+        try {
+            return nativeSelfProviderDepth();
+        } catch (Throwable ignored) {
+            return -1;
+        }
+    }
+
+    public static int javaSelfProviderDepth() {
+        return SELF_PROVIDER_CALL.get();
+    }
+
     private static final ThreadLocal<Integer> SELF_PROVIDER_CALL =
             new ThreadLocal<Integer>() {
                 @Override

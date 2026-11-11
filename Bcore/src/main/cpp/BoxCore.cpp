@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <pthread.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <JniHook/JniHook.h>
@@ -56,6 +57,56 @@ JNIEnv *ensureEnvCreated() {
 static int g_host_uid = 0;
 static int g_virtual_uid = 0;
 static __thread int g_self_provider_call = 0;
+// Thread-id table as well as __thread. A CriticalNative getCallingUid call must see the
+// same "this thread is inside its own provider" mark the Java caller just set.
+static constexpr int kSelfProviderThreads = 8;
+static pid_t g_self_provider_tids[kSelfProviderThreads];
+static int g_self_provider_counts[kSelfProviderThreads];
+static pthread_mutex_t g_self_provider_mu = PTHREAD_MUTEX_INITIALIZER;
+
+static pid_t current_tid() {
+    return static_cast<pid_t>(syscall(SYS_gettid));
+}
+
+static bool self_provider_tid_active() {
+    pid_t self = current_tid();
+    bool active = false;
+    pthread_mutex_lock(&g_self_provider_mu);
+    for (int i = 0; i < kSelfProviderThreads; i++) {
+        if (g_self_provider_tids[i] == self && g_self_provider_counts[i] > 0) {
+            active = true;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&g_self_provider_mu);
+    return active;
+}
+
+static bool in_self_provider_call() {
+    return g_self_provider_call > 0 || self_provider_tid_active();
+}
+
+static void note_self_provider(int delta) {
+    pid_t self = current_tid();
+    pthread_mutex_lock(&g_self_provider_mu);
+    int slot = -1;
+    for (int i = 0; i < kSelfProviderThreads; i++) {
+        if (g_self_provider_tids[i] == self) {
+            slot = i;
+            break;
+        }
+        if (slot < 0 && g_self_provider_tids[i] == 0) slot = i;
+    }
+    if (slot >= 0) {
+        g_self_provider_tids[slot] = self;
+        g_self_provider_counts[slot] += delta;
+        if (g_self_provider_counts[slot] <= 0) {
+            g_self_provider_counts[slot] = 0;
+            g_self_provider_tids[slot] = 0;
+        }
+    }
+    pthread_mutex_unlock(&g_self_provider_mu);
+}
 static char g_uid_dir[512];
 static void publish_self_uid();
 
@@ -182,7 +233,7 @@ int BoxCore::getCallingPid(JNIEnv *env, int orig) {
     // A direct in-process provider call has no binder transaction, so the raw
     // calling pid is 0. Facebook allows its own provider only when that pid
     // equals Process.myPid() and the uid equals Process.myUid().
-    if (g_self_provider_call > 0) return getpid();
+    if (in_self_provider_call()) return getpid();
     return orig;
 }
 
@@ -196,7 +247,7 @@ int BoxCore::getCallingUid(JNIEnv *env, int orig) {
         if (g_host_uid <= 0 || orig != g_host_uid) return orig;
         // Same-app provider calls cleared the binder identity. Keep the process uid
         // so the guest's own provider sees Binder.getCallingUid() == Process.myUid().
-        if (g_self_provider_call > 0) return orig;
+        if (in_self_provider_call()) return orig;
         int jni_pid = BinderHook::callingPid(env);
         int raw_pid = ipc_calling_pid();
         int pid = raw_pid > 0 ? raw_pid : jni_pid;
@@ -299,11 +350,23 @@ void setUptimeOffsetMs(JNIEnv *env, jclass clazz, jlong offset) {
 }
 
 void enterSelfProviderCall(JNIEnv *env, jclass clazz) {
+    (void) env;
+    (void) clazz;
     g_self_provider_call++;
+    note_self_provider(1);
 }
 
 void exitSelfProviderCall(JNIEnv *env, jclass clazz) {
+    (void) env;
+    (void) clazz;
     if (g_self_provider_call > 0) g_self_provider_call--;
+    note_self_provider(-1);
+}
+
+static jint selfProviderDepth(JNIEnv *env, jclass clazz) {
+    (void) env;
+    (void) clazz;
+    return in_self_provider_call() ? 1 : 0;
 }
 
 void setCallerIdentity(JNIEnv *env, jclass clazz, jint hostUid, jint virtualUid) {
@@ -435,6 +498,7 @@ static JNINativeMethod gMethods[] = {
         {"setCallerIdentity", "(II)V", (void *) setCallerIdentity},
         {"nativeEnterSelfProviderCall", "()V", (void *) enterSelfProviderCall},
         {"nativeExitSelfProviderCall", "()V", (void *) exitSelfProviderCall},
+        {"nativeSelfProviderDepth", "()I", (void *) selfProviderDepth},
         {"setCallerUidDirectory", "(Ljava/lang/String;)V", (void *) setCallerUidDirectory},
         {"enableIO",   "()V",                                     (void *) enableIO},
         {"init",       "(I)V",                                    (void *) init},
