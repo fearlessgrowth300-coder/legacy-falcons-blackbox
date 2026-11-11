@@ -217,6 +217,7 @@ public class HookManager {
             
             if (BuildCompat.isQ()) {
                 addInjector(new top.niunaijun.blackbox.fake.service.IAuthServiceProxy());
+                addInjector(new top.niunaijun.blackbox.fake.service.ITrustManagerProxy());
                 addInjector(new IActivityTaskManagerProxy());
             }
             
