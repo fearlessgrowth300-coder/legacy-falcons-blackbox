@@ -26,4 +26,20 @@ public final class SmsReceiverVisibility {
         if (packageName == null || packageName.isEmpty() || installedAsClone) return false;
         return defaultSmsHolder || guardAllows;
     }
+
+    public static Object[] roleCallArguments(Class<?>[] types, String hostPackage, int userId) {
+        Object[] params = types == null ? new Object[0] : new Object[types.length];
+        boolean roleSet = false;
+        for (int i = 0; types != null && i < types.length; i++) {
+            if (types[i] == String.class && !roleSet) {
+                params[i] = "android.app.role.SMS";
+                roleSet = true;
+            } else if (types[i] == String.class) {
+                params[i] = hostPackage;
+            } else if (types[i] == int.class) {
+                params[i] = userId;
+            }
+        }
+        return params;
+    }
 }

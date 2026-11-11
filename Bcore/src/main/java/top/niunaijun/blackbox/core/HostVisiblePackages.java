@@ -32,4 +32,11 @@ public final class HostVisiblePackages {
                 || "android.provider.action.DEFAULT_SMS_PACKAGE_CHANGED".equals(action)
                 || "android.provider.action.EXTERNAL_PROVIDER_CHANGE".equals(action);
     }
+
+    public static boolean isGoogleAuthority(String authority) {
+        if (authority == null) return false;
+        return authority.contains("com.google.android.gms")
+                || authority.contains("com.google.android.gsf")
+                || authority.contains("com.android.vending");
+    }
 }

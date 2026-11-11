@@ -23,7 +23,13 @@ public final class SmsReceiverVisibilityTest {
         check(SmsReceiverVisibility.visible("android",
                 SmsReceiverVisibility.guardAllows("android", true), false, false),
                 "a package the visibility guard already allows stays visible");
-        System.out.println("SmsReceiverVisibilityTest ok (8 checks)");
+        Object[] roleArgs = SmsReceiverVisibility.roleCallArguments(
+                new Class<?>[] {String.class, int.class, String.class},
+                "top.niunaijun.blackbox", 0);
+        check("android.app.role.SMS".equals(roleArgs[0]), "the role name is SMS");
+        check("top.niunaijun.blackbox".equals(roleArgs[2]),
+                "the role call names the host, not a clone");
+        System.out.println("SmsReceiverVisibilityTest ok (10 checks)");
     }
 
     private static void check(boolean condition, String message) {

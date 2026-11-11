@@ -160,15 +160,17 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                                             BActivityThread.getUserId())));
                 } catch (Throwable ignored) {
                 }
+                int userId = BActivityThread.getUserId();
+                boolean googleOnHost = top.niunaijun.blackbox.core.HostVisiblePackages
+                        .isGoogleAuthority((String) auth)
+                        && !installedGuest("com.google.android.gms", userId)
+                        && !installedGuest("com.android.vending", userId);
                 if (top.niunaijun.blackbox.core.ProviderIsolation.useHostProvider(
-                        (String) auth, profilePolicy)) {
+                        (String) auth, profilePolicy) || googleOnHost) {
                     content = method.invoke(who, args);
                     ContentProviderDelegate.update(content, (String) auth);
                     return content;
                 } else {
-                    
-
-                    int userId = BActivityThread.getUserId();
                     ProviderInfo providerInfo = BlackBoxCore.getBPackageManager()
                             .resolveContentProvider((String) auth, GET_META_DATA, userId);
                     if (providerInfo == null) {
@@ -253,6 +255,14 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     }
                 });
         return top.niunaijun.blackbox.core.ProviderAcquireGuard.refuseHost(false, owned);
+    }
+
+    private static boolean installedGuest(String packageName, int userId) {
+        try {
+            return BlackBoxCore.getBPackageManager().isInstalled(packageName, userId);
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     static boolean containsClonedAuthority(Object[] args) {

@@ -631,6 +631,7 @@ public class BActivityThread extends IBActivityThread.Stub {
                 throw new RuntimeException("guest Application.onCreate failed", error);
             }
             Slog.i(TAG, "guest Application.onCreate returned class=" + application.getClass().getName());
+            top.niunaijun.blackbox.utils.GuestStackDump.install(application);
             onAfterApplicationOnCreate(packageName, processName, application);
 
             HookManager.get().checkEnv(HCallbackProxy.class);
