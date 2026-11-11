@@ -155,6 +155,33 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
         mMethodHookMap.put(name, methodHook);
     }
 
+    private static boolean blockClonedProvider(String methodName, Object[] args) {
+        if (!top.niunaijun.blackbox.core.ProviderAcquireGuard.isAcquire(methodName) || args == null) {
+            return false;
+        }
+        int userId;
+        try {
+            userId = BActivityThread.getUserId();
+        } catch (Throwable ignored) {
+            return false;
+        }
+        for (Object arg : args) {
+            if (!(arg instanceof String)) continue;
+            boolean owned = top.niunaijun.blackbox.core.ProviderAcquireGuard.ownedByInstalledPackage(
+                    (String) arg, packageName -> {
+                        try {
+                            return BlackBoxCore.getBPackageManager().isInstalled(packageName, userId);
+                        } catch (Throwable ignored) {
+                            return false;
+                        }
+                    });
+            if (top.niunaijun.blackbox.core.ProviderAcquireGuard.blockUnhookedAcquire(owned)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         // Guest contexts name the clone. system_server checks that name against
@@ -185,6 +212,10 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
 
         MethodHook methodHook = mMethodHookMap.get(method.getName());
         if (methodHook == null || !methodHook.isEnable()) {
+            if (blockClonedProvider(method.getName(), args)) {
+                Log.e(TAG, "refusing to open the phone's provider for a cloned app: " + method.getName());
+                return null;
+            }
             try {
                 return method.invoke(mBase, args);
             } catch (Throwable e) {

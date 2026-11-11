@@ -454,11 +454,19 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String authority = (String) args[0];
             int flags = MethodParameterUtils.toInt(args[1]);
-            ProviderInfo providerInfo = BlackBoxCore.getBPackageManager().resolveContentProvider(authority, flags, BActivityThread.getUserId());
-            if (providerInfo == null) {
-                return method.invoke(who, args);
+            int userId = BActivityThread.getUserId();
+            ProviderInfo providerInfo = BlackBoxCore.getBPackageManager()
+                    .resolveContentProvider(authority, flags, userId);
+            if (providerInfo == null && (flags & android.content.pm.PackageManager.GET_META_DATA) != 0) {
+                providerInfo = BlackBoxCore.getBPackageManager()
+                        .resolveContentProvider(authority, flags & ~android.content.pm.PackageManager.GET_META_DATA, userId);
             }
-            return providerInfo;
+            if (providerInfo != null) return providerInfo;
+            if (IActivityManagerProxy.refuseClonedAuthority(authority, userId)) {
+                Slog.e(TAG, "refusing phone provider for cloned authority " + authority);
+                return null;
+            }
+            return method.invoke(who, args);
         }
     }
 

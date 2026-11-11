@@ -168,11 +168,17 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 } else {
                     
 
+                    int userId = BActivityThread.getUserId();
                     ProviderInfo providerInfo = BlackBoxCore.getBPackageManager()
-                            .resolveContentProvider(
-                                    (String) auth, GET_META_DATA, BActivityThread.getUserId());
+                            .resolveContentProvider((String) auth, GET_META_DATA, userId);
                     if (providerInfo == null) {
-                        
+                        providerInfo = BlackBoxCore.getBPackageManager()
+                                .resolveContentProvider((String) auth, 0, userId);
+                    }
+                    if (providerInfo == null) {
+                        if (refuseClonedAuthority((String) auth, userId)) {
+                            Slog.e(TAG, "refusing to open the phone's provider for a cloned app: " + auth);
+                        }
                         return null;
                     }
 
@@ -212,6 +218,10 @@ public class IActivityManagerProxy extends ClassInvocationStub {
 
                 return content;
             }
+            if (containsClonedAuthority(args)) {
+                Slog.e(TAG, "refusing to open the phone's provider for a cloned app");
+                return null;
+            }
             return method.invoke(who, args);
         }
 
@@ -227,6 +237,31 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         protected int getUserIndex() {
             return getAuthIndex() + 1;
         }
+    }
+
+    @ProxyMethod("getContentProviderExternal")
+    public static class GetContentProviderExternal extends GetContentProvider {
+    }
+
+    static boolean refuseClonedAuthority(String authority, int userId) {
+        boolean owned = top.niunaijun.blackbox.core.ProviderAcquireGuard.ownedByInstalledPackage(
+                authority, packageName -> {
+                    try {
+                        return BlackBoxCore.getBPackageManager().isInstalled(packageName, userId);
+                    } catch (Throwable ignored) {
+                        return false;
+                    }
+                });
+        return top.niunaijun.blackbox.core.ProviderAcquireGuard.refuseHost(false, owned);
+    }
+
+    static boolean containsClonedAuthority(Object[] args) {
+        if (args == null) return false;
+        int userId = BActivityThread.getUserId();
+        for (Object arg : args) {
+            if (arg instanceof String && refuseClonedAuthority((String) arg, userId)) return true;
+        }
+        return false;
     }
 
     @ProxyMethod("startService")

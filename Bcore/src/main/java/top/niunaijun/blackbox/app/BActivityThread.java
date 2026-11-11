@@ -1446,42 +1446,56 @@ public class BActivityThread extends IBActivityThread.Stub {
             return out;
         }
 
-        long started = SystemClock.elapsedRealtime();
+            long started = SystemClock.elapsedRealtime();
         try {
             String ip = null;
             Throwable lastProbeError = null;
             // An exit-check vendor can be temporarily unavailable even while the assigned route is
             // carrying app traffic. Probe independent HTTPS endpoints inside this exact guest
             // process; every attempt still passes through the same fail-closed proxy hook.
+            // A cold proxy listener often drops the first dial. Retry inside this process and
+            // keep the clone closed if none of them return an exit IP.
             String[] endpoints = {
                     "https://checkip.amazonaws.com/",
                     "https://api.ipify.org/?format=text"
             };
-            for (String endpoint : endpoints) {
-                HttpURLConnection connection = null;
-                try {
-                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
-                    connection.setConnectTimeout(5000);
-                    connection.setReadTimeout(5000);
-                    connection.setUseCaches(false);
-                    connection.setRequestProperty("Connection", "close");
-                    connection.setRequestProperty("User-Agent", "BlackBoxRouteProbe/1");
-                    int code = connection.getResponseCode();
-                    if (code < 200 || code >= 300) throw new java.io.IOException("HTTP " + code);
-                    try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                            new java.io.InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-                        String candidate = reader.readLine();
-                        candidate = candidate == null ? "" : candidate.trim();
-                        if (!candidate.matches("^[0-9a-fA-F:.]{3,64}$")) {
-                            throw new java.io.IOException("Invalid exit IP response");
-                        }
-                        ip = candidate;
+            for (int attempt = 0; attempt < top.niunaijun.blackbox.core.ExitProbeBudget.ATTEMPTS && ip == null; attempt++) {
+                if (attempt > 0) {
+                    try {
+                        Thread.sleep(top.niunaijun.blackbox.core.ExitProbeBudget.PAUSE_MS);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
                         break;
                     }
-                } catch (Throwable error) {
-                    lastProbeError = error;
-                } finally {
-                    if (connection != null) connection.disconnect();
+                }
+                for (String endpoint : endpoints) {
+                    HttpURLConnection connection = null;
+                    try {
+                        connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                        connection.setConnectTimeout(top.niunaijun.blackbox.core.ExitProbeBudget.CONNECT_TIMEOUT_MS);
+                        connection.setReadTimeout(top.niunaijun.blackbox.core.ExitProbeBudget.READ_TIMEOUT_MS);
+                        connection.setUseCaches(false);
+                        connection.setRequestProperty("Connection", "close");
+                        connection.setRequestProperty("User-Agent", "BlackBoxRouteProbe/1");
+                        int code = connection.getResponseCode();
+                        if (code < 200 || code >= 300) throw new java.io.IOException("HTTP " + code);
+                        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                                new java.io.InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                            String candidate = reader.readLine();
+                            candidate = candidate == null ? "" : candidate.trim();
+                            if (!candidate.matches("^[0-9a-fA-F:.]{3,64}$")) {
+                                throw new java.io.IOException("Invalid exit IP response");
+                            }
+                            ip = candidate;
+                            break;
+                        }
+                    } catch (Throwable error) {
+                        lastProbeError = error;
+                        Slog.w(TAG, "exit probe attempt " + (attempt + 1) + " failed for " + endpoint
+                                + ": " + error.getClass().getSimpleName());
+                    } finally {
+                        if (connection != null) connection.disconnect();
+                    }
                 }
             }
             if (ip == null) {
