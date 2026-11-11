@@ -16,7 +16,8 @@ HOOK_JNI(jint, getCallingUid, JNIEnv *env, jobject obj) {
 }
 
 HOOK_JNI(jint, getCallingPid, JNIEnv *env, jobject obj) {
-    return orig_getCallingPid ? orig_getCallingPid(env, obj) : 0;
+    int orig = orig_getCallingPid ? orig_getCallingPid(env, obj) : 0;
+    return BoxCore::getCallingPid(env, orig);
 }
 
 int BinderHook::callingPid(JNIEnv *env) {

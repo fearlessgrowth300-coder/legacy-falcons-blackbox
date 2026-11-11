@@ -14,6 +14,7 @@ public:
     static JavaVM *getJavaVM();
     static int getApiLevel();
     static int getCallingUid(JNIEnv *env, int orig);
+    static int getCallingPid(JNIEnv *env, int orig);
     static void setCallerIdentity(int hostUid, int virtualUid);
     static void setCallerUidDirectory(const char *path);
     static jstring redirectPathString(JNIEnv *env, jstring path);

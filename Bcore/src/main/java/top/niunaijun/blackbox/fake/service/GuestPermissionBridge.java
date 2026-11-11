@@ -25,6 +25,13 @@ public final class GuestPermissionBridge {
     /** {@link PackageManager#PERMISSION_GRANTED}, denied is not forced; null defers. */
     public static Integer grantedOrNull(String permission, int uid) {
         if (permission == null || uid < BUserHandle.AID_APP_START) return null;
+        // This process's own uid is the host uid. A signature permission declared
+        // by the guest is granted to that guest, the same way a normal install is.
+        String self = selfPackage(uid);
+        if (self != null) {
+            Integer own = grantedForPackageOrNull(permission, self);
+            if (own != null) return own;
+        }
         try {
             int userId = BUserHandle.getUserId(uid);
             int appId = BUserHandle.getAppId(uid);
@@ -107,12 +114,44 @@ public final class GuestPermissionBridge {
         }
     }
 
+    private static String selfPackage(int uid) {
+        try {
+            String guest = BActivityThread.getAppPackageName();
+            if (guest == null) return null;
+            if (top.niunaijun.blackbox.fake.service.context.providers.UidPackageIdentity
+                    .representsGuest(uid, BlackBoxCore.getHostUid(), BActivityThread.getBUid(),
+                            BActivityThread.getBAppId())) {
+                return guest;
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
     private static PermissionInfo define(String permission) {
+        PermissionInfo declared = declaredByGuest(permission);
+        if (declared != null) return declared;
         try {
             return BlackBoxCore.getPackageManager().getPermissionInfo(permission, 0);
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    /** A permission the current guest declares in its own manifest. */
+    private static PermissionInfo declaredByGuest(String permission) {
+        try {
+            String guest = BActivityThread.getAppPackageName();
+            if (guest == null) return null;
+            PackageInfo info = BlackBoxCore.getBPackageManager().getPackageInfo(
+                    guest, PackageManager.GET_PERMISSIONS, BActivityThread.getUserId());
+            if (info == null || info.permissions == null) return null;
+            for (PermissionInfo declared : info.permissions) {
+                if (declared != null && permission.equals(declared.name)) return declared;
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 
     private static byte[][] certs(String packageName) {

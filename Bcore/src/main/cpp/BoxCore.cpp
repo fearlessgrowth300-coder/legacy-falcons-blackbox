@@ -177,6 +177,15 @@ static void log_calling_uid(int orig, int jni_pid, int raw_pid, int looked,
           g_uid_dir[0] == '\0' ? "(empty)" : g_uid_dir, returned);
 }
 
+int BoxCore::getCallingPid(JNIEnv *env, int orig) {
+    (void) env;
+    // A direct in-process provider call has no binder transaction, so the raw
+    // calling pid is 0. Facebook allows its own provider only when that pid
+    // equals Process.myPid() and the uid equals Process.myUid().
+    if (g_self_provider_call > 0) return getpid();
+    return orig;
+}
+
 int BoxCore::getCallingUid(JNIEnv *env, int orig) {
     // Android 16 crashes if this hook calls back into Java. Binder.getCallingUid can run
     // while ART is resolving a method, and the upcall through NativeCore.getCallingUid
