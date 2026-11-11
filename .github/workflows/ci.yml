@@ -73,6 +73,11 @@ jobs:
             tools/diagnostics/HostLaunchGuardTest.java
           java -cp build/diagnostic-tests HostLaunchGuardTest
           javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/GuestPackageName.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/HostVisiblePackages.java \
+            tools/diagnostics/GuestPackageNameTest.java
+          java -cp build/diagnostic-tests GuestPackageNameTest
+          javac -d build/diagnostic-tests \
             Bcore/src/main/java/top/niunaijun/blackbox/core/PineRuntime.java \
             Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ApplicationOnCreateGuard.java \
             Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/BindServiceFlagsCompat.java \

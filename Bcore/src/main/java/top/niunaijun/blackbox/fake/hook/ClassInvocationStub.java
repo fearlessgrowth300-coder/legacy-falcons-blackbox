@@ -154,6 +154,12 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        // Guest contexts name the clone. The phone's services must still see this
+        // process, so the outgoing AttributionSource is a host-package copy.
+        try {
+            top.niunaijun.blackbox.utils.AttributionSourceUtils.fixAttributionSourceInArgs(args);
+        } catch (Throwable ignored) {
+        }
 
 
 

@@ -195,7 +195,8 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 }
                 return packageInfo;
             }
-            if (AppSystemEnv.isOpenPackage(packageName)) {
+            if (AppSystemEnv.isOpenPackage(packageName)
+                    || top.niunaijun.blackbox.core.HostVisiblePackages.isHostService(packageName)) {
                 return method.invoke(who, args);
             }
             return null;
@@ -399,7 +400,8 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             if (applicationInfo != null) {
                 return applicationInfo;
             }
-            if (AppSystemEnv.isOpenPackage(packageName)) {
+            if (AppSystemEnv.isOpenPackage(packageName)
+                    || top.niunaijun.blackbox.core.HostVisiblePackages.isHostService(packageName)) {
                 return method.invoke(who, args);
             }
             return null;
@@ -425,7 +427,16 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             String type = MethodParameterUtils.getFirstParam(args, String.class);
             Integer flags = MethodParameterUtils.getFirstParam(args, Integer.class);
             List<ResolveInfo> resolves = BlackBoxCore.getBPackageManager().queryBroadcastReceivers(intent, flags, type, BActivityThread.getUserId());
-            Slog.d(TAG, "queryIntentReceivers count: " + (resolves == null ? 0 : resolves.size()));
+            int count = resolves == null ? 0 : resolves.size();
+            String action = intent == null ? null : intent.getAction();
+            String target = intent == null ? null : intent.getPackage();
+            Slog.d(TAG, "queryIntentReceivers count: " + count + " action=" + action + " pkg=" + target);
+            if (count == 0 && intent != null && top.niunaijun.blackbox.core.HostVisiblePackages
+                    .intentTargetsHostService(target,
+                            intent.getComponent() == null ? null : intent.getComponent().getPackageName(),
+                            action)) {
+                return method.invoke(who, args);
+            }
 
             
             if (BuildCompat.isN()) {
