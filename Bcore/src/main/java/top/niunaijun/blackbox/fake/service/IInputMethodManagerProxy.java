@@ -24,7 +24,8 @@ public class IInputMethodManagerProxy extends BinderInvocationStub {
 
     public IInputMethodManagerProxy() {
         super(realBinder());
-        mService = asInterface("com.android.internal.view.IInputMethodManager", realBinder());
+        mService = BinderInvocationStub.asInterface(
+                "com.android.internal.view.IInputMethodManager", realBinder());
     }
 
     private static IBinder realBinder() {
@@ -49,18 +50,6 @@ public class IInputMethodManagerProxy extends BinderInvocationStub {
     @Override
     public boolean isBadEnv() {
         return false;
-    }
-
-    static Object asInterface(String stubClass, IBinder binder) {
-        if (binder == null || stubClass == null) return null;
-        try {
-            Class<?> stub = Class.forName(stubClass + "$Stub");
-            Method asInterface = stub.getMethod("asInterface", IBinder.class);
-            return asInterface.invoke(null, binder);
-        } catch (Throwable error) {
-            Log.w(TAG, "input method service is unavailable");
-            return null;
-        }
     }
 
     private static void setStatic(String className, String[] fieldNames, Object value) {

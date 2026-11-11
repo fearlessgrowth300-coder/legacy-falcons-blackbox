@@ -76,6 +76,7 @@ import top.niunaijun.blackbox.fake.service.IShortcutManagerProxy;
 import top.niunaijun.blackbox.fake.service.IStorageManagerProxy;
 import top.niunaijun.blackbox.fake.service.IStorageStatsManagerProxy;
 import top.niunaijun.blackbox.fake.service.ISystemUpdateProxy;
+import top.niunaijun.blackbox.fake.service.HostPackageServiceProxy;
 import top.niunaijun.blackbox.fake.service.IInputMethodManagerProxy;
 import top.niunaijun.blackbox.fake.service.ITextServicesManagerProxy;
 import top.niunaijun.blackbox.fake.service.ITelephonyManagerProxy;
@@ -165,6 +166,14 @@ public class HookManager {
             addInjector(new IAccountManagerProxy());
             addInjector(new IConnectivityManagerProxy());
             addInjector(new IClipboardManagerProxy());
+            addInjector(new HostPackageServiceProxy("usagestats",
+                    "android.app.IUsageStatsManager"));
+            addInjector(new HostPackageServiceProxy("bluetooth_manager",
+                    "android.bluetooth.IBluetoothManager"));
+            addInjector(new HostPackageServiceProxy("media.camera",
+                    "android.hardware.ICameraService"));
+            addInjector(new HostPackageServiceProxy("wallpaper",
+                    "android.app.IWallpaperManager"));
             addInjector(new IDnsResolverProxy());
                     addInjector(new IAttributionSourceProxy());
         addInjector(new IContentProviderProxy());

@@ -2,8 +2,10 @@ package top.niunaijun.blackbox.fake.service;
 
 import android.content.ClipData;
 import android.content.Context;
+import android.os.IBinder;
 import android.os.IInterface;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 import black.android.content.BRClipboardManager;
@@ -14,26 +16,52 @@ import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 
-/** Replaces Android's global clipboard with storage scoped to virtual user and guest package. */
+/**
+ * The clone clipboard never reaches ClipboardService. Android 16 dropped the
+ * static service field, so the proxy has to be the IClipboard object
+ * ServiceManager returns. A call that did reach the service was rejected
+ * because the guest package does not belong to this process uid.
+ */
 public final class IClipboardManagerProxy extends BinderInvocationStub {
+    private final Object mService;
+
     public IClipboardManagerProxy() {
-        super(BRServiceManager.get().getService(Context.CLIPBOARD_SERVICE));
+        super(realBinder());
+        mService = BinderInvocationStub.asInterface("android.content.IClipboard", realBinder());
+    }
+
+    private static IBinder realBinder() {
+        return BRServiceManager.get().getService(Context.CLIPBOARD_SERVICE);
     }
 
     @Override
     protected Object getWho() {
-        return BRClipboardManager.get().getService();
+        return mService;
     }
 
     @Override
     protected void inject(Object baseInvocation, Object proxyInvocation) {
-        BRClipboardManager.get()._set_sService((IInterface) proxyInvocation);
         replaceSystemService(Context.CLIPBOARD_SERVICE);
+        try {
+            BRClipboardManager.get()._set_sService((IInterface) proxyInvocation);
+        } catch (Throwable ignored) {
+        }
+        rebindStaticService(proxyInvocation);
     }
 
     @Override
     public boolean isBadEnv() {
-        return BRClipboardManager.get().sService() != getProxyInvocation();
+        IBinder current = BRServiceManager.get().getService(Context.CLIPBOARD_SERVICE);
+        return current != this;
+    }
+
+    private static void rebindStaticService(Object proxy) {
+        try {
+            Field field = Class.forName("android.content.ClipboardManager").getDeclaredField("sService");
+            field.setAccessible(true);
+            field.set(null, proxy);
+        } catch (Throwable ignored) {
+        }
     }
 
     private static int userId() {
@@ -119,4 +147,20 @@ public final class IClipboardManagerProxy extends BinderInvocationStub {
 
     @ProxyMethod("removePrimaryClipChangedListener")
     public static class RemovePrimaryClipChangedListener extends AddPrimaryClipChangedListener {}
+
+    @ProxyMethod("areClipboardAccessNotificationsEnabledForUser")
+    public static class AreClipboardAccessNotificationsEnabledForUser extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) {
+            return false;
+        }
+    }
+
+    @ProxyMethod("setClipboardAccessNotificationsEnabledForUser")
+    public static class SetClipboardAccessNotificationsEnabledForUser extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) {
+            return null;
+        }
+    }
 }

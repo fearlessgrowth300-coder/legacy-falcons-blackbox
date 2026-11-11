@@ -17,7 +17,7 @@ public class ITextServicesManagerProxy extends BinderInvocationStub {
 
     @Override
     protected Object getWho() {
-        return IInputMethodManagerProxy.asInterface(
+        return top.niunaijun.blackbox.fake.hook.BinderInvocationStub.asInterface(
                 "com.android.internal.textservice.ITextServicesManager", realBinder());
     }
 
