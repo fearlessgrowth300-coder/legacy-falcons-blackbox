@@ -27,6 +27,11 @@ public final class SmsReceiverVisibility {
         return defaultSmsHolder || guardAllows;
     }
 
+    /** The role holder is still returned when the phone's receiver query is empty. */
+    public static boolean includeHolder(String holder, boolean alreadyPresent, boolean installedAsClone) {
+        return holder != null && !holder.isEmpty() && !alreadyPresent && !installedAsClone;
+    }
+
     public static Object[] roleCallArguments(Class<?>[] types, String hostPackage, int userId) {
         Object[] params = types == null ? new Object[0] : new Object[types.length];
         boolean roleSet = false;

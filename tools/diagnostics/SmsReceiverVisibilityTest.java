@@ -29,7 +29,13 @@ public final class SmsReceiverVisibilityTest {
         check("android.app.role.SMS".equals(roleArgs[0]), "the role name is SMS");
         check("top.niunaijun.blackbox".equals(roleArgs[2]),
                 "the role call names the host, not a clone");
-        System.out.println("SmsReceiverVisibilityTest ok (10 checks)");
+        check(SmsReceiverVisibility.includeHolder("com.google.android.apps.messaging", false, false),
+                "an empty phone query still keeps the SMS role holder");
+        check(!SmsReceiverVisibility.includeHolder("com.facebook.katana", false, true),
+                "a cloned package is not added as the SMS holder");
+        check(!SmsReceiverVisibility.includeHolder(null, false, false),
+                "a missing holder adds nothing");
+        System.out.println("SmsReceiverVisibilityTest ok (13 checks)");
     }
 
     private static void check(boolean condition, String message) {

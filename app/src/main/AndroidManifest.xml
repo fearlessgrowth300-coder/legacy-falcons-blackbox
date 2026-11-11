@@ -18,7 +18,29 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
-    
+    <!-- The guest asks who receives SMS. Without this, Android 11+ hides those apps. -->
+    <queries>
+        <intent>
+            <action android:name="android.provider.Telephony.SMS_DELIVER" />
+        </intent>
+        <intent>
+            <action android:name="android.provider.Telephony.WAP_PUSH_DELIVER" />
+        </intent>
+        <intent>
+            <action android:name="android.provider.Telephony.SIM_FULL" />
+        </intent>
+        <intent>
+            <action android:name="android.provider.action.DEFAULT_SMS_PACKAGE_CHANGED" />
+        </intent>
+        <intent>
+            <action android:name="android.provider.action.EXTERNAL_PROVIDER_CHANGE" />
+        </intent>
+        <package android:name="com.google.android.apps.messaging" />
+        <package android:name="com.android.messaging" />
+        <package android:name="com.android.mms" />
+        <package android:name="com.android.phone" />
+    </queries>
+
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
