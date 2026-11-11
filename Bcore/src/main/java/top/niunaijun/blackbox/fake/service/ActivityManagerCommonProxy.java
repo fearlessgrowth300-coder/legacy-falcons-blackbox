@@ -2,6 +2,7 @@ package top.niunaijun.blackbox.fake.service;
 
 import android.content.ComponentName;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.ResolveInfo;
 import android.net.Uri;
@@ -100,8 +101,20 @@ public class ActivityManagerCommonProxy {
                         GET_META_DATA,
                         StartActivityCompat.getResolvedType(args),
                         BActivityThread.getUserId());
+                if (resolveInfo == null && intent.getComponent() != null) {
+                    ActivityInfo info = BlackBoxCore.getBPackageManager().getActivityInfo(
+                            intent.getComponent(), 0, BActivityThread.getUserId());
+                    if (info != null) {
+                        resolveInfo = new ResolveInfo();
+                        resolveInfo.activityInfo = info;
+                    }
+                }
                 if (resolveInfo == null) {
                     intent.setPackage(origPackage);
+                    if (GuestIntentGuard.refuse(intent)) {
+                        Slog.e(TAG, "refusing to open the phone's copy of a guest package: " + intent.getComponent());
+                        return 0;
+                    }
                     return method.invoke(who, args);
                 }
             }

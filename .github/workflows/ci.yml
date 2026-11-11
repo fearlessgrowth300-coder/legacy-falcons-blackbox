@@ -69,6 +69,10 @@ jobs:
             tools/diagnostics/TrustedCallerCertificateRuleTest.java
           java -cp build/diagnostic-tests TrustedCallerCertificateRuleTest
           javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/HostLaunchGuard.java \
+            tools/diagnostics/HostLaunchGuardTest.java
+          java -cp build/diagnostic-tests HostLaunchGuardTest
+          javac -d build/diagnostic-tests \
             Bcore/src/main/java/top/niunaijun/blackbox/core/PineRuntime.java \
             Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ApplicationOnCreateGuard.java \
             Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/BindServiceFlagsCompat.java \

@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
+import android.content.pm.ServiceInfo;
 import android.content.IntentFilter;
 import android.os.IBinder;
 import android.os.IInterface;
@@ -234,8 +235,20 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Intent intent = (Intent) args[1];
             String resolvedType = (String) args[2];
-            ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, BActivityThread.getUserId());
+            int userId = BActivityThread.getUserId();
+            ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, userId);
+            if (resolveInfo == null && intent.getComponent() != null) {
+                ServiceInfo info = BlackBoxCore.getBPackageManager().getServiceInfo(intent.getComponent(), 0, userId);
+                if (info != null) {
+                    resolveInfo = new ResolveInfo();
+                    resolveInfo.serviceInfo = info;
+                }
+            }
             if (resolveInfo == null) {
+                if (GuestIntentGuard.refuse(intent)) {
+                    Slog.e(TAG, "refusing to start the phone's copy of a guest package: " + intent.getComponent());
+                    return null;
+                }
                 return method.invoke(who, args);
             }
 
@@ -414,6 +427,10 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     args[2] = proxyIntent;
                     return invokeBind(who, method, args);
                 }
+            }
+            if (GuestIntentGuard.refuse(intent)) {
+                Slog.e(TAG, "refusing to bind the phone's copy of a guest package: " + intent.getComponent());
+                return 0;
             }
             return invokeBind(who, method, args);
         } catch (Exception e) {
