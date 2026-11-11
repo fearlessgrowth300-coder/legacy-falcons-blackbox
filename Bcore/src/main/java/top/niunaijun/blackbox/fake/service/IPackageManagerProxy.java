@@ -454,8 +454,14 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         }
 
         private static Object smsReceiversFromPhone(Object who, Method method, Object[] args, String action) throws Throwable {
-            Object[] hostArgs = matchAllReceivers(args);
-            Object host = method.invoke(who, hostArgs);
+            Object[] hostArgs = hostReceiverArgs(args);
+            Object host;
+            long identity = android.os.Binder.clearCallingIdentity();
+            try {
+                host = method.invoke(who, hostArgs);
+            } finally {
+                android.os.Binder.restoreCallingIdentity(identity);
+            }
             java.util.List<ResolveInfo> raw = receiverList(host);
             java.util.List<ResolveInfo> kept = new java.util.ArrayList<>();
             String smsHolder = defaultSmsHolder();
@@ -529,19 +535,78 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             return info;
         }
 
+        private static volatile String cachedSmsHolder;
+        private static volatile boolean smsHolderCached;
+
         private static String defaultSmsHolder() {
-            StringBuilder note = new StringBuilder();
-            String holder = smsFromSetting(note);
-            if (holder == null) holder = smsFromTelephony(note);
-            if (holder == null) holder = smsHolderFromRoleManager(note);
-            if (holder == null) holder = smsFromRoleBinder(note);
-            lastSmsNote = note.toString();
-            return holder;
+            if (smsHolderCached) return cachedSmsHolder;
+            synchronized (QueryBroadcastReceivers.class) {
+                if (smsHolderCached) return cachedSmsHolder;
+                StringBuilder note = new StringBuilder();
+                String holder = smsFromTelephonyAsHostUser(note);
+                if (holder == null) holder = smsFromSettingAsHostUser(note);
+                if (holder != null) {
+                    cachedSmsHolder = holder;
+                    smsHolderCached = true;
+                }
+                lastSmsNote = note.toString();
+                return holder;
+            }
         }
 
-        private static String smsFromSetting(StringBuilder note) {
+        private static String smsFromTelephonyAsHostUser(StringBuilder note) {
+            long identity = android.os.Binder.clearCallingIdentity();
             try {
-                Context context = hostContext();
+                Context context = hostUserContext();
+                if (context == null) {
+                    note.append("telephony no context; ");
+                    return null;
+                }
+                int user = top.niunaijun.blackbox.core.system.user.BUserHandle.getUserId(
+                        android.os.Process.myUid());
+                try {
+                    Class<?> smsApp = Class.forName("com.android.internal.telephony.SmsApplication");
+                    Method method = smsApp.getDeclaredMethod(
+                            "getDefaultSmsApplicationAsUser", Context.class, boolean.class, int.class);
+                    method.setAccessible(true);
+                    Object component = method.invoke(null, context, Boolean.FALSE, user);
+                    if (component instanceof ComponentName) {
+                        String pkg = ((ComponentName) component).getPackageName();
+                        if (pkg != null && !pkg.isEmpty()) {
+                            Slog.i(TAG, "sms default telephony user " + user + " " + pkg);
+                            return pkg;
+                        }
+                    }
+                    note.append("telephony internal empty user ").append(user).append("; ");
+                } catch (Throwable error) {
+                    Throwable cause = unwrap(error);
+                    note.append("telephony internal ").append(cause.getClass().getSimpleName())
+                            .append(" ").append(cause.getMessage()).append("; ");
+                    Slog.w(TAG, "sms internal lookup failed", cause);
+                }
+                try {
+                    String value = android.provider.Telephony.Sms.getDefaultSmsPackage(context);
+                    if (value != null && !value.isEmpty()) {
+                        Slog.i(TAG, "sms default package " + value);
+                        return value;
+                    }
+                    note.append("telephony empty; ");
+                } catch (Throwable error) {
+                    Throwable cause = unwrap(error);
+                    note.append("telephony ").append(cause.getClass().getSimpleName())
+                            .append(" ").append(cause.getMessage()).append("; ");
+                    Slog.w(TAG, "sms telephony lookup failed", cause);
+                }
+            } finally {
+                android.os.Binder.restoreCallingIdentity(identity);
+            }
+            return null;
+        }
+
+        private static String smsFromSettingAsHostUser(StringBuilder note) {
+            long identity = android.os.Binder.clearCallingIdentity();
+            try {
+                Context context = hostUserContext();
                 if (context == null) {
                     note.append("settings no context; ");
                     return null;
@@ -554,52 +619,56 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 }
                 note.append("settings empty; ");
             } catch (Throwable error) {
-                note.append("settings ").append(error.getClass().getSimpleName())
-                        .append(" ").append(error.getMessage()).append("; ");
-                Slog.w(TAG, "sms default setting failed", error);
+                Throwable cause = unwrap(error);
+                note.append("settings ").append(cause.getClass().getSimpleName())
+                        .append(" ").append(cause.getMessage()).append("; ");
+                Slog.w(TAG, "sms default setting failed", cause);
+            } finally {
+                android.os.Binder.restoreCallingIdentity(identity);
             }
             return null;
         }
 
-        private static String smsFromTelephony(StringBuilder note) {
-            try {
-                Context context = hostContext();
-                if (context == null) return null;
-                String value = android.provider.Telephony.Sms.getDefaultSmsPackage(context);
-                if (value != null && !value.isEmpty()) {
-                    Slog.i(TAG, "sms default from telephony " + value);
-                    return value;
-                }
-                note.append("telephony empty; ");
-            } catch (Throwable error) {
-                note.append("telephony ").append(error.getClass().getSimpleName())
-                        .append(" ").append(error.getMessage()).append("; ");
-                Slog.w(TAG, "sms telephony lookup failed", error);
+        private static Throwable unwrap(Throwable error) {
+            if (error instanceof java.lang.reflect.InvocationTargetException && error.getCause() != null) {
+                return error.getCause();
             }
-            return null;
+            return error;
         }
 
-        private static Context hostContext() {
-            Context context = BlackBoxCore.getContext();
-            if (context == null) return null;
+        private static Context hostUserContext() {
+            Context base = BlackBoxCore.getContext();
+            if (base == null) return null;
             String host = BlackBoxCore.getHostPkg();
-            if (host != null && !host.equals(context.getPackageName())) {
-                try {
-                    return context.createPackageContext(host, Context.CONTEXT_IGNORE_SECURITY);
-                } catch (Throwable error) {
-                    Slog.w(TAG, "host package context failed: " + error.getMessage());
-                }
+            if (host == null) return base;
+            try {
+                Method method = Context.class.getMethod("createPackageContextAsUser",
+                        String.class, int.class, android.os.UserHandle.class);
+                Object created = method.invoke(base, host, Context.CONTEXT_IGNORE_SECURITY,
+                        android.os.Process.myUserHandle());
+                if (created instanceof Context) return (Context) created;
+            } catch (Throwable error) {
+                Slog.w(TAG, "host user context failed: " + unwrap(error).getMessage());
             }
-            return context;
+            return base;
         }
 
-        private static Object[] matchAllReceivers(Object[] args) {
-            if (args == null) return args;
+        private static Object[] hostReceiverArgs(Object[] args) {
+            if (args == null) return null;
             Object[] copy = args.clone();
+            int hostUser = top.niunaijun.blackbox.core.system.user.BUserHandle.getUserId(
+                    android.os.Process.myUid());
             if (copy.length > 2 && copy[2] instanceof Integer) {
                 copy[2] = ((Integer) copy[2]) | PackageManager.MATCH_ALL;
             } else if (copy.length > 2 && copy[2] instanceof Long) {
                 copy[2] = ((Long) copy[2]) | PackageManager.MATCH_ALL;
+            }
+            for (int i = copy.length - 1; i >= 3; i--) {
+                if (copy[i] instanceof Integer) {
+                    copy[i] = top.niunaijun.blackbox.core.SmsReceiverVisibility.hostQueryUser(
+                            hostUser, (Integer) copy[i]);
+                    break;
+                }
             }
             return copy;
         }
@@ -610,83 +679,6 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             } catch (Throwable ignored) {
                 return false;
             }
-        }
-
-        private static String smsHolderFromRoleManager(StringBuilder note) {
-            try {
-                if (android.os.Build.VERSION.SDK_INT < 29) return null;
-                Context context = hostContext();
-                if (context == null) return null;
-                Object roleManager = context.getSystemService("role");
-                if (roleManager == null) {
-                    note.append("role manager missing; ");
-                    return null;
-                }
-                Object holders = roleManager.getClass()
-                        .getMethod("getRoleHolders", String.class)
-                        .invoke(roleManager, "android.app.role.SMS");
-                if (holders instanceof java.util.List && !((java.util.List<?>) holders).isEmpty()) {
-                    Object first = ((java.util.List<?>) holders).get(0);
-                    if (first instanceof String) {
-                        Slog.i(TAG, "sms role holder " + first);
-                        return (String) first;
-                    }
-                }
-                note.append("role list empty; ");
-            } catch (Throwable error) {
-                note.append("role ").append(error.getClass().getSimpleName())
-                        .append(" ").append(error.getMessage()).append("; ");
-                Slog.w(TAG, "sms role api failed", error);
-            }
-            return null;
-        }
-
-        private static String smsFromRoleBinder(StringBuilder note) {
-            try {
-                android.os.IBinder binder = black.android.os.BRServiceManager.get().getService("role");
-                Object service = binder == null ? null
-                        : black.android.app.role.BRIRoleManagerStub.get().asInterface(binder);
-                if (service == null) {
-                    note.append("role binder missing; ");
-                    return null;
-                }
-                String host = BlackBoxCore.getHostPkg();
-                int userId = BlackBoxCore.getHostUserId();
-                for (Method method : service.getClass().getMethods()) {
-                    String name = method.getName();
-                    if (!"getRoleHolders".equals(name) && !"getRoleHoldersAsUser".equals(name)) continue;
-                    Object[] params = top.niunaijun.blackbox.core.SmsReceiverVisibility.roleCallArguments(
-                            method.getParameterTypes(), host, userId);
-                    boolean unsupported = false;
-                    for (int i = 0; i < params.length; i++) {
-                        if (params[i] == null && !method.getParameterTypes()[i].isPrimitive()) {
-                            unsupported = true;
-                        }
-                    }
-                    if (unsupported) continue;
-                    try {
-                        Object result = method.invoke(service, params);
-                        if (result instanceof java.util.List && !((java.util.List<?>) result).isEmpty()) {
-                            Object first = ((java.util.List<?>) result).get(0);
-                            if (first instanceof String) {
-                                Slog.i(TAG, "sms role holder " + first + " via " + name);
-                                return (String) first;
-                            }
-                        }
-                    } catch (Throwable error) {
-                        Throwable cause = error instanceof java.lang.reflect.InvocationTargetException
-                                && error.getCause() != null ? error.getCause() : error;
-                        note.append(name).append(" ").append(cause.getClass().getSimpleName())
-                                .append(" ").append(cause.getMessage()).append("; ");
-                        Slog.w(TAG, "sms role " + name + " failed", cause);
-                    }
-                }
-            } catch (Throwable error) {
-                note.append("role binder ").append(error.getClass().getSimpleName())
-                        .append(" ").append(error.getMessage()).append("; ");
-                Slog.w(TAG, "sms role binder failed", error);
-            }
-            return null;
         }
     }
 

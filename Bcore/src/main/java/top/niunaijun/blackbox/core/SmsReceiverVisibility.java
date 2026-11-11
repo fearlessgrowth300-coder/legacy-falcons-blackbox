@@ -32,6 +32,11 @@ public final class SmsReceiverVisibility {
         return holder != null && !holder.isEmpty() && !alreadyPresent && !installedAsClone;
     }
 
+    /** SMS lookups must use this process's real user, not the clone's virtual user. */
+    public static int hostQueryUser(int processUserId, int requestedUserId) {
+        return processUserId;
+    }
+
     public static Object[] roleCallArguments(Class<?>[] types, String hostPackage, int userId) {
         Object[] params = types == null ? new Object[0] : new Object[types.length];
         boolean roleSet = false;

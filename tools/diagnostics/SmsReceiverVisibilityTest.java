@@ -35,7 +35,9 @@ public final class SmsReceiverVisibilityTest {
                 "a cloned package is not added as the SMS holder");
         check(!SmsReceiverVisibility.includeHolder(null, false, false),
                 "a missing holder adds nothing");
-        System.out.println("SmsReceiverVisibilityTest ok (13 checks)");
+        check(SmsReceiverVisibility.hostQueryUser(0, 22) == 0,
+                "the phone query uses the real user, not the clone user");
+        System.out.println("SmsReceiverVisibilityTest ok (14 checks)");
     }
 
     private static void check(boolean condition, String message) {
