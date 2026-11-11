@@ -55,6 +55,12 @@ jobs:
           javac -d build/diagnostic-tests Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ApplicationCreationCompat.java tools/diagnostics/ApplicationCreationCompatTest.java
           java -cp build/diagnostic-tests ApplicationCreationCompatTest
           javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/GuestApplicationClass.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/utils/CrashLoopPolicy.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/ProcessRestartPolicy.java \
+            tools/diagnostics/GuestApplicationClassTest.java
+          java -cp build/diagnostic-tests GuestApplicationClassTest
+          javac -d build/diagnostic-tests \
             Bcore/src/main/java/top/niunaijun/blackbox/core/PineRuntime.java \
             Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ApplicationOnCreateGuard.java \
             Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/BindServiceFlagsCompat.java \

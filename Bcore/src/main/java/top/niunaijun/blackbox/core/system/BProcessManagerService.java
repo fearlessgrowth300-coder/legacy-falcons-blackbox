@@ -101,6 +101,12 @@ public class BProcessManagerService implements ISystemService {
                         + " user=" + userId + " (all " + ProxyManifest.freeCount() + " in use)");
                 return null;
             }
+            if (!top.niunaijun.blackbox.core.ProcessRestartPolicy.allow(
+                    userId, packageName, processName, android.os.SystemClock.elapsedRealtime())) {
+                Slog.e(TAG, "refusing to restart crashing guest " + packageName
+                        + " process=" + processName + " user=" + userId);
+                return null;
+            }
             app = new ProcessRecord(info, processName);
             app.uid = Process.myUid();
             app.bpid = bpid;

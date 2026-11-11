@@ -88,6 +88,7 @@ import top.niunaijun.blackbox.utils.GlobalContextWrapper;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ActivityManagerCompat;
 import top.niunaijun.blackbox.utils.compat.ApplicationCreationCompat;
+import top.niunaijun.blackbox.utils.compat.GuestApplicationClass;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 import top.niunaijun.blackbox.utils.compat.StrictModeCompat;
@@ -582,6 +583,16 @@ public class BActivityThread extends IBActivityThread.Stub {
         Application application;
         try {
             onBeforeCreateApplication(packageName, processName, packageContext);
+            // Android 16 selects the Application class with Process.myProcessName(). The stub
+            // name misses Facebook's per-process class and instantiates android.app.Application,
+            // whose onCreate never calls AppContext.set.
+            black.android.os.BRProcess.get().setArgV0(processName);
+            String expectedClass = GuestApplicationClass.expected(applicationInfo.className,
+                    processSpecificApplicationClass(applicationInfo, processName));
+            Slog.i(TAG, "creating guest application process=" + processName
+                    + " argv0=" + android.os.Process.myProcessName()
+                    + " manifest=" + applicationInfo.className
+                    + " expected=" + expectedClass);
             // Android 13+ keeps a process-wide Application cache in the internal
             // factory. The legacy entry point deliberately skips that cache;
             // a later activity with another LoadedApk can then run onCreate twice.
@@ -592,16 +603,32 @@ public class BActivityThread extends IBActivityThread.Stub {
                 Slog.e(TAG, "makeApplication application Error! All attempts failed");
                 throw new RuntimeException("Unable to create application - all creation methods failed");
             }
+            if (GuestApplicationClass.needsReplacement(application.getClass().getName(), expectedClass)) {
+                Slog.w(TAG, "framework built " + application.getClass().getName()
+                        + " instead of " + expectedClass + "; attaching the manifest class");
+                application = attachManifestApplication(loadedApk, packageContext, expectedClass);
+            }
+            Slog.i(TAG, "guest application attached class=" + application.getClass().getName()
+                    + " package=" + application.getPackageName());
             
             mInitialApplication = application;
             top.niunaijun.blackbox.core.SensorSignalIsolation.wrapBase(mInitialApplication);
             BRActivityThread.get(BlackBoxCore.mainThread())._set_mInitialApplication(mInitialApplication);
+            BRLoadedApk.get(loadedApk)._set_mApplication(mInitialApplication);
             ContextCompat.fix((Context) BRActivityThread.get(BlackBoxCore.mainThread()).getSystemContext());
             ContextCompat.fix(mInitialApplication);
             installProviders(mInitialApplication, bindData.processName, bindData.providers);
 
             onBeforeApplicationOnCreate(packageName, processName, application);
-            AppInstrumentation.get().callApplicationOnCreate(application);
+            try {
+                AppInstrumentation.get().callApplicationOnCreate(application);
+            } catch (Throwable error) {
+                Slog.e(TAG, "guest Application.onCreate failed class="
+                        + application.getClass().getName(), error);
+                if (error instanceof Exception) throw (Exception) error;
+                throw new RuntimeException("guest Application.onCreate failed", error);
+            }
+            Slog.i(TAG, "guest Application.onCreate returned class=" + application.getClass().getName());
             onAfterApplicationOnCreate(packageName, processName, application);
 
             HookManager.get().checkEnv(HCallbackProxy.class);
@@ -1041,6 +1068,50 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
 
     /**
+     * Class named for this process in the manifest's per-process application map.
+     * The field exists on API 36+. Older platforms have only {@code className}.
+     */
+    private static String processSpecificApplicationClass(ApplicationInfo info, String processName) {
+        if (info == null || processName == null) return null;
+        try {
+            java.lang.reflect.Field field = ApplicationInfo.class.getDeclaredField("mAppClassNamesByProcess");
+            field.setAccessible(true);
+            Object map = field.get(info);
+            if (!(map instanceof java.util.Map)) return null;
+            Object value = ((java.util.Map<?, ?>) map).get(processName);
+            return value instanceof String ? (String) value : null;
+        } catch (Throwable error) {
+            Slog.w(TAG, "per-process application class unavailable: " + error.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /**
+     * Instantiates the manifest Application and runs its attachBaseContext. Failures propagate;
+     * a silent fallback to android.app.Application is what skipped AppContext.set.
+     */
+    private static Application attachManifestApplication(Object loadedApk, Context context, String className)
+            throws Exception {
+        ClassLoader loader = BRLoadedApk.get(loadedApk).getClassLoader();
+        if (loader == null) loader = context == null ? null : context.getClassLoader();
+        if (loader == null || context == null) {
+            throw new IllegalStateException("Cannot attach " + className + " without a guest class loader");
+        }
+        try {
+            Class<?> clazz = loader.loadClass(className);
+            Application application = Instrumentation.newApplication(clazz, context);
+            Slog.i(TAG, "attached manifest application " + application.getClass().getName());
+            return application;
+        } catch (Throwable error) {
+            Throwable cause = error instanceof java.lang.reflect.InvocationTargetException
+                    && error.getCause() != null ? error.getCause() : error;
+            Slog.e(TAG, "guest Application.attach failed class=" + className, cause);
+            if (cause instanceof Exception) throw (Exception) cause;
+            throw new RuntimeException("guest Application.attach failed", cause);
+        }
+    }
+
+    /**
      * The process-wide Application cache is keyed by LoadedApk.mPackageName. A context
      * created for the host package would otherwise miss the guest entry and construct a
      * second Application, which runs onCreate twice.
@@ -1169,7 +1240,8 @@ public class BActivityThread extends IBActivityThread.Stub {
                             providerInfo.processName.equals(context.getPackageName()) || providerInfo.multiprocess) {
                         installProvider(BlackBoxCore.mainThread(), context, providerInfo, null);
                     }
-                } catch (Throwable ignored) {
+                } catch (Throwable error) {
+                    Slog.e(TAG, "content provider failed: " + providerInfo.name, error);
                 }
             }
         } finally {
