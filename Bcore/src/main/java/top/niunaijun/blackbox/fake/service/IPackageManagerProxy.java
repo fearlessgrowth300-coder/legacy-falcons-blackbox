@@ -738,7 +738,9 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             }
             Integer virtual = GuestPermissionBridge.grantedForPackageOrNull(permission, packageName);
             if (virtual != null) return virtual;
-            
+            top.niunaijun.blackbox.core.SystemCallerIdentity.rewrite(args,
+                    top.niunaijun.blackbox.app.BActivityThread.getAppPackageName(),
+                    BlackBoxCore.getHostPkg());
             return method.invoke(who, args);
         }
     }
@@ -808,8 +810,9 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 Slog.d(TAG, "ShouldShowRequestPermissionRationale: Not showing rationale for notification/Xiaomi permission: " + permission);
                 return false;
             }
-            
-            
+            top.niunaijun.blackbox.core.SystemCallerIdentity.rewrite(args,
+                    top.niunaijun.blackbox.app.BActivityThread.getAppPackageName(),
+                    BlackBoxCore.getHostPkg());
             return method.invoke(who, args);
         }
     }

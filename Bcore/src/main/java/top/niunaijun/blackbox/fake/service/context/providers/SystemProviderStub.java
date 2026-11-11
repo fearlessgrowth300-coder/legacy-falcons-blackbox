@@ -49,6 +49,12 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
         if ("asBinder".equals(method.getName())) {
             return invokeBase(method, args);
         }
+        try {
+            String guest = top.niunaijun.blackbox.app.BActivityThread.getAppPackageName();
+            top.niunaijun.blackbox.core.SystemCallerIdentity.rewrite(
+                    args, guest, BlackBoxCore.getHostPkg());
+        } catch (Throwable ignored) {
+        }
         
         String methodName = method.getName();
         

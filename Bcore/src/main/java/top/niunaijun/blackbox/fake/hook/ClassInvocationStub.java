@@ -9,6 +9,9 @@ import java.lang.reflect.Proxy;
 import java.util.HashMap;
 import java.util.Map;
 
+import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.core.SystemCallerIdentity;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
 
 
@@ -154,9 +157,18 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        // Guest contexts name the clone. The phone's services must still see this
-        // process, so the outgoing AttributionSource is a host-package copy.
+        // Guest contexts name the clone. system_server checks that name against
+        // this process uid, so every outgoing call presents the host package.
+        // Package lookups keep the clone name. The AttributionSource is a copy.
         try {
+            if (!SystemCallerIdentity.keepsTargetPackage(method.getName())) {
+                String guest = null;
+                try {
+                    guest = BActivityThread.getAppPackageName();
+                } catch (Throwable ignored) {
+                }
+                SystemCallerIdentity.rewrite(args, guest, BlackBoxCore.getHostPkg());
+            }
             top.niunaijun.blackbox.utils.AttributionSourceUtils.fixAttributionSourceInArgs(args);
         } catch (Throwable ignored) {
         }

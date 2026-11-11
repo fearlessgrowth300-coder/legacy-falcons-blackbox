@@ -78,6 +78,10 @@ jobs:
             tools/diagnostics/GuestPackageNameTest.java
           java -cp build/diagnostic-tests GuestPackageNameTest
           javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/SystemCallerIdentity.java \
+            tools/diagnostics/SystemCallerIdentityTest.java
+          java -cp build/diagnostic-tests SystemCallerIdentityTest
+          javac -d build/diagnostic-tests \
             Bcore/src/main/java/top/niunaijun/blackbox/core/PineRuntime.java \
             Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ApplicationOnCreateGuard.java \
             Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/BindServiceFlagsCompat.java \
