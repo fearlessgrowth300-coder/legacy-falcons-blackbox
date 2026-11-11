@@ -20,7 +20,15 @@ public final class GuestPackageNameTest {
         check(HostVisiblePackages.intentTargetsHostService(null, null,
                 "com.google.android.gms.auth.api.phone.SMS_RETRIEVED"),
                 "a play services action is answered by the phone");
-        System.out.println("GuestPackageNameTest ok (7 checks)");
+        check(HostVisiblePackages.useHostReceivers("android.provider.Telephony.SMS_DELIVER"),
+                "SMS delivery is answered by the phone's messaging app");
+        check(HostVisiblePackages.useHostReceivers("android.provider.action.DEFAULT_SMS_PACKAGE_CHANGED"),
+                "the default SMS package change is answered by the phone");
+        check(HostVisiblePackages.useHostReceivers("android.provider.Telephony.SIM_FULL"),
+                "SIM status is answered by the phone");
+        check(!HostVisiblePackages.useHostReceivers("com.facebook.katana.SOME_ACTION"),
+                "a clone action is not handed to the phone");
+        System.out.println("GuestPackageNameTest ok (11 checks)");
     }
 
     private static void check(boolean condition, String message) {

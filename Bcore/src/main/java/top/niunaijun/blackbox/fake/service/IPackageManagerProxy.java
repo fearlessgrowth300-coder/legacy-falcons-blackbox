@@ -431,10 +431,12 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             String action = intent == null ? null : intent.getAction();
             String target = intent == null ? null : intent.getPackage();
             Slog.d(TAG, "queryIntentReceivers count: " + count + " action=" + action + " pkg=" + target);
-            if (count == 0 && intent != null && top.niunaijun.blackbox.core.HostVisiblePackages
+            if (count == 0 && intent != null && (top.niunaijun.blackbox.core.HostVisiblePackages
                     .intentTargetsHostService(target,
                             intent.getComponent() == null ? null : intent.getComponent().getPackageName(),
-                            action)) {
+                            action)
+                    || top.niunaijun.blackbox.core.HostVisiblePackages.useHostReceivers(action))) {
+                Slog.d(TAG, "queryIntentReceivers using the phone for " + action);
                 return method.invoke(who, args);
             }
 
