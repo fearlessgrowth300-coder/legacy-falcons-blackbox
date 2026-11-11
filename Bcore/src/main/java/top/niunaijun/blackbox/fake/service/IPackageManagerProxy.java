@@ -431,13 +431,15 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             String action = intent == null ? null : intent.getAction();
             String target = intent == null ? null : intent.getPackage();
             Slog.d(TAG, "queryIntentReceivers count: " + count + " action=" + action + " pkg=" + target);
-            if (count == 0 && intent != null && (top.niunaijun.blackbox.core.HostVisiblePackages
+            if (count == 0 && intent != null && top.niunaijun.blackbox.core.HostVisiblePackages
                     .intentTargetsHostService(target,
                             intent.getComponent() == null ? null : intent.getComponent().getPackageName(),
-                            action)
-                    || top.niunaijun.blackbox.core.HostVisiblePackages.useHostReceivers(action))) {
+                            action)) {
                 Slog.d(TAG, "queryIntentReceivers using the phone for " + action);
                 return method.invoke(who, args);
+            }
+            if (count == 0 && top.niunaijun.blackbox.core.HostVisiblePackages.useHostReceivers(action)) {
+                return smsReceiversFromPhone(who, method, args, action);
             }
 
             
@@ -447,6 +449,66 @@ public class IPackageManagerProxy extends BinderInvocationStub {
 
             
             return resolves;
+        }
+
+        private static Object smsReceiversFromPhone(Object who, Method method, Object[] args, String action) throws Throwable {
+            Object host = method.invoke(who, args);
+            java.util.List<ResolveInfo> raw = receiverList(host);
+            java.util.List<ResolveInfo> kept = new java.util.ArrayList<>();
+            if (raw != null) {
+                String smsHolder = defaultSmsHolder();
+                int userId = BActivityThread.getUserId();
+                for (ResolveInfo info : raw) {
+                    String pkg = info != null && info.activityInfo != null ? info.activityInfo.packageName : null;
+                    boolean installed = false;
+                    try {
+                        installed = pkg != null && BlackBoxCore.getBPackageManager().isInstalled(pkg, userId);
+                    } catch (Throwable ignored) {
+                    }
+                    boolean guard = top.niunaijun.blackbox.core.SmsReceiverVisibility.guardAllows(
+                            pkg, top.niunaijun.blackbox.core.env.AppSystemEnv.isOpenPackage(pkg));
+                    if (top.niunaijun.blackbox.core.SmsReceiverVisibility.visible(
+                            pkg, guard, pkg != null && pkg.equals(smsHolder), installed)) {
+                        kept.add(info);
+                    }
+                }
+            }
+            Slog.d(TAG, "queryIntentReceivers phone " + action + " kept " + kept.size());
+            if (BuildCompat.isN()) {
+                return ParceledListSliceCompat.create(method, kept);
+            }
+            return kept;
+        }
+
+        private static java.util.List<ResolveInfo> receiverList(Object slice) {
+            if (slice instanceof java.util.List) {
+                return (java.util.List<ResolveInfo>) slice;
+            }
+            if (slice == null) return null;
+            try {
+                Method getList = slice.getClass().getMethod("getList");
+                Object list = getList.invoke(slice);
+                if (list instanceof java.util.List) return (java.util.List<ResolveInfo>) list;
+            } catch (Throwable ignored) {
+            }
+            return null;
+        }
+
+        private static String defaultSmsHolder() {
+            try {
+                if (android.os.Build.VERSION.SDK_INT < 29) return null;
+                Object roleManager = BlackBoxCore.getContext().getSystemService("role");
+                if (roleManager == null) return null;
+                Object holders = roleManager.getClass()
+                        .getMethod("getRoleHolders", String.class)
+                        .invoke(roleManager, "android.app.role.SMS");
+                if (holders instanceof java.util.List && !((java.util.List<?>) holders).isEmpty()) {
+                    Object first = ((java.util.List<?>) holders).get(0);
+                    return first instanceof String ? (String) first : null;
+                }
+            } catch (Throwable ignored) {
+            }
+            return null;
         }
     }
 
