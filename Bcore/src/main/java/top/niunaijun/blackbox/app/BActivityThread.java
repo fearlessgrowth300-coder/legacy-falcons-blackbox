@@ -197,7 +197,9 @@ public class BActivityThread extends IBActivityThread.Stub {
                 java.io.File uidDir = top.niunaijun.blackbox.core.CallerUidMap.directory(
                         top.niunaijun.blackbox.core.env.BEnvironment.getSystemDir());
                 NativeCore.setCallerUidDirectory(uidDir.getAbsolutePath());
-                NativeCore.setCallerIdentity(BlackBoxCore.getHostUid(), appConfig.buid);
+                NativeCore.setCallerIdentity(BlackBoxCore.getHostUid(), appConfig.buid,
+                        top.niunaijun.blackbox.core.GuestUid.myUid(
+                                true, appConfig.buid, BlackBoxCore.getHostUid()));
                 boolean published = top.niunaijun.blackbox.core.CallerUidMap.publish(
                         uidDir, android.os.Process.myPid(), appConfig.buid);
                 Slog.i(TAG, "CallerUid publish pid=" + android.os.Process.myPid()

@@ -55,8 +55,12 @@ public final class IdentityPolicyTest {
         equal(false, ProviderCallIdentity.sameProcessProvider(true, "top.niunaijun.blackbox", "top.niunaijun.blackbox"));
         equal("com.instagram.android", ProviderCallIdentity.callerPackage(true, "com.instagram.android", "top.niunaijun.blackbox"));
         equal("top.niunaijun.blackbox", ProviderCallIdentity.callerPackage(false, "com.instagram.android", "top.niunaijun.blackbox"));
-        equal(10477, ProviderCallIdentity.presentedUid(true, 10477, 10004));
+        equal(10004, ProviderCallIdentity.presentedUid(true, 10477, 10004));
+        equal(25351, ProviderCallIdentity.presentedUid(true, 10477, 2225351));
         equal(10004, ProviderCallIdentity.presentedUid(false, 10477, 10004));
+        equal(25351, top.niunaijun.blackbox.core.GuestUid.myUid(true, 2225351, 10477));
+        equal(10477, top.niunaijun.blackbox.core.GuestUid.myUid(false, 2225351, 10477));
+        equal(10477, top.niunaijun.blackbox.core.GuestUid.myUid(true, 0, 10477));
         equal(true, ProviderCallIdentity.selfProvider("com.facebook.katana", "com.facebook.katana", "top.niunaijun.blackbox", true));
         equal(true, ProviderCallIdentity.selfProvider("top.niunaijun.blackbox", "com.facebook.katana", "top.niunaijun.blackbox", true));
         equal(false, ProviderCallIdentity.selfProvider("top.niunaijun.blackbox", "com.facebook.katana", "top.niunaijun.blackbox", false));

@@ -47,11 +47,13 @@ public final class ProviderCallIdentity {
     }
 
     /**
-     * After {@code Binder.clearCallingIdentity}, getCallingUid is the process uid.
-     * Facebook allows the call only when that matches {@code Process.myUid()}.
+     * A self-call must report the same uid {@code Process.myUid()} reports.
+     * That is the guest app id, not the Linux host uid.
      */
     public static int presentedUid(boolean sameProcess, int processUid, int virtualUid) {
-        return sameProcess ? processUid : virtualUid;
+        return sameProcess
+                ? top.niunaijun.blackbox.core.GuestUid.myUid(true, virtualUid, processUid)
+                : virtualUid;
     }
 
     /** Legacy IContentProvider has callingPackage first; later Strings are payload. */

@@ -117,7 +117,7 @@ public class NativeCore {
      * Host and virtual uids for the Android 16 Binder.getCallingUid hook.
      * The hook must not call back into Java on that runtime.
      */
-    public static native void setCallerIdentity(int hostUid, int virtualUid);
+    public static native void setCallerIdentity(int hostUid, int virtualUid, int presentedUid);
 
     /**
      * A guest is inside its own in-process provider. getCallingUid must stay the
@@ -185,7 +185,9 @@ public class NativeCore {
         // The original Linux UID is authoritative for system and external callers.
         // Never use AppConfig.callingBUid here: it describes the process launcher,
         // not the sender of the current Binder transaction.
-        if (SELF_PROVIDER_CALL.get() > 0) return origCallingUid;
+        if (SELF_PROVIDER_CALL.get() > 0) {
+            return GuestUid.myUid(true, BActivityThread.getBUid(), origCallingUid);
+        }
         if (Boolean.TRUE.equals(RESOLVING_CALLER_UID.get())
                 || BActivityThread.getAppConfig() == null) {
             return origCallingUid;

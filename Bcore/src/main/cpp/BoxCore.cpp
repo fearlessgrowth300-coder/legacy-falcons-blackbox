@@ -56,6 +56,7 @@ JNIEnv *ensureEnvCreated() {
 
 static int g_host_uid = 0;
 static int g_virtual_uid = 0;
+static int g_presented_uid = 0;
 static __thread int g_self_provider_call = 0;
 // Thread-id table as well as __thread. A CriticalNative getCallingUid call must see the
 // same "this thread is inside its own provider" mark the Java caller just set.
@@ -110,9 +111,10 @@ static void note_self_provider(int delta) {
 static char g_uid_dir[512];
 static void publish_self_uid();
 
-void BoxCore::setCallerIdentity(int hostUid, int virtualUid) {
+void BoxCore::setCallerIdentity(int hostUid, int virtualUid, int presentedUid) {
     g_host_uid = hostUid;
     g_virtual_uid = virtualUid;
+    g_presented_uid = presentedUid;
     publish_self_uid();
 }
 
@@ -245,9 +247,9 @@ int BoxCore::getCallingUid(JNIEnv *env, int orig) {
     // Play Store call (uid 10004) fail inside GMS (uid 10005). Read the sender pid.
     if (VMEnv.api_level >= 36) {
         if (g_host_uid <= 0 || orig != g_host_uid) return orig;
-        // Same-app provider calls cleared the binder identity. Keep the process uid
-        // so the guest's own provider sees Binder.getCallingUid() == Process.myUid().
-        if (in_self_provider_call()) return orig;
+        // Process.myUid() is the guest app id, not the Linux host uid. A self-call
+        // must report that same app id or the provider rejects its own process.
+        if (in_self_provider_call()) return g_presented_uid > 0 ? g_presented_uid : orig;
         int jni_pid = BinderHook::callingPid(env);
         int raw_pid = ipc_calling_pid();
         int pid = raw_pid > 0 ? raw_pid : jni_pid;
@@ -369,10 +371,10 @@ static jint selfProviderDepth(JNIEnv *env, jclass clazz) {
     return in_self_provider_call() ? 1 : 0;
 }
 
-void setCallerIdentity(JNIEnv *env, jclass clazz, jint hostUid, jint virtualUid) {
+void setCallerIdentity(JNIEnv *env, jclass clazz, jint hostUid, jint virtualUid, jint presentedUid) {
     (void) env;
     (void) clazz;
-    BoxCore::setCallerIdentity(hostUid, virtualUid);
+    BoxCore::setCallerIdentity(hostUid, virtualUid, presentedUid);
 }
 
 void setCallerUidDirectory(JNIEnv *env, jclass clazz, jstring path) {
@@ -495,7 +497,7 @@ static JNINativeMethod gMethods[] = {
         {"setBootIdSpoof", "(Z)V", (void *) setBootIdSpoof},
         {"setPathIsolation", "(Ljava/lang/String;Ljava/lang/String;I)V", (void *) setPathIsolation},
         {"setUptimeOffsetMs", "(J)V", (void *) setUptimeOffsetMs},
-        {"setCallerIdentity", "(II)V", (void *) setCallerIdentity},
+        {"setCallerIdentity", "(III)V", (void *) setCallerIdentity},
         {"nativeEnterSelfProviderCall", "()V", (void *) enterSelfProviderCall},
         {"nativeExitSelfProviderCall", "()V", (void *) exitSelfProviderCall},
         {"nativeSelfProviderDepth", "()I", (void *) selfProviderDepth},
