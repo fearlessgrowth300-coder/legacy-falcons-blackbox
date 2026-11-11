@@ -119,6 +119,40 @@ public class NativeCore {
      */
     public static native void setCallerIdentity(int hostUid, int virtualUid);
 
+    /**
+     * A guest is inside its own in-process provider. getCallingUid must stay the
+     * process uid; the API 37 hook otherwise rewrites it to the virtual uid.
+     */
+    private static native void nativeEnterSelfProviderCall();
+
+    private static native void nativeExitSelfProviderCall();
+
+    private static final ThreadLocal<Integer> SELF_PROVIDER_CALL =
+            new ThreadLocal<Integer>() {
+                @Override
+                protected Integer initialValue() {
+                    return 0;
+                }
+            };
+
+    public static void enterSelfProviderCall() {
+        SELF_PROVIDER_CALL.set(SELF_PROVIDER_CALL.get() + 1);
+        try {
+            nativeEnterSelfProviderCall();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void exitSelfProviderCall() {
+        int depth = SELF_PROVIDER_CALL.get() - 1;
+        if (depth <= 0) SELF_PROVIDER_CALL.remove();
+        else SELF_PROVIDER_CALL.set(depth);
+        try {
+            nativeExitSelfProviderCall();
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** Directory of pid files read by the Android 16 Binder.getCallingUid hook. */
     public static native void setCallerUidDirectory(String path);
 
@@ -136,6 +170,7 @@ public class NativeCore {
         // The original Linux UID is authoritative for system and external callers.
         // Never use AppConfig.callingBUid here: it describes the process launcher,
         // not the sender of the current Binder transaction.
+        if (SELF_PROVIDER_CALL.get() > 0) return origCallingUid;
         if (Boolean.TRUE.equals(RESOLVING_CALLER_UID.get())
                 || BActivityThread.getAppConfig() == null) {
             return origCallingUid;

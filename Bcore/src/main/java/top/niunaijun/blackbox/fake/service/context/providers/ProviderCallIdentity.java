@@ -19,6 +19,28 @@ public final class ProviderCallIdentity {
         return callerUid;
     }
 
+    /**
+     * A local binder is this process. Guest providers run here; system providers do not.
+     * The host package is not a guest calling its own provider.
+     */
+    public static boolean sameProcessProvider(boolean localBinder, String guestPackage, String hostPackage) {
+        return localBinder && guestPackage != null && !guestPackage.isEmpty()
+                && !guestPackage.equals(hostPackage);
+    }
+
+    /** Same-app calls must name the guest. Other calls keep the host package. */
+    public static String callerPackage(boolean sameProcess, String guestPackage, String hostPackage) {
+        return sameProcess ? guestPackage : hostPackage;
+    }
+
+    /**
+     * After {@code Binder.clearCallingIdentity}, getCallingUid is the process uid.
+     * Facebook allows the call only when that matches {@code Process.myUid()}.
+     */
+    public static int presentedUid(boolean sameProcess, int processUid, int virtualUid) {
+        return sameProcess ? processUid : virtualUid;
+    }
+
     /** Legacy IContentProvider has callingPackage first; later Strings are payload. */
     public static void rewriteLegacyCaller(Object[] args, String callerPackage) {
         if (args != null && args.length > 0 && args[0] instanceof String) {

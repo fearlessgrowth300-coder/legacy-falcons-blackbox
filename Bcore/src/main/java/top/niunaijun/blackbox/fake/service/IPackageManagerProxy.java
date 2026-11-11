@@ -460,6 +460,22 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         }
     }
 
+    /**
+     * Same-package checks must use the cloned APK's own certificate. Do not rewrite the
+     * guest name to the host before asking, or Facebook compares itself with Blackbox.
+     */
+    @ProxyMethod("checkSignatures")
+    public static class CheckSignatures extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            if (args != null && args.length >= 2 && args[0] instanceof String
+                    && args[0].equals(args[1])) {
+                return PackageManager.SIGNATURE_MATCH;
+            }
+            return method.invoke(who, args);
+        }
+    }
+
     @ProxyMethod("getPackagesForUid")
     public static class GetPackagesForUid extends MethodHook {
         @Override

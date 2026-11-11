@@ -55,6 +55,7 @@ JNIEnv *ensureEnvCreated() {
 
 static int g_host_uid = 0;
 static int g_virtual_uid = 0;
+static __thread int g_self_provider_call = 0;
 static char g_uid_dir[512];
 static void publish_self_uid();
 
@@ -184,6 +185,9 @@ int BoxCore::getCallingUid(JNIEnv *env, int orig) {
     // Play Store call (uid 10004) fail inside GMS (uid 10005). Read the sender pid.
     if (VMEnv.api_level >= 36) {
         if (g_host_uid <= 0 || orig != g_host_uid) return orig;
+        // Same-app provider calls cleared the binder identity. Keep the process uid
+        // so the guest's own provider sees Binder.getCallingUid() == Process.myUid().
+        if (g_self_provider_call > 0) return orig;
         int jni_pid = BinderHook::callingPid(env);
         int raw_pid = ipc_calling_pid();
         int pid = raw_pid > 0 ? raw_pid : jni_pid;
@@ -283,6 +287,14 @@ void setPathIsolation(JNIEnv *env, jclass clazz, jstring root, jstring ext, jint
 
 void setUptimeOffsetMs(JNIEnv *env, jclass clazz, jlong offset) {
     FileSystemHook::setUptimeOffsetMs(offset < 0 ? 0 : (long) offset);
+}
+
+void enterSelfProviderCall(JNIEnv *env, jclass clazz) {
+    g_self_provider_call++;
+}
+
+void exitSelfProviderCall(JNIEnv *env, jclass clazz) {
+    if (g_self_provider_call > 0) g_self_provider_call--;
 }
 
 void setCallerIdentity(JNIEnv *env, jclass clazz, jint hostUid, jint virtualUid) {
@@ -412,6 +424,8 @@ static JNINativeMethod gMethods[] = {
         {"setPathIsolation", "(Ljava/lang/String;Ljava/lang/String;I)V", (void *) setPathIsolation},
         {"setUptimeOffsetMs", "(J)V", (void *) setUptimeOffsetMs},
         {"setCallerIdentity", "(II)V", (void *) setCallerIdentity},
+        {"nativeEnterSelfProviderCall", "()V", (void *) enterSelfProviderCall},
+        {"nativeExitSelfProviderCall", "()V", (void *) exitSelfProviderCall},
         {"setCallerUidDirectory", "(Ljava/lang/String;)V", (void *) setCallerUidDirectory},
         {"enableIO",   "()V",                                     (void *) enableIO},
         {"init",       "(I)V",                                    (void *) init},

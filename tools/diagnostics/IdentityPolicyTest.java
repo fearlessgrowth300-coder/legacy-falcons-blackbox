@@ -46,6 +46,13 @@ public final class IdentityPolicyTest {
         equal(10004, ProviderCallIdentity.attributionUid(31, true, 10004, 10477));
         equal(10004, ProviderCallIdentity.attributionUid(36, true, 10004, 10477));
         equal(10477, ProviderCallIdentity.attributionUid(36, false, 10004, 10477));
+        equal(true, ProviderCallIdentity.sameProcessProvider(true, "com.facebook.katana", "top.niunaijun.blackbox"));
+        equal(false, ProviderCallIdentity.sameProcessProvider(false, "com.facebook.katana", "top.niunaijun.blackbox"));
+        equal(false, ProviderCallIdentity.sameProcessProvider(true, "top.niunaijun.blackbox", "top.niunaijun.blackbox"));
+        equal("com.instagram.android", ProviderCallIdentity.callerPackage(true, "com.instagram.android", "top.niunaijun.blackbox"));
+        equal("top.niunaijun.blackbox", ProviderCallIdentity.callerPackage(false, "com.instagram.android", "top.niunaijun.blackbox"));
+        equal(10477, ProviderCallIdentity.presentedUid(true, 10477, 10004));
+        equal(10004, ProviderCallIdentity.presentedUid(false, 10477, 10004));
         java.io.File dir = java.nio.file.Files.createTempDirectory("caller-uid").toFile();
         equal(true, top.niunaijun.blackbox.core.CallerUidMap.publish(dir, 16258, 10004));
         equal(true, top.niunaijun.blackbox.core.CallerUidMap.publish(dir, 16314, 10005));

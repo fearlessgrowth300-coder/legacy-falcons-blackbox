@@ -13,6 +13,7 @@ import android.content.pm.PackageParser;
 import android.content.pm.PermissionInfo;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ServiceInfo;
+import android.content.pm.Signature;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.os.Build;
@@ -194,20 +195,25 @@ public class PackageManagerCompat {
             base = BlackBoxCore.getContext().getPackageManager().getPackageInfo(p.packageName, flags);
         } catch (PackageManager.NameNotFoundException ignored) {
         }
+        Signature[] original = p.mSignatures;
+        if ((original == null || original.length == 0) && p.mSigningDetails != null) {
+            original = p.mSigningDetails.signatures;
+        }
+        boolean haveOriginal = original != null && original.length > 0;
         if ((flags & PackageManager.GET_SIGNATURES) != 0) {
-            if (base == null) {
-                pi.signatures = p.mSignatures;
-            } else {
-                pi.signatures = base.signatures;
-            }
+            if (haveOriginal) pi.signatures = original;
+            else if (base != null) pi.signatures = base.signatures;
         }
         if (BuildCompat.isPie()) {
             if ((flags & PackageManager.GET_SIGNING_CERTIFICATES) != 0) {
-                if (base == null) {
+                if (haveOriginal && p.mSigningDetails != null
+                        && p.mSigningDetails.signatures != null
+                        && p.mSigningDetails.signatures.length > 0) {
                     PackageParser.SigningDetails signingDetails = PackageParser.SigningDetails.UNKNOWN;
-                    BRPackageParserSigningDetails.get(signingDetails)._set_signatures(p.mSigningDetails.signatures);
+                    BRPackageParserSigningDetails.get(signingDetails)
+                            ._set_signatures(p.mSigningDetails.signatures);
                     pi.signingInfo = BRSigningInfo.get()._new(signingDetails);
-                } else {
+                } else if (base != null) {
                     pi.signingInfo = base.signingInfo;
                 }
             }

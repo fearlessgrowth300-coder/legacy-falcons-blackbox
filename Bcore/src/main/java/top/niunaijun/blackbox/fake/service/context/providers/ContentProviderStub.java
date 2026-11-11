@@ -1,11 +1,13 @@
 package top.niunaijun.blackbox.fake.service.context.providers;
 
+import android.os.Binder;
 import android.os.Build;
 import android.os.IInterface;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.core.NativeCore;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.utils.AttributionSourceUtils;
 import top.niunaijun.blackbox.utils.Slog;
@@ -29,25 +31,31 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        // A guest calling its own provider is checked against the uid Binder really reports
-        // (the host uid), so it must carry the guest package with that uid. Apps such as
-        // Facebook reject any other pairing and crash.
-        boolean ownProvider = mProviderPackage != null
-                && mProviderPackage.equals(BActivityThread.getAppPackageName());
+        // A guest calling its own provider is checked against the uid Binder really reports.
+        // That has to be this process uid, paired with the guest package. Facebook rejects
+        // the virtual uid and the host package.
+        boolean sameApp = false;
         if (!"asBinder".equals(method.getName())) {
-            boolean virtual = mProviderPackage != null
-                    && !BlackBoxCore.getHostPkg().equals(mProviderPackage);
-            // This process sends the transaction. Its original launcher is unrelated.
-            // GMS and GSF are virtual providers, so they must see this caller's uid,
-            // the same uid Binder.getCallingUid returns in their process.
-            int uid = ownProvider ? BlackBoxCore.getHostUid()
+            boolean local = mBase != null && mBase.asBinder() instanceof Binder;
+            String guest = BActivityThread.getAppPackageName();
+            String host = BlackBoxCore.getHostPkg();
+            boolean ownProvider = mProviderPackage != null && mProviderPackage.equals(guest);
+            sameApp = ownProvider || ProviderCallIdentity.sameProcessProvider(local, guest, host);
+            boolean virtual = mProviderPackage != null && host != null && !host.equals(mProviderPackage);
+            int uid = sameApp
+                    ? ProviderCallIdentity.presentedUid(true, BlackBoxCore.getHostUid(),
+                    BActivityThread.getBUid())
                     : ProviderCallIdentity.attributionUid(Build.VERSION.SDK_INT, virtual,
                     BActivityThread.getBUid(), BlackBoxCore.getHostUid());
-            String pkg = virtual ? BActivityThread.getAppPackageName() : BlackBoxCore.getHostPkg();
+            String pkg = sameApp || virtual
+                    ? ProviderCallIdentity.callerPackage(true, guest, host)
+                    : host;
             if (pkg == null) throw new IllegalStateException("Provider caller is not initialized");
             if ("query".equals(method.getName()) || "call".equals(method.getName())
-                    || "insert".equals(method.getName())) {
+                    || "insert".equals(method.getName()) || "update".equals(method.getName())
+                    || "delete".equals(method.getName())) {
                 Slog.i(TAG, "provider " + method.getName()
+                        + " sameApp=" + sameApp
                         + " virtual=" + virtual
                         + " attrUid=" + uid
                         + " callerPkg=" + pkg
@@ -67,6 +75,13 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                 }
             }
         }
+        long identity = 0;
+        boolean cleared = false;
+        if (sameApp) {
+            NativeCore.enterSelfProviderCall();
+            identity = Binder.clearCallingIdentity();
+            cleared = true;
+        }
         try {
             return method.invoke(mBase, args);
         } catch (InvocationTargetException error) {
@@ -77,6 +92,11 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                     + (cause == null ? error.getClass().getSimpleName()
                     : cause.getClass().getSimpleName()) + ")");
             throw cause == null ? error : cause;
+        } finally {
+            if (cleared) {
+                Binder.restoreCallingIdentity(identity);
+                NativeCore.exitSelfProviderCall();
+            }
         }
     }
 }
