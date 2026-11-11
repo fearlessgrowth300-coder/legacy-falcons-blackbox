@@ -107,6 +107,27 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
             data.setDataPosition(0);
             top.niunaijun.blackbox.utils.Slog.i("GuestServiceBind",
                     "callback code=" + code + " cmp=" + mComponentName);
+            if (code == android.os.IBinder.FIRST_CALL_TRANSACTION) {
+                android.os.Parcel traced = null;
+                try {
+                    data.enforceInterface("android.app.IServiceConnection");
+                    ComponentName name = data.readTypedObject(ComponentName.CREATOR);
+                    IBinder service = data.readStrongBinder();
+                    int tailPos = data.dataPosition();
+                    int tailLen = data.dataSize() - tailPos;
+                    traced = android.os.Parcel.obtain();
+                    traced.writeInterfaceToken("android.app.IServiceConnection");
+                    traced.writeTypedObject(name, 0);
+                    traced.writeStrongBinder(service == null ? null
+                            : new GmsCallTrace(service, String.valueOf(name)));
+                    if (tailLen > 0) traced.appendFrom(data, tailPos, tailLen);
+                    return mConn.asBinder().transact(code, traced, reply, flags);
+                } catch (Throwable t) {
+                    data.setDataPosition(0);
+                } finally {
+                    if (traced != null) traced.recycle();
+                }
+            }
             return mConn.asBinder().transact(code, data, reply, flags);
         }
         if (code == android.os.IBinder.FIRST_CALL_TRANSACTION
@@ -181,6 +202,78 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
         } catch (Throwable ignored) {
         }
         return real;
+    }
+
+    /**
+     * Diagnostic: logs every call a guest makes on a Play or GMS service binder, so a sign-up
+     * step that waits forever shows which Google call it made last.
+     */
+    private static class GmsCallTrace extends android.os.Binder {
+        private final IBinder real;
+        private final String label;
+
+        GmsCallTrace(IBinder real, String label) {
+            this.real = real;
+            this.label = label;
+        }
+
+        @Override
+        public String getInterfaceDescriptor() {
+            try {
+                return real.getInterfaceDescriptor();
+            } catch (RemoteException e) {
+                return null;
+            }
+        }
+
+        @Override
+        public boolean isBinderAlive() {
+            return real.isBinderAlive();
+        }
+
+        @Override
+        public boolean pingBinder() {
+            return real.pingBinder();
+        }
+
+        @Override
+        public void linkToDeath(DeathRecipient recipient, int flags) {
+            try {
+                real.linkToDeath(recipient, flags);
+            } catch (RemoteException ignored) {
+            }
+        }
+
+        @Override
+        public boolean unlinkToDeath(DeathRecipient recipient, int flags) {
+            return real.unlinkToDeath(recipient, flags);
+        }
+
+        @Override
+        protected boolean onTransact(int code, android.os.Parcel data, android.os.Parcel reply,
+                                     int flags) throws RemoteException {
+            String descriptor = null;
+            try {
+                descriptor = real.getInterfaceDescriptor();
+            } catch (Throwable ignored) {
+            }
+            long start = android.os.SystemClock.uptimeMillis();
+            boolean ok = false;
+            String error = null;
+            try {
+                data.setDataPosition(0);
+                ok = real.transact(code, data, reply, flags);
+                return ok;
+            } catch (RemoteException | RuntimeException e) {
+                error = e.getClass().getSimpleName() + ": " + e.getMessage();
+                throw e;
+            } finally {
+                top.niunaijun.blackbox.utils.Slog.i("GmsCallTrace", label + " " + descriptor
+                        + " code=" + code + ((flags & FLAG_ONEWAY) != 0 ? " oneway" : "")
+                        + " ok=" + ok + " ms=" + (android.os.SystemClock.uptimeMillis() - start)
+                        + (error == null ? "" : " error=" + error));
+            }
+        }
     }
 
     /** Minimal IAdvertisingIdService (com.google.android.gms.ads.identifier). */
