@@ -481,13 +481,118 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             int uid = (Integer) args[0];
-            if (uid == BlackBoxCore.getHostUid()) {
-                args[0] = BActivityThread.getBUid();
-                uid = (int) args[0];
+            int queryUid = uid == BlackBoxCore.getHostUid() ? BActivityThread.getBUid() : uid;
+            String[] packagesForUid = new String[0];
+            try {
+                packagesForUid = BlackBoxCore.getBPackageManager().getPackagesForUid(queryUid);
+            } catch (Throwable error) {
+                Slog.w(TAG, "GetPackagesForUid failed for " + uid);
             }
-            String[] packagesForUid = BlackBoxCore.getBPackageManager().getPackagesForUid(uid);
-            Slog.d(TAG, args[0] + " , " + BActivityThread.getAppProcessName() + " GetPackagesForUid: " + Arrays.toString(packagesForUid));
-            return packagesForUid;
+            String[] named = top.niunaijun.blackbox.fake.service.context.providers.UidPackageIdentity
+                    .packagesForCaller(uid, BlackBoxCore.getHostUid(), BActivityThread.getBUid(),
+                            BActivityThread.getBAppId(), BActivityThread.getAppPackageName(),
+                            packagesForUid);
+            Slog.d(TAG, uid + " , " + BActivityThread.getAppProcessName()
+                    + " GetPackagesForUid: " + Arrays.toString(named));
+            return named;
+        }
+    }
+
+    /**
+     * The process uid is the host uid. A guest asking who that uid is must hear its own
+     * package, or its trusted-caller check treats the call as coming from Blackbox.
+     */
+    @ProxyMethod("getNameForUid")
+    public static class GetNameForUid extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int uid = (Integer) args[0];
+            String guest = top.niunaijun.blackbox.fake.service.context.providers.UidPackageIdentity
+                    .nameForUid(uid, BlackBoxCore.getHostUid(), BActivityThread.getBUid(),
+                            BActivityThread.getBAppId(), BActivityThread.getAppPackageName());
+            if (guest != null) return guest;
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("checkUidSignatures")
+    public static class CheckUidSignatures extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            if (args != null && args.length >= 2 && args[0] instanceof Integer
+                    && args[1] instanceof Integer) {
+                int first = (Integer) args[0];
+                int second = (Integer) args[1];
+                int host = BlackBoxCore.getHostUid();
+                int virtual = BActivityThread.getBUid();
+                int appId = BActivityThread.getBAppId();
+                boolean firstGuest = top.niunaijun.blackbox.fake.service.context.providers.UidPackageIdentity
+                        .representsGuest(first, host, virtual, appId);
+                boolean secondGuest = top.niunaijun.blackbox.fake.service.context.providers.UidPackageIdentity
+                        .representsGuest(second, host, virtual, appId);
+                if (first == second || (firstGuest && secondGuest)) {
+                    return PackageManager.SIGNATURE_MATCH;
+                }
+            }
+            return method.invoke(who, args);
+        }
+    }
+
+    /**
+     * Compare the presented bytes with the cloned APK's own certificate.
+     * A package the virtual user did not install is left to the real package manager.
+     */
+    @ProxyMethod("hasSigningCertificate")
+    public static class HasSigningCertificate extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            String packageName = null;
+            if (args != null && args.length > 0 && args[0] instanceof String) {
+                packageName = (String) args[0];
+            } else if (args != null && args.length > 0 && args[0] instanceof Integer) {
+                int uid = (Integer) args[0];
+                if (top.niunaijun.blackbox.fake.service.context.providers.UidPackageIdentity
+                        .representsGuest(uid, BlackBoxCore.getHostUid(), BActivityThread.getBUid(),
+                                BActivityThread.getBAppId())) {
+                    packageName = BActivityThread.getAppPackageName();
+                }
+            }
+            byte[] presented = null;
+            int type = top.niunaijun.blackbox.utils.compat.SigningCertificateMatch.RAW_X509;
+            if (args != null) {
+                for (Object arg : args) {
+                    if (arg instanceof byte[]) presented = (byte[]) arg;
+                }
+                if (args.length >= 3 && args[args.length - 1] instanceof Integer) {
+                    type = (Integer) args[args.length - 1];
+                }
+            }
+            byte[][] certificates = certificatesOf(packageName);
+            if (certificates != null) {
+                return top.niunaijun.blackbox.utils.compat.SigningCertificateMatch
+                        .matches(certificates, presented, type);
+            }
+            return method.invoke(who, args);
+        }
+
+        private static byte[][] certificatesOf(String packageName) {
+            if (packageName == null) return null;
+            try {
+                android.content.pm.PackageInfo info = BlackBoxCore.getBPackageManager()
+                        .getPackageInfo(packageName, PackageManager.GET_SIGNATURES,
+                                BActivityThread.getUserId());
+                if (info == null || info.signatures == null || info.signatures.length == 0) {
+                    return null;
+                }
+                byte[][] certificates = new byte[info.signatures.length][];
+                for (int i = 0; i < info.signatures.length; i++) {
+                    certificates[i] = info.signatures[i] == null
+                            ? null : info.signatures[i].toByteArray();
+                }
+                return certificates;
+            } catch (Throwable ignored) {
+                return null;
+            }
         }
     }
 

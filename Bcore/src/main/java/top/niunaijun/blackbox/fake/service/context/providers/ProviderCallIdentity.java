@@ -28,6 +28,19 @@ public final class ProviderCallIdentity {
                 && !guestPackage.equals(hostPackage);
     }
 
+    /**
+     * A provider that belongs to this guest. A local binder labeled with the host
+     * package is still the guest's own provider; system providers are not local.
+     */
+    public static boolean selfProvider(String providerPackage, String guestPackage,
+                                       String hostPackage, boolean localBinder) {
+        if (guestPackage == null || guestPackage.isEmpty() || guestPackage.equals(hostPackage)) {
+            return false;
+        }
+        if (guestPackage.equals(providerPackage)) return true;
+        return localBinder && (providerPackage == null || providerPackage.equals(hostPackage));
+    }
+
     /** Same-app calls must name the guest. Other calls keep the host package. */
     public static String callerPackage(boolean sameProcess, String guestPackage, String hostPackage) {
         return sameProcess ? guestPackage : hostPackage;

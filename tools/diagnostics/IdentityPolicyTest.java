@@ -1,8 +1,12 @@
 import java.util.concurrent.atomic.AtomicInteger;
 import top.niunaijun.blackbox.core.CallerUidResolver;
+import top.niunaijun.blackbox.fake.service.context.providers.LocalProviderCall;
 import top.niunaijun.blackbox.fake.service.context.providers.ProviderCallIdentity;
+import top.niunaijun.blackbox.fake.service.context.providers.UidPackageIdentity;
 
 public final class IdentityPolicyTest {
+    public static final class CancellationSignalMarker {}
+
     private static int checks;
     private static void equal(Object expected, Object actual) {
         checks++;
@@ -53,6 +57,46 @@ public final class IdentityPolicyTest {
         equal("top.niunaijun.blackbox", ProviderCallIdentity.callerPackage(false, "com.instagram.android", "top.niunaijun.blackbox"));
         equal(10477, ProviderCallIdentity.presentedUid(true, 10477, 10004));
         equal(10004, ProviderCallIdentity.presentedUid(false, 10477, 10004));
+        equal(true, ProviderCallIdentity.selfProvider("com.facebook.katana", "com.facebook.katana", "top.niunaijun.blackbox", true));
+        equal(true, ProviderCallIdentity.selfProvider("top.niunaijun.blackbox", "com.facebook.katana", "top.niunaijun.blackbox", true));
+        equal(false, ProviderCallIdentity.selfProvider("top.niunaijun.blackbox", "com.facebook.katana", "top.niunaijun.blackbox", false));
+        equal(false, ProviderCallIdentity.selfProvider("com.instagram.android", "com.facebook.katana", "top.niunaijun.blackbox", true));
+        equal(true, LocalProviderCall.isDirectCall("delete"));
+        equal(true, LocalProviderCall.isDirectCall("bulkInsert"));
+        equal(true, LocalProviderCall.isDirectCall("openFile"));
+        equal(false, LocalProviderCall.isDirectCall("asBinder"));
+        Object[] ipc = {"com.facebook.katana", "content://dedup", "payload"};
+        Object[] direct = LocalProviderCall.directArguments(ipc);
+        equal(2, direct.length);
+        equal("content://dedup", direct[0]);
+        equal("payload", direct[1]);
+        Object[] kept = LocalProviderCall.directArguments(new Object[]{"not-a-caller-wait"});
+        equal(0, kept.length);
+        Object marker = new CancellationSignalMarker();
+        Object[] withSignal = {"uri", marker};
+        Object[] noSignal = LocalProviderCall.withoutTrailingSignal(withSignal);
+        equal(1, noSignal.length);
+        equal("uri", noSignal[0]);
+        equal(true, UidPackageIdentity.representsGuest(10477, 10477, 10022, 10022));
+        equal(true, UidPackageIdentity.representsGuest(10022, 10477, 10022, 22));
+        equal(true, UidPackageIdentity.representsGuest(22, 10477, 10022, 22));
+        equal(false, UidPackageIdentity.representsGuest(1000, 10477, 10022, 22));
+        equal("com.facebook.katana", UidPackageIdentity.nameForUid(10477, 10477, 10022, 22, "com.facebook.katana"));
+        equal(null, UidPackageIdentity.nameForUid(1000, 10477, 10022, 22, "com.facebook.katana"));
+        String[] filled = UidPackageIdentity.packagesForCaller(10477, 10477, 10022, 22, "com.facebook.katana", new String[0]);
+        equal(1, filled.length);
+        equal("com.facebook.katana", filled[0]);
+        String[] already = UidPackageIdentity.packagesForCaller(10477, 10477, 10022, 22, "com.facebook.katana", new String[]{"com.facebook.katana"});
+        equal(1, already.length);
+        equal(0, UidPackageIdentity.packagesForCaller(1000, 10477, 10022, 22, "com.facebook.katana", new String[0]).length);
+        byte[] cert = new byte[]{1, 2, 3, 4};
+        equal(true, top.niunaijun.blackbox.utils.compat.SigningCertificateMatch.matches(
+                new byte[][]{cert}, cert, top.niunaijun.blackbox.utils.compat.SigningCertificateMatch.RAW_X509));
+        equal(false, top.niunaijun.blackbox.utils.compat.SigningCertificateMatch.matches(
+                new byte[][]{cert}, new byte[]{9}, top.niunaijun.blackbox.utils.compat.SigningCertificateMatch.RAW_X509));
+        byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(cert);
+        equal(true, top.niunaijun.blackbox.utils.compat.SigningCertificateMatch.matches(
+                new byte[][]{cert}, digest, top.niunaijun.blackbox.utils.compat.SigningCertificateMatch.SHA256));
         java.io.File dir = java.nio.file.Files.createTempDirectory("caller-uid").toFile();
         equal(true, top.niunaijun.blackbox.core.CallerUidMap.publish(dir, 16258, 10004));
         equal(true, top.niunaijun.blackbox.core.CallerUidMap.publish(dir, 16314, 10005));
