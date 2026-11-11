@@ -188,14 +188,16 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
         // this process uid, so every outgoing call presents the host package.
         // Package lookups keep the clone name. The AttributionSource is a copy.
         try {
-            if (!SystemCallerIdentity.keepsTargetPackage(method.getName())) {
-                String guest = null;
-                try {
-                    guest = BActivityThread.getAppPackageName();
-                } catch (Throwable ignored) {
-                }
-                SystemCallerIdentity.rewrite(args, guest, BlackBoxCore.getHostPkg());
+            String guest = null;
+            try {
+                guest = BActivityThread.getAppPackageName();
+            } catch (Throwable ignored) {
             }
+            String host = BlackBoxCore.getHostPkg();
+            if (!SystemCallerIdentity.keepsTargetPackage(method.getName())) {
+                SystemCallerIdentity.rewrite(args, guest, host);
+            }
+            top.niunaijun.blackbox.core.CallerIdentityParcels.rewrite(args, guest, host);
             top.niunaijun.blackbox.utils.AttributionSourceUtils.fixAttributionSourceInArgs(args);
         } catch (Throwable ignored) {
         }

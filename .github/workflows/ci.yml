@@ -87,6 +87,11 @@ jobs:
             tools/diagnostics/ProviderAcquireGuardTest.java
           java -cp build/diagnostic-tests ProviderAcquireGuardTest
           javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/SystemCallerIdentity.java \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/CallerIdentityParcels.java \
+            tools/diagnostics/CallerIdentityParcelsTest.java
+          java -cp build/diagnostic-tests CallerIdentityParcelsTest
+          javac -d build/diagnostic-tests \
             Bcore/src/main/java/top/niunaijun/blackbox/core/PineRuntime.java \
             Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/ApplicationOnCreateGuard.java \
             Bcore/src/main/java/top/niunaijun/blackbox/utils/compat/BindServiceFlagsCompat.java \

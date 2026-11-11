@@ -16,8 +16,10 @@ public final class SystemCallerIdentity {
         int replaced = 0;
         for (int i = 0; i < args.length; i++) {
             Object arg = args[i];
-            if (guestPackage.equals(arg)) {
-                args[i] = hostPackage;
+            String reported = arg instanceof String ? (String) arg : null;
+            String visible = packageForSystem(reported, guestPackage, hostPackage);
+            if (reported != null && !reported.equals(visible)) {
+                args[i] = visible;
                 replaced++;
             } else if (arg instanceof String[]) {
                 String[] values = (String[]) arg;
@@ -30,6 +32,15 @@ public final class SystemCallerIdentity {
             }
         }
         return replaced;
+    }
+
+    /** Host package when this process is a clone reporting its own name. */
+    public static String packageForSystem(String reported, String guestPackage, String hostPackage) {
+        if (reported == null || guestPackage == null || guestPackage.isEmpty()
+                || hostPackage == null || guestPackage.equals(hostPackage)) {
+            return reported;
+        }
+        return guestPackage.equals(reported) ? hostPackage : reported;
     }
 
     /** True when the argument is the package being queried, not the caller. */
