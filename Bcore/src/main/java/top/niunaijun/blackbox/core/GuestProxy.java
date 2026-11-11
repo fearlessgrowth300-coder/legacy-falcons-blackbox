@@ -576,6 +576,10 @@ public class GuestProxy {
             if (!candidate.isFile() || !name.startsWith("proxy_") || !name.endsWith(".json")) continue;
             String owner = name.substring("proxy_".length(), name.length() - ".json".length());
             if (!validPackage(owner)) continue;
+            // Play Store and Google services never own a listener: ShieldProxy only opens one
+            // for the assigned app. A saved Google row pointed at a port nobody listens on, so
+            // every Play connection was reset and sign-in went nowhere.
+            if (isGmsRoutePackage(owner)) continue;
             rows.add(readAssignment(userId, owner, candidate));
         }
         return rows;

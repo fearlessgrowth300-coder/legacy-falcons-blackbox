@@ -424,7 +424,11 @@ public class IActivityManagerProxy extends ClassInvocationStub {
 
             int userId = intent.getIntExtra("_B_|_UserId", -1);
             userId = userId == -1 ? BActivityThread.getUserId() : userId;
-            if (ServiceConnectionDelegate.isPlayOrGms(intent) && connection != null
+            ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, userId);
+            // Only reach for the phone's Play Store and Google services when this user has no
+            // copy of its own. With Google installed in the user, the phone's copy rejects the
+            // clone ("Unknown calling package") and refuses its private services.
+            if (resolveInfo == null && ServiceConnectionDelegate.isPlayOrGms(intent) && connection != null
                     && !ServiceConnectionDelegate.isAdIdBind(intent)) {
                 IServiceConnection proxy = ServiceConnectionDelegate.createProxy(connection, intent);
                 args[4] = proxy;
@@ -436,7 +440,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                         + " result=" + result);
                 return result;
             }
-            ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, userId);
 
             // Advertising-ID service usually resolves to the REAL system GMS (not the
             // container), which leaks a shared GAID. Wrap the connection with our delegate
@@ -460,7 +463,8 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     if (intent.getComponent() == null && resolveInfo != null) {
                         intent.setComponent(new ComponentName(resolveInfo.serviceInfo.packageName, resolveInfo.serviceInfo.name));
                     }
-                    IServiceConnection proxy = ServiceConnectionDelegate.createProxy(connection, intent);
+                    IServiceConnection proxy = ServiceConnectionDelegate.createProxy(connection, intent,
+                            resolveInfo == null && ServiceConnectionDelegate.isPlayOrGms(intent));
                     args[4] = proxy;
                     rememberServiceDispatcher(connection, proxy);
                 }

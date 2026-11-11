@@ -47,6 +47,12 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
     }
 
     public static IServiceConnection createProxy(IServiceConnection base, Intent intent) {
+        return createProxy(base, intent, isPlayOrGms(intent));
+    }
+
+    /** @param phoneGoogle the bind goes to the phone's own Play Store or Google services */
+    public static IServiceConnection createProxy(IServiceConnection base, Intent intent,
+                                                 boolean phoneGoogle) {
         final IBinder iBinder = base.asBinder();
         ServiceConnectionDelegate delegate = sServiceConnectDelegate.get(iBinder);
         if (delegate == null) {
@@ -62,7 +68,7 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
                 e.printStackTrace();
             }
             delegate = new ServiceConnectionDelegate(base, intent.getComponent(), isAdIdBind(intent),
-                    isPlayOrGms(intent));
+                    phoneGoogle);
             sServiceConnectDelegate.put(iBinder, delegate);
         }
         return delegate;
@@ -224,6 +230,7 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
          * after the gender step forever. Ask under the container's own package so Play answers.
          */
         private static android.os.Parcel asHostPackage(String descriptor, android.os.Parcel data) {
+            if ("android.os.IMessenger".equals(descriptor)) return pushRequestAsHost(data);
             if (descriptor == null || !descriptor.startsWith(
                     "com.google.android.play.core.integrity.protocol.")) {
                 return null;
@@ -244,6 +251,38 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
                 out.writeInt(1);
                 request.writeToParcel(out, 0);
                 if (data.dataSize() > tailPos) out.appendFrom(data, tailPos, data.dataSize() - tailPos);
+                out.setDataPosition(0);
+                return out;
+            } catch (Throwable t) {
+                if (out != null) out.recycle();
+                return null;
+            } finally {
+                data.setDataPosition(0);
+            }
+        }
+
+        /**
+         * Google's push registrar drops a request whose "pkg" is not owned by the calling UID
+         * ("GCM: Invalid caller") and never replies, so the clone's push token timed out every
+         * 30 seconds. Name the container's package so the request is answered.
+         */
+        private static android.os.Parcel pushRequestAsHost(android.os.Parcel data) {
+            android.os.Parcel out = null;
+            try {
+                data.setDataPosition(0);
+                data.enforceInterface("android.os.IMessenger");
+                if (data.readInt() == 0) return null;
+                android.os.Message message = android.os.Message.CREATOR.createFromParcel(data);
+                android.os.Bundle body = message.peekData();
+                String host = top.niunaijun.blackbox.BlackBoxCore.getHostPkg();
+                if (body == null || host == null) return null;
+                String guest = body.getString("pkg");
+                if (guest == null || guest.equals(host)) return null;
+                body.putString("pkg", host);
+                out = android.os.Parcel.obtain();
+                out.writeInterfaceToken("android.os.IMessenger");
+                out.writeInt(1);
+                message.writeToParcel(out, 0);
                 out.setDataPosition(0);
                 return out;
             } catch (Throwable t) {

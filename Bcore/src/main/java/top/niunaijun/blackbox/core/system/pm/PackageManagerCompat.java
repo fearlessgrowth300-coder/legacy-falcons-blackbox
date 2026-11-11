@@ -198,7 +198,13 @@ public class PackageManagerCompat {
                 && (flags & PackageManager.GET_SIGNING_CERTIFICATES) != 0;
         if (wantSignatures || wantSigning) {
             Signature[] certificates = guestCertificates(p);
-            if (certificates != null && certificates.length > 0) {
+            PackageInfo phone = phoneCopyWithSameSigner(p.packageName, certificates);
+            if (phone != null) {
+                // A rotated key shows as one signature plus a history. Listing every
+                // certificate made Play Store call Google services "invalid signature".
+                pi.signatures = phone.signatures;
+                if (BuildCompat.isPie()) pi.signingInfo = phone.signingInfo;
+            } else if (certificates != null && certificates.length > 0) {
                 pi.signatures = certificates;
                 SigningInfo signingInfo = signingInfoFor(certificates);
                 if (signingInfo != null) pi.signingInfo = signingInfo;
@@ -214,6 +220,22 @@ public class PackageManagerCompat {
     private static final String TAG = "PackageManagerCompat";
 
     /** Stored parse result, or the certificates read from the cloned APK file. */
+    /** The phone's own record of this package, when the clone is signed by the same key. */
+    private static PackageInfo phoneCopyWithSameSigner(String pkg, Signature[] certificates) {
+        if (certificates == null || certificates.length == 0) return null;
+        try {
+            int flags = PackageManager.GET_SIGNATURES
+                    | (BuildCompat.isPie() ? PackageManager.GET_SIGNING_CERTIFICATES : 0);
+            PackageInfo phone = BlackBoxCore.getPackageManager().getPackageInfo(pkg, flags);
+            if (phone.signatures == null || phone.signatures.length == 0) return null;
+            for (Signature mine : certificates) {
+                if (mine.equals(phone.signatures[0])) return phone;
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
     private static Signature[] guestCertificates(BPackage p) {
         Signature[] stored = p.mSignatures;
         if ((stored == null || stored.length == 0) && p.mSigningDetails != null) {
