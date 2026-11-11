@@ -424,6 +424,18 @@ public class IActivityManagerProxy extends ClassInvocationStub {
 
             int userId = intent.getIntExtra("_B_|_UserId", -1);
             userId = userId == -1 ? BActivityThread.getUserId() : userId;
+            if (ServiceConnectionDelegate.isPlayOrGms(intent) && connection != null
+                    && !ServiceConnectionDelegate.isAdIdBind(intent)) {
+                IServiceConnection proxy = ServiceConnectionDelegate.createProxy(connection, intent);
+                args[4] = proxy;
+                rememberServiceDispatcher(connection, proxy);
+                Object result = invokeBind(who, method, args);
+                Slog.i("GuestServiceBind", "bindService " + intent.getAction()
+                        + " cmp=" + intent.getComponent()
+                        + " pkg=" + intent.getPackage()
+                        + " result=" + result);
+                return result;
+            }
             ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, userId);
 
             // Advertising-ID service usually resolves to the REAL system GMS (not the

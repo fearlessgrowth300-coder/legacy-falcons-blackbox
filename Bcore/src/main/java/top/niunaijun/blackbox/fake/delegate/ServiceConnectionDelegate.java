@@ -18,11 +18,14 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
     private final IServiceConnection mConn;
     private final ComponentName mComponentName;
     private final boolean mIsAdId;
+    private final boolean mPlayOrGms;
 
-    private ServiceConnectionDelegate(IServiceConnection mConn, ComponentName targetComponent, boolean isAdId) {
+    private ServiceConnectionDelegate(IServiceConnection mConn, ComponentName targetComponent,
+                                      boolean isAdId, boolean playOrGms) {
         this.mConn = mConn;
         this.mComponentName = targetComponent;
         this.mIsAdId = isAdId;
+        this.mPlayOrGms = playOrGms;
     }
 
     /** GMS resolves the ad-id service to a generic Chimera class, so key off the ACTION
@@ -58,10 +61,28 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
             } catch (RemoteException e) {
                 e.printStackTrace();
             }
-            delegate = new ServiceConnectionDelegate(base, intent.getComponent(), isAdIdBind(intent));
+            delegate = new ServiceConnectionDelegate(base, intent.getComponent(), isAdIdBind(intent),
+                    isPlayOrGms(intent));
             sServiceConnectDelegate.put(iBinder, delegate);
         }
         return delegate;
+    }
+
+    /** Real Play Store and Play services. Their callbacks must reach the guest unchanged. */
+    public static boolean isPlayOrGms(Intent intent) {
+        if (intent == null) return false;
+        String pkg = intent.getPackage();
+        if (pkg == null && intent.getComponent() != null) {
+            pkg = intent.getComponent().getPackageName();
+        }
+        if ("com.android.vending".equals(pkg) || "com.google.android.gms".equals(pkg)
+                || "com.google.android.gsf".equals(pkg)) {
+            return true;
+        }
+        String action = intent.getAction();
+        return action != null && (action.startsWith("com.google.android.gms.")
+                || action.startsWith("com.android.vending.")
+                || action.contains("finsky"));
     }
 
     @Override
@@ -80,6 +101,14 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
         // service is not available" on a 3s retry loop and rendered "An unknown error occurred"
         // instead of the page. Copy everything after the service binder through verbatim so this
         // stays correct for API 36 and for any argument a later platform appends.
+        if (mPlayOrGms && !mIsAdId) {
+            // Play Integrity and Age Signals wait on this callback. Rewriting the parcel
+            // dropped fields and the guest never saw success or the real error.
+            data.setDataPosition(0);
+            top.niunaijun.blackbox.utils.Slog.i("GuestServiceBind",
+                    "callback code=" + code + " cmp=" + mComponentName);
+            return mConn.asBinder().transact(code, data, reply, flags);
+        }
         if (code == android.os.IBinder.FIRST_CALL_TRANSACTION
                 && android.os.Build.VERSION.SDK_INT >= 36) {
             android.os.Parcel forwarded = null;

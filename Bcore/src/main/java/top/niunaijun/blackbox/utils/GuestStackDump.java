@@ -33,9 +33,17 @@ public final class GuestStackDump {
     }
 
     public static void dump() {
-        Map<Thread, StackTraceElement[]> stacks = Thread.getAllStackTraces();
+        java.util.LinkedHashMap<Thread, StackTraceElement[]> stacks =
+                new java.util.LinkedHashMap<>(Thread.getAllStackTraces());
+        Thread current = Thread.currentThread();
+        stacks.putIfAbsent(current, current.getStackTrace());
+        try {
+            Thread main = android.os.Looper.getMainLooper().getThread();
+            stacks.putIfAbsent(main, main.getStackTrace());
+        } catch (Throwable ignored) {
+        }
         Slog.i(TAG, "guest stacks threads=" + stacks.size());
-        for (Map.Entry<Thread, StackTraceElement[]> entry : stacks.entrySet()) {
+        for (java.util.Map.Entry<Thread, StackTraceElement[]> entry : stacks.entrySet()) {
             Thread thread = entry.getKey();
             Slog.i(TAG, thread.getName() + " id=" + thread.getId() + " state=" + thread.getState());
             for (StackTraceElement frame : entry.getValue()) {
