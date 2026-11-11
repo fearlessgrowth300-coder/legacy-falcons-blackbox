@@ -538,19 +538,30 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         private static volatile String cachedSmsHolder;
         private static volatile boolean smsHolderCached;
 
+        // Telephony's lookup queries SMS receivers, which lands back in this hook on the same
+        // thread. Without this guard Facebook's main thread recursed until the stack overflowed,
+        // logged millions of lines and showed a white screen.
+        private static final ThreadLocal<Boolean> sLookingUpSmsHolder = new ThreadLocal<>();
+
         private static String defaultSmsHolder() {
             if (smsHolderCached) return cachedSmsHolder;
+            if (Boolean.TRUE.equals(sLookingUpSmsHolder.get())) return null;
             synchronized (QueryBroadcastReceivers.class) {
                 if (smsHolderCached) return cachedSmsHolder;
-                StringBuilder note = new StringBuilder();
-                String holder = smsFromTelephonyAsHostUser(note);
-                if (holder == null) holder = smsFromSettingAsHostUser(note);
-                if (holder != null) {
+                sLookingUpSmsHolder.set(Boolean.TRUE);
+                try {
+                    StringBuilder note = new StringBuilder();
+                    String holder = smsFromTelephonyAsHostUser(note);
+                    if (holder == null) holder = smsFromSettingAsHostUser(note);
+                    // Cache a miss too: the answer does not change while the clone runs, and
+                    // retrying on every receiver query is what flooded the log.
                     cachedSmsHolder = holder;
                     smsHolderCached = true;
+                    lastSmsNote = note.toString();
+                    return holder;
+                } finally {
+                    sLookingUpSmsHolder.remove();
                 }
-                lastSmsNote = note.toString();
-                return holder;
             }
         }
 
