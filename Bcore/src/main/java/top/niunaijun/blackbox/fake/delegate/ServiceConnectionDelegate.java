@@ -217,6 +217,43 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
             this.label = label;
         }
 
+        /**
+         * Play Integrity checks that the package named in the request belongs to the calling
+         * UID. A clone runs under the container's UID, so Play threw "Different UID from the
+         * calling app" inside a oneway call and never answered. Facebook waited on that token
+         * after the gender step forever. Ask under the container's own package so Play answers.
+         */
+        private static android.os.Parcel asHostPackage(String descriptor, android.os.Parcel data) {
+            if (descriptor == null || !descriptor.startsWith(
+                    "com.google.android.play.core.integrity.protocol.")) {
+                return null;
+            }
+            android.os.Parcel out = null;
+            try {
+                data.setDataPosition(0);
+                data.enforceInterface(descriptor);
+                if (data.readInt() == 0) return null;
+                android.os.Bundle request = android.os.Bundle.CREATOR.createFromParcel(data);
+                String guest = request.getString("package.name");
+                String host = top.niunaijun.blackbox.BlackBoxCore.getHostPkg();
+                if (guest == null || host == null || guest.equals(host)) return null;
+                request.putString("package.name", host);
+                int tailPos = data.dataPosition();
+                out = android.os.Parcel.obtain();
+                out.writeInterfaceToken(descriptor);
+                out.writeInt(1);
+                request.writeToParcel(out, 0);
+                if (data.dataSize() > tailPos) out.appendFrom(data, tailPos, data.dataSize() - tailPos);
+                out.setDataPosition(0);
+                return out;
+            } catch (Throwable t) {
+                if (out != null) out.recycle();
+                return null;
+            } finally {
+                data.setDataPosition(0);
+            }
+        }
+
         @Override
         public String getInterfaceDescriptor() {
             try {
@@ -260,15 +297,19 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
             long start = android.os.SystemClock.uptimeMillis();
             boolean ok = false;
             String error = null;
+            android.os.Parcel rewritten = null;
             try {
                 data.setDataPosition(0);
-                ok = real.transact(code, data, reply, flags);
+                rewritten = asHostPackage(descriptor, data);
+                ok = real.transact(code, rewritten != null ? rewritten : data, reply, flags);
                 return ok;
             } catch (RemoteException | RuntimeException e) {
                 error = e.getClass().getSimpleName() + ": " + e.getMessage();
                 throw e;
             } finally {
+                if (rewritten != null) rewritten.recycle();
                 top.niunaijun.blackbox.utils.Slog.i("GmsCallTrace", label + " " + descriptor
+                        + (rewritten != null ? " asHost" : "")
                         + " code=" + code + ((flags & FLAG_ONEWAY) != 0 ? " oneway" : "")
                         + " ok=" + ok + " ms=" + (android.os.SystemClock.uptimeMillis() - start)
                         + (error == null ? "" : " error=" + error));
