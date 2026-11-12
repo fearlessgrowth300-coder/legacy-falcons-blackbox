@@ -18,11 +18,14 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
     private final IServiceConnection mConn;
     private final ComponentName mComponentName;
     private final boolean mIsAdId;
+    private final boolean mPlayOrGms;
 
-    private ServiceConnectionDelegate(IServiceConnection mConn, ComponentName targetComponent, boolean isAdId) {
+    private ServiceConnectionDelegate(IServiceConnection mConn, ComponentName targetComponent,
+                                      boolean isAdId, boolean playOrGms) {
         this.mConn = mConn;
         this.mComponentName = targetComponent;
         this.mIsAdId = isAdId;
+        this.mPlayOrGms = playOrGms;
     }
 
     /** GMS resolves the ad-id service to a generic Chimera class, so key off the ACTION
@@ -44,6 +47,12 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
     }
 
     public static IServiceConnection createProxy(IServiceConnection base, Intent intent) {
+        return createProxy(base, intent, isPlayOrGms(intent));
+    }
+
+    /** @param phoneGoogle the bind goes to the phone's own Play Store or Google services */
+    public static IServiceConnection createProxy(IServiceConnection base, Intent intent,
+                                                 boolean phoneGoogle) {
         final IBinder iBinder = base.asBinder();
         ServiceConnectionDelegate delegate = sServiceConnectDelegate.get(iBinder);
         if (delegate == null) {
@@ -58,10 +67,28 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
             } catch (RemoteException e) {
                 e.printStackTrace();
             }
-            delegate = new ServiceConnectionDelegate(base, intent.getComponent(), isAdIdBind(intent));
+            delegate = new ServiceConnectionDelegate(base, intent.getComponent(), isAdIdBind(intent),
+                    phoneGoogle);
             sServiceConnectDelegate.put(iBinder, delegate);
         }
         return delegate;
+    }
+
+    /** Real Play Store and Play services. Their callbacks must reach the guest unchanged. */
+    public static boolean isPlayOrGms(Intent intent) {
+        if (intent == null) return false;
+        String pkg = intent.getPackage();
+        if (pkg == null && intent.getComponent() != null) {
+            pkg = intent.getComponent().getPackageName();
+        }
+        if ("com.android.vending".equals(pkg) || "com.google.android.gms".equals(pkg)
+                || "com.google.android.gsf".equals(pkg)) {
+            return true;
+        }
+        String action = intent.getAction();
+        return action != null && (action.startsWith("com.google.android.gms.")
+                || action.startsWith("com.android.vending.")
+                || action.contains("finsky"));
     }
 
     @Override
@@ -80,6 +107,35 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
         // service is not available" on a 3s retry loop and rendered "An unknown error occurred"
         // instead of the page. Copy everything after the service binder through verbatim so this
         // stays correct for API 36 and for any argument a later platform appends.
+        if (mPlayOrGms && !mIsAdId) {
+            // Play Integrity and Age Signals wait on this callback. Rewriting the parcel
+            // dropped fields and the guest never saw success or the real error.
+            data.setDataPosition(0);
+            top.niunaijun.blackbox.utils.Slog.i("GuestServiceBind",
+                    "callback code=" + code + " cmp=" + mComponentName);
+            if (code == android.os.IBinder.FIRST_CALL_TRANSACTION) {
+                android.os.Parcel traced = null;
+                try {
+                    data.enforceInterface("android.app.IServiceConnection");
+                    ComponentName name = data.readTypedObject(ComponentName.CREATOR);
+                    IBinder service = data.readStrongBinder();
+                    int tailPos = data.dataPosition();
+                    int tailLen = data.dataSize() - tailPos;
+                    traced = android.os.Parcel.obtain();
+                    traced.writeInterfaceToken("android.app.IServiceConnection");
+                    traced.writeTypedObject(name, 0);
+                    traced.writeStrongBinder(service == null ? null
+                            : new GmsCallTrace(service, String.valueOf(name)));
+                    if (tailLen > 0) traced.appendFrom(data, tailPos, tailLen);
+                    return mConn.asBinder().transact(code, traced, reply, flags);
+                } catch (Throwable t) {
+                    data.setDataPosition(0);
+                } finally {
+                    if (traced != null) traced.recycle();
+                }
+            }
+            return mConn.asBinder().transact(code, data, reply, flags);
+        }
         if (code == android.os.IBinder.FIRST_CALL_TRANSACTION
                 && android.os.Build.VERSION.SDK_INT >= 36) {
             android.os.Parcel forwarded = null;
@@ -152,6 +208,152 @@ public class ServiceConnectionDelegate extends IServiceConnection.Stub {
         } catch (Throwable ignored) {
         }
         return real;
+    }
+
+    /**
+     * Diagnostic: logs every call a guest makes on a Play or GMS service binder, so a sign-up
+     * step that waits forever shows which Google call it made last.
+     */
+    private static class GmsCallTrace extends android.os.Binder {
+        private final IBinder real;
+        private final String label;
+
+        GmsCallTrace(IBinder real, String label) {
+            this.real = real;
+            this.label = label;
+        }
+
+        /**
+         * Play Integrity checks that the package named in the request belongs to the calling
+         * UID. A clone runs under the container's UID, so Play threw "Different UID from the
+         * calling app" inside a oneway call and never answered. Facebook waited on that token
+         * after the gender step forever. Ask under the container's own package so Play answers.
+         */
+        private static android.os.Parcel asHostPackage(String descriptor, android.os.Parcel data) {
+            if ("android.os.IMessenger".equals(descriptor)) return pushRequestAsHost(data);
+            if (descriptor == null || !descriptor.startsWith(
+                    "com.google.android.play.core.integrity.protocol.")) {
+                return null;
+            }
+            android.os.Parcel out = null;
+            try {
+                data.setDataPosition(0);
+                data.enforceInterface(descriptor);
+                if (data.readInt() == 0) return null;
+                android.os.Bundle request = android.os.Bundle.CREATOR.createFromParcel(data);
+                String guest = request.getString("package.name");
+                String host = top.niunaijun.blackbox.BlackBoxCore.getHostPkg();
+                if (guest == null || host == null || guest.equals(host)) return null;
+                request.putString("package.name", host);
+                int tailPos = data.dataPosition();
+                out = android.os.Parcel.obtain();
+                out.writeInterfaceToken(descriptor);
+                out.writeInt(1);
+                request.writeToParcel(out, 0);
+                if (data.dataSize() > tailPos) out.appendFrom(data, tailPos, data.dataSize() - tailPos);
+                out.setDataPosition(0);
+                return out;
+            } catch (Throwable t) {
+                if (out != null) out.recycle();
+                return null;
+            } finally {
+                data.setDataPosition(0);
+            }
+        }
+
+        /**
+         * Google's push registrar drops a request whose "pkg" is not owned by the calling UID
+         * ("GCM: Invalid caller") and never replies, so the clone's push token timed out every
+         * 30 seconds. Name the container's package so the request is answered.
+         */
+        private static android.os.Parcel pushRequestAsHost(android.os.Parcel data) {
+            android.os.Parcel out = null;
+            try {
+                data.setDataPosition(0);
+                data.enforceInterface("android.os.IMessenger");
+                if (data.readInt() == 0) return null;
+                android.os.Message message = android.os.Message.CREATOR.createFromParcel(data);
+                android.os.Bundle body = message.peekData();
+                String host = top.niunaijun.blackbox.BlackBoxCore.getHostPkg();
+                if (body == null || host == null) return null;
+                String guest = body.getString("pkg");
+                if (guest == null || guest.equals(host)) return null;
+                body.putString("pkg", host);
+                out = android.os.Parcel.obtain();
+                out.writeInterfaceToken("android.os.IMessenger");
+                out.writeInt(1);
+                message.writeToParcel(out, 0);
+                out.setDataPosition(0);
+                return out;
+            } catch (Throwable t) {
+                if (out != null) out.recycle();
+                return null;
+            } finally {
+                data.setDataPosition(0);
+            }
+        }
+
+        @Override
+        public String getInterfaceDescriptor() {
+            try {
+                return real.getInterfaceDescriptor();
+            } catch (RemoteException e) {
+                return null;
+            }
+        }
+
+        @Override
+        public boolean isBinderAlive() {
+            return real.isBinderAlive();
+        }
+
+        @Override
+        public boolean pingBinder() {
+            return real.pingBinder();
+        }
+
+        @Override
+        public void linkToDeath(DeathRecipient recipient, int flags) {
+            try {
+                real.linkToDeath(recipient, flags);
+            } catch (RemoteException ignored) {
+            }
+        }
+
+        @Override
+        public boolean unlinkToDeath(DeathRecipient recipient, int flags) {
+            return real.unlinkToDeath(recipient, flags);
+        }
+
+        @Override
+        protected boolean onTransact(int code, android.os.Parcel data, android.os.Parcel reply,
+                                     int flags) throws RemoteException {
+            String descriptor = null;
+            try {
+                descriptor = real.getInterfaceDescriptor();
+            } catch (Throwable ignored) {
+            }
+            long start = android.os.SystemClock.uptimeMillis();
+            boolean ok = false;
+            String error = null;
+            android.os.Parcel rewritten = null;
+            try {
+                data.setDataPosition(0);
+                rewritten = asHostPackage(descriptor, data);
+                ok = real.transact(code, rewritten != null ? rewritten : data, reply, flags);
+                return ok;
+            } catch (RemoteException | RuntimeException e) {
+                error = e.getClass().getSimpleName() + ": " + e.getMessage();
+                throw e;
+            } finally {
+                if (rewritten != null) rewritten.recycle();
+                top.niunaijun.blackbox.utils.Slog.i("GmsCallTrace", label + " " + descriptor
+                        + (rewritten != null ? " asHost" : "")
+                        + " code=" + code + ((flags & FLAG_ONEWAY) != 0 ? " oneway" : "")
+                        + " ok=" + ok + " ms=" + (android.os.SystemClock.uptimeMillis() - start)
+                        + (error == null ? "" : " error=" + error));
+            }
+        }
     }
 
     /** Minimal IAdvertisingIdService (com.google.android.gms.ads.identifier). */

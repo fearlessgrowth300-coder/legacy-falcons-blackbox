@@ -36,6 +36,8 @@
 #include <android/log.h>
 #include "./xdl.h"
 #include "Dobby/dobby.h"
+#include "../HookReentry.h"
+#include "../RuntimePathPolicy.h"
 
 #define LOG_TAG "ProxyRedirect"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -441,7 +443,17 @@ static bool writeFrom(int fd, RelayBuffer *buffer) {
     return count < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK);
 }
 
-static void relayBidirectional(int client, int upstream, uint64_t generation) {
+static int openUpstream(const ProxyTarget &target, const ProxySnapshot &proxy);
+
+// A mobile gateway can accept the SOCKS CONNECT and then hang up before the destination sends a
+// single byte. Facebook's sign-up actions then fail with readEOF and its button spins forever.
+// Until the first upstream byte arrives nothing has been answered, so dial again and resend the
+// bytes the app already wrote. Capped so a large upload is never silently replayed.
+static const size_t kReplayLimit = 16384;
+static const int kReplayRedials = 2;
+
+static void relayBidirectional(int client, int upstream, uint64_t generation,
+                               const ProxyTarget &target, const ProxySnapshot &proxy) {
     int clientFlags = fcntl(client, F_GETFL, 0);
     int upstreamFlags = fcntl(upstream, F_GETFL, 0);
     if (clientFlags >= 0) fcntl(client, F_SETFL, clientFlags | O_NONBLOCK);
@@ -452,6 +464,10 @@ static void relayBidirectional(int client, int upstream, uint64_t generation) {
 
     RelayBuffer clientToProxy;
     RelayBuffer proxyToClient;
+    std::string sentBeforeReply;
+    bool answered = false;
+    bool replayable = true;
+    int redials = 0;
     bool healthy = true;
     while (healthy) {
         if (g_routeGeneration.load(std::memory_order_acquire) != generation) break;
@@ -468,12 +484,51 @@ static void relayBidirectional(int client, int upstream, uint64_t generation) {
         do { ready = poll(fds, 2, 30000); } while (ready < 0 && errno == EINTR);
         if (ready < 0) break;
         if (ready > 0) {
+            bool upstreamBroken = (fds[1].revents & (POLLERR | POLLNVAL)) != 0;
             if (fds[0].revents & (POLLERR | POLLNVAL)) healthy = false;
-            if (fds[1].revents & (POLLERR | POLLNVAL)) healthy = false;
             if (healthy && (fds[0].revents & POLLOUT)) healthy = writeFrom(client, &proxyToClient);
-            if (healthy && (fds[1].revents & POLLOUT)) healthy = writeFrom(upstream, &clientToProxy);
+            if (healthy && !upstreamBroken && (fds[1].revents & POLLOUT)) {
+                size_t before = clientToProxy.begin;
+                const char *start = clientToProxy.bytes.data() + before;
+                size_t pending = clientToProxy.end - before;
+                upstreamBroken = !writeFrom(upstream, &clientToProxy);
+                if (!upstreamBroken && !answered && replayable) {
+                    size_t written = clientToProxy.end == 0 && clientToProxy.begin == 0
+                            ? pending : clientToProxy.begin - before;
+                    if (sentBeforeReply.size() + written > kReplayLimit) replayable = false;
+                    else sentBeforeReply.append(start, written);
+                }
+            }
             if (healthy && (fds[0].revents & (POLLIN | POLLHUP))) healthy = readInto(client, &clientToProxy);
-            if (healthy && (fds[1].revents & (POLLIN | POLLHUP))) healthy = readInto(upstream, &proxyToClient);
+            if (healthy && !upstreamBroken && (fds[1].revents & (POLLIN | POLLHUP))) {
+                size_t had = proxyToClient.end;
+                upstreamBroken = !readInto(upstream, &proxyToClient);
+                if (proxyToClient.end != had) answered = true;
+            }
+            bool hungUpSilently = !answered && (upstreamBroken || proxyToClient.eof);
+            if (healthy && hungUpSilently && replayable && redials < kReplayRedials
+                    && g_routeGeneration.load(std::memory_order_acquire) == generation) {
+                ++redials;
+                close(upstream);
+                upstream = openUpstream(target, proxy);
+                if (upstream < 0
+                        || !writeAll(upstream, sentBeforeReply.data(), sentBeforeReply.size())) {
+                    healthy = false;
+                } else {
+                    int flags = fcntl(upstream, F_GETFL, 0);
+                    if (flags >= 0) fcntl(upstream, F_SETFL, flags | O_NONBLOCK);
+                    timeval none{0, 0};
+                    setsockopt(upstream, SOL_SOCKET, SO_RCVTIMEO, &none, sizeof(none));
+                    setsockopt(upstream, SOL_SOCKET, SO_SNDTIMEO, &none, sizeof(none));
+                    proxyToClient.eof = false;
+                    if (clientToProxy.shutdownSent) {
+                        clientToProxy.shutdownSent = false;
+                    }
+                    LOGD("proxy hung up before replying; redialed (#%d)", redials);
+                }
+                continue;
+            }
+            if (upstreamBroken) healthy = false;
         }
 
         if (clientToProxy.eof && !hasData(clientToProxy) && !clientToProxy.shutdownSent) {
@@ -501,23 +556,8 @@ static void relayWorker(int listener, ProxyTarget target, ProxySnapshot proxy) {
         return;
     }
 
-    int upstream = -1;
-    bool ready = false;
-    // Mobile proxy gateways can return a transient 5xx or close one CONNECT while rotating their
-    // upstream carrier. Retry on the SAME encrypted assignment; never fall back to the phone.
-    for (int attempt = 0; attempt < 3 && !ready; ++attempt) {
-        if (g_routeGeneration.load(std::memory_order_acquire) != proxy.generation) break;
-        upstream = connectUpstream(proxy);
-        bool retryable = true;
-        ready = upstream >= 0 && doHandshake(upstream, target, proxy, &retryable);
-        if (!ready) {
-            if (upstream >= 0) resetAndClose(upstream);
-            upstream = -1;
-            if (!retryable) break;
-            if (attempt < 2) usleep((useconds_t) ((attempt + 1) * 150000));
-        }
-    }
-    if (!ready) {
+    int upstream = openUpstream(target, proxy);
+    if (upstream < 0) {
         resetAndClose(client);
         int failure = g_relayFailures.fetch_add(1) + 1;
         if (failure <= 8) LOGD("async proxy relay failed (#%d)", failure);
@@ -526,7 +566,22 @@ static void relayWorker(int listener, ProxyTarget target, ProxySnapshot proxy) {
 
     int started = g_relayStarts.fetch_add(1) + 1;
     if (started <= 5) LOGD("async proxy relay established (#%d)", started);
-    relayBidirectional(client, upstream, proxy.generation);
+    relayBidirectional(client, upstream, proxy.generation, target, proxy);
+}
+
+static int openUpstream(const ProxyTarget &target, const ProxySnapshot &proxy) {
+    // Mobile proxy gateways can return a transient 5xx or close one CONNECT while rotating their
+    // upstream carrier. Retry on the SAME encrypted assignment; never fall back to the phone.
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        if (g_routeGeneration.load(std::memory_order_acquire) != proxy.generation) break;
+        int upstream = connectUpstream(proxy);
+        bool retryable = true;
+        if (upstream >= 0 && doHandshake(upstream, target, proxy, &retryable)) return upstream;
+        if (upstream >= 0) resetAndClose(upstream);
+        if (!retryable) break;
+        if (attempt < 2) usleep((useconds_t) ((attempt + 1) * 150000));
+    }
+    return -1;
 }
 
 struct RelayTask {
@@ -634,7 +689,95 @@ static int startLoopbackRelay(int fd, const sockaddr *destination,
     return result;
 }
 
+// Tag 1 is the network hooks. Do not use thread_local here: the syscall hook
+// runs on jemalloc's futex path, and emulated TLS allocates on first touch.
+using ProxyGuard = HookReentry<1>;
+
+static ssize_t (*orig_sendto)(int, const void *, size_t, int, const sockaddr *, socklen_t) = nullptr;
+static ssize_t (*orig_sendmsg)(int, const struct msghdr *, int) = nullptr;
+static long (*orig_syscall)(long, long, long, long, long, long, long) = nullptr;
+
+#if defined(__aarch64__)
+static const long NR_CONNECT = 203;
+#elif defined(__arm__)
+static const long NR_CONNECT = 283;
+#elif defined(__x86_64__)
+static const long NR_CONNECT = 42;
+#else
+static const long NR_CONNECT = 203;
+#endif
+
+#if defined(__aarch64__)
+static const int kSyscallArch = 0;
+#elif defined(__arm__)
+static const int kSyscallArch = 1;
+#elif defined(__x86_64__)
+static const int kSyscallArch = 2;
+#else
+static const int kSyscallArch = 0;
+#endif
+
+static bool nonLoopbackInternet(const sockaddr *addr) {
+    if (!addr) return false;
+    if (addr->sa_family != AF_INET && addr->sa_family != AF_INET6) return false;
+    return !isLoopback(addr);
+}
+
+static ssize_t my_sendto(int fd, const void *buf, size_t len, int flags,
+                         const sockaddr *addr, socklen_t addrlen) {
+    bool enabled;
+    { std::lock_guard<std::mutex> lk(g_lock); enabled = g_enabled; }
+    if (enabled && ProxyGuard::depth() == 0 && nonLoopbackInternet(addr)) {
+        errno = ECONNREFUSED;
+        return -1;
+    }
+    return orig_sendto ? orig_sendto(fd, buf, len, flags, addr, addrlen) : -1;
+}
+
+static ssize_t my_sendmsg(int fd, const struct msghdr *msg, int flags) {
+    bool enabled;
+    { std::lock_guard<std::mutex> lk(g_lock); enabled = g_enabled; }
+    const sockaddr *addr = msg ? (const sockaddr *) msg->msg_name : nullptr;
+    if (enabled && ProxyGuard::depth() == 0 && nonLoopbackInternet(addr)) {
+        errno = ECONNREFUSED;
+        return -1;
+    }
+    return orig_sendmsg ? orig_sendmsg(fd, msg, flags) : -1;
+}
+
+static int my_connect(int fd, const sockaddr *addr, socklen_t len);
+
+static long my_syscall(long number, long a1, long a2, long a3, long a4, long a5, long a6) {
+    // Fast path is every syscall except connect, including futex, memfd_create,
+    // and mmap. No thread_local, lock, log, JNI, or allocation on this path.
+    if (!orig_syscall) {
+        errno = ENOSYS;
+        return -1;
+    }
+    // openat-family syscalls carry a path. Collapse any /dev/ashmem<id> onto
+    // /dev/ashmem before the kernel sees it. No lock and no allocation.
+    if (syscall_is_openat_family(number, kSyscallArch)) {
+        const char *fixed = canonical_ashmem_path((const char *) a2);
+        if (fixed != (const char *) a2) a2 = (long) fixed;
+        return orig_syscall(number, a1, a2, a3, a4, a5, a6);
+    }
+    if (syscall_number_is_fast_path(number, NR_CONNECT) || ProxyGuard::depth() > 0) {
+        return orig_syscall(number, a1, a2, a3, a4, a5, a6);
+    }
+    ProxyGuard::Guard guard;
+    bool enabled;
+    {
+        std::lock_guard<std::mutex> lk(g_lock);
+        enabled = g_enabled;
+    }
+    if (!enabled) {
+        return orig_syscall(number, a1, a2, a3, a4, a5, a6);
+    }
+    return my_connect((int) a1, (const sockaddr *) a2, (socklen_t) a3);
+}
+
 static int my_connect(int fd, const sockaddr *addr, socklen_t len) {
+    ProxyGuard::Guard guard;
     ProxySnapshot proxy;
     bool enabled;
     {
@@ -790,6 +933,15 @@ static bool install_connect_hook() {
         if (gnc && DobbyHook(gnc, (void *) my_android_getaddrinfofornetcontext,
                             (void **) &orig_android_getaddrinfofornetcontext) == 0)
             LOGD("android_getaddrinfofornetcontext hook installed (remote DNS)");
+        void *st = xdl_dsym(h, "sendto", nullptr);
+        if (!st || DobbyHook(st, (void *) my_sendto, (void **) &orig_sendto) != 0)
+            LOGD("sendto hook unavailable; UDP stays fail-closed at socket()");
+        void *sm = xdl_dsym(h, "sendmsg", nullptr);
+        if (!sm || DobbyHook(sm, (void *) my_sendmsg, (void **) &orig_sendmsg) != 0)
+            LOGD("sendmsg hook unavailable; UDP stays fail-closed at socket()");
+        void *sc = xdl_dsym(h, "syscall", nullptr);
+        if (!sc || DobbyHook(sc, (void *) my_syscall, (void **) &orig_syscall) != 0)
+            LOGD("syscall hook unavailable; raw connect is not redirected");
         xdl_close(h);
     }
     return g_installed && orig_connect && orig_getaddrinfo;

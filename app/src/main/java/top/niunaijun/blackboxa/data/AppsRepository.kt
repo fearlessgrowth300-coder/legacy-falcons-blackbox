@@ -172,7 +172,11 @@ class AppsRepository {
         }
     }
 
-    fun getVmInstallList(userId: Int, appsLiveData: MutableLiveData<List<AppInfo>>) {
+    fun getVmInstallList(
+            userId: Int,
+            appsLiveData: MutableLiveData<List<AppInfo>>,
+            loadState: MutableLiveData<top.niunaijun.blackbox.core.AppListLoad.Outcome>? = null
+    ) {
         try {
             
             if (MemoryManager.isMemoryCritical()) {
@@ -194,40 +198,25 @@ class AppsRepository {
             val sortList = sortListData?.split(",")
 
             
+            loadState?.postValue(top.niunaijun.blackbox.core.AppListLoad.loading())
             var applicationList: List<ApplicationInfo>? = null
-            var retryCount = 0
-            val maxRetries = 3
-
-            while (applicationList == null && retryCount < maxRetries) {
+            for (attempt in 1..top.niunaijun.blackbox.core.AppListLoad.MAX_ATTEMPTS) {
+                applicationList = fetchInstalledApplications(blackBoxCore, userId)
+                if (applicationList != null) break
+                Log.w(TAG, "getVmInstallList: attempt $attempt lost the workspace service")
                 try {
-                    applicationList = blackBoxCore.getInstalledApplications(0, userId)
-                    if (applicationList == null) {
-                        Log.w(
-                                TAG,
-                                "getVmInstallList: Attempt ${retryCount + 1} returned null, retrying..."
-                        )
-                        retryCount++
-                        Thread.sleep(100) 
-                    }
-                } catch (e: Exception) {
-                    Log.e(
-                            TAG,
-                            "getVmInstallList: Error getting applications on attempt ${retryCount + 1}: ${e.message}"
-                    )
-                    retryCount++
-                    if (retryCount < maxRetries) {
-                        Thread.sleep(200) 
-                    }
+                    blackBoxCore.rebindWorkspaceServices()
+                } catch (error: Throwable) {
+                    Log.w(TAG, "rebind failed: ${error.message}")
+                }
+                if (attempt < top.niunaijun.blackbox.core.AppListLoad.MAX_ATTEMPTS) {
+                    Thread.sleep(400L * attempt)
                 }
             }
 
-            
             if (applicationList == null) {
-                Log.e(
-                        TAG,
-                        "getVmInstallList: applicationList is null for userId=$userId after $maxRetries attempts"
-                )
-                appsLiveData.postValue(emptyList())
+                Log.e(TAG, "getVmInstallList: workspace service unavailable for userId=$userId")
+                loadState?.postValue(top.niunaijun.blackbox.core.AppListLoad.classify(-1))
                 return
             }
 
@@ -341,6 +330,7 @@ class AppsRepository {
 
             
             try {
+                loadState?.postValue(top.niunaijun.blackbox.core.AppListLoad.classify(appInfoList.size))
                 appsLiveData.postValue(appInfoList)
             } catch (e: Exception) {
                 Log.e(TAG, "getVmInstallList: Error posting to LiveData: ${e.message}")
@@ -366,10 +356,31 @@ class AppsRepository {
         } catch (e: Exception) {
             Log.e(TAG, "Error in getVmInstallList: ${e.message}")
             try {
-                appsLiveData.postValue(emptyList())
+                loadState?.postValue(top.niunaijun.blackbox.core.AppListLoad.classify(-1))
             } catch (e2: Exception) {
-                Log.e(TAG, "getVmInstallList: Error posting empty list: ${e2.message}")
+                Log.e(TAG, "getVmInstallList: Error posting load failure: ${e2.message}")
             }
+        }
+    }
+
+    private fun fetchInstalledApplications(
+            blackBoxCore: BlackBoxCore,
+            userId: Int
+    ): List<ApplicationInfo>? {
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        return try {
+            val future = executor.submit<List<ApplicationInfo>?> {
+                blackBoxCore.getInstalledApplications(0, userId)
+            }
+            future.get(
+                    top.niunaijun.blackbox.core.AppListLoad.TIMEOUT_MS,
+                    java.util.concurrent.TimeUnit.MILLISECONDS
+            )
+        } catch (error: Exception) {
+            Log.e(TAG, "Installed-app query timed out or failed: ${error.message}")
+            null
+        } finally {
+            executor.shutdownNow()
         }
     }
 
@@ -445,7 +456,7 @@ class AppsRepository {
         resultLiveData: MutableLiveData<String>
     ) {
         try {
-            val blockReason = BlackBoxCore.get().getLaunchBlockReason(userId)
+            val blockReason = BlackBoxCore.get().getLaunchBlockReason(userId, packageName)
             if (!blockReason.isNullOrBlank()) {
                 resultLiveData.postValue(blockReason)
                 return

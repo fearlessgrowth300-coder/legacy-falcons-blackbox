@@ -18,7 +18,8 @@ import java.util.Set;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.core.system.BProcessManagerService;
-import top.niunaijun.blackbox.core.system.user.BUserHandle;
+import top.niunaijun.blackbox.core.system.user.BUserInfo;
+import top.niunaijun.blackbox.core.system.user.BUserManagerService;
 import top.niunaijun.blackbox.entity.pm.InstallOption;
 import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.Slog;
@@ -155,19 +156,9 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
                 mAppIds.putAll(hashMap);
             }
         } catch (Exception e) {
-            
-            try {
-                
-                BEnvironment.getUidConf().delete();
-            } catch (Exception deleteException) {
-                
-            }
-            
-            
-            mCurrUid = 0;
-            synchronized (mAppIds) {
-                mAppIds.clear();
-            }
+            // Leave uid.conf on disk. Deleting it on a parse error remaps every
+            // package the next time an id is assigned.
+            Slog.e(TAG, "uid.conf could not be read; keeping the file and the previous ids: " + e);
         } finally {
             parcel.recycle();
         }
@@ -178,34 +169,118 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
             File appRootDir = BEnvironment.getAppRootDir();
             FileUtils.mkdirs(appRootDir);
             File[] apps = appRootDir.listFiles();
+            if (apps == null) {
+                Slog.e(TAG, "package directory could not be listed: " + appRootDir);
+                return;
+            }
+            int loaded = 0;
+            int skipped = 0;
             for (File app : apps) {
                 if (!app.isDirectory()) {
                     continue;
                 }
-                scanPackage(app.getName());
+                if (scanPackage(app.getName())) loaded++;
+                else skipped++;
+            }
+            Slog.w(TAG, "package scan finished: directories=" + apps.length
+                    + " loaded=" + loaded + " skipped=" + skipped
+                    + " inMemory=" + mPackages.size());
+        }
+    }
+
+    /**
+     * Names of package directories only. Does not open or walk the files inside them.
+     * The installed-package snapshot is taken under the lock; the disk walk is not.
+     */
+    void logOrphanedData() {
+        Map<String, Set<Integer>> installed = new HashMap<>();
+        synchronized (mPackages) {
+            for (Map.Entry<String, BPackageSettings> entry : mPackages.entrySet()) {
+                BPackageSettings settings = entry.getValue();
+                if (settings == null) continue;
+                Set<Integer> users = new HashSet<>();
+                for (Integer userId : settings.userState.keySet()) {
+                    if (userId != null && settings.getInstalled(userId)) users.add(userId);
+                }
+                installed.put(entry.getKey(), users);
             }
         }
-    }
-
-    public void scanPackage(String packageName) {
-        synchronized (mPackages) {
-            updatePackageLP(BEnvironment.getAppDir(packageName));
+        int orphans = 0;
+        orphans += logPackageTree(installed, new File(BEnvironment.getVirtualRoot(), "data/user"), false, "data/user");
+        orphans += logPackageTree(installed, new File(BEnvironment.getVirtualRoot(), "data/user_de"), false, "data/user_de");
+        File externalUsers = BEnvironment.getExternalUserDir(0).getParentFile();
+        orphans += logPackageTree(installed, externalUsers, true, "external");
+        Slog.w(TAG, "orphaned package data directories=" + orphans);
+        for (BUserInfo user : BUserManagerService.get().getUsers()) {
+            File internal = BEnvironment.getUserDir(user.id);
+            File deviceProtected = new File(BEnvironment.getVirtualRoot(), "data/user_de/" + user.id);
+            Slog.w(TAG, "user data present user=" + user.id
+                    + " data/user=" + internal.isDirectory()
+                    + " user_de=" + deviceProtected.isDirectory());
         }
     }
 
-    private void updatePackageLP(File app) {
+    private int logPackageTree(Map<String, Set<Integer>> installed, File userRoot,
+                               boolean external, String place) {
+        File[] users = userRoot == null ? null : userRoot.listFiles();
+        if (users == null) {
+            Slog.w(TAG, "data root absent: " + place + " path=" + userRoot);
+            return 0;
+        }
+        int orphans = 0;
+        for (File userDir : users) {
+            if (!userDir.isDirectory()) continue;
+            int userId;
+            try {
+                userId = Integer.parseInt(userDir.getName());
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            File packageRoot = external ? new File(userDir, "Android/data") : userDir;
+            String[] packages = packageRoot.list();
+            if (packages == null) continue;
+            for (String packageName : packages) {
+                if (packageName.indexOf('.') < 0) continue;
+                File packageDir = new File(packageRoot, packageName);
+                if (!packageDir.isDirectory()) continue;
+                Set<Integer> usersWithPackage = installed.get(packageName);
+                if (usersWithPackage != null && usersWithPackage.contains(userId)) continue;
+                orphans++;
+                Slog.w(TAG, "orphaned data user=" + userId + " pkg=" + packageName
+                        + " place=" + place + " path=" + packageDir.getAbsolutePath());
+            }
+        }
+        return orphans;
+    }
+
+    public boolean scanPackage(String packageName) {
+        synchronized (mPackages) {
+            return updatePackageLP(BEnvironment.getAppDir(packageName));
+        }
+    }
+
+    private boolean updatePackageLP(File app) {
         String packageName = app.getName();
         Parcel packageSettingsIn = Parcel.obtain();
         File packageConf = BEnvironment.getPackageConf(packageName);
         try {
             byte[] bPackageSettingsBytes = FileUtils.toByteArray(packageConf);
+            if (bPackageSettingsBytes == null || bPackageSettingsBytes.length == 0) {
+                Slog.e(TAG, "skipped package " + packageName + ": package.conf is missing or empty; files were kept");
+                return false;
+            }
 
             packageSettingsIn.unmarshall(bPackageSettingsBytes, 0, bPackageSettingsBytes.length);
             packageSettingsIn.setDataPosition(0);
 
             BPackageSettings bPackageSettings = new BPackageSettings(packageSettingsIn);
+            if (bPackageSettings.pkg == null) {
+                Slog.e(TAG, "skipped package " + packageName + ": package.conf has no package; files were kept");
+                return false;
+            }
             bPackageSettings.pkg.mExtras = bPackageSettings;
-            if (bPackageSettings.installOption.isFlag(InstallOption.FLAG_SYSTEM)) {
+            if (bPackageSettings.installOption != null
+                    && bPackageSettings.installOption.isFlag(InstallOption.FLAG_SYSTEM)) {
                 PackageInfo packageInfo = BlackBoxCore.getPackageManager().getPackageInfo(packageName, PackageManager.GET_META_DATA);
                 String currPackageSourcePath = packageInfo.applicationInfo.sourceDir;
                 String[] splitSourceDirs = packageInfo.applicationInfo.splitSourceDirs;
@@ -219,23 +294,52 @@ import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
                     bPackageSettings.pkg = newPkg.pkg;
                     bPackageSettings.pkg.mExtras = bPackageSettings;
                 }
-            } else {
+            } else if (bPackageSettings.pkg.applicationInfo == null) {
                 bPackageSettings.pkg.applicationInfo = PackageManagerCompat.generateApplicationInfo(bPackageSettings.pkg, 0, BPackageUserState.create(), 0);
             }
+            int restored = restoreInstalledFromDataDirs(bPackageSettings);
             bPackageSettings.save();
             mPackages.put(bPackageSettings.pkg.packageName, bPackageSettings);
-            Slog.d(TAG, "loaded Package: " + packageName);
+            Slog.w(TAG, "loaded package " + packageName
+                    + " users=" + bPackageSettings.userState.size()
+                    + " restored=" + restored);
+            return true;
         } catch (Throwable e) {
-            e.printStackTrace();
-            
-            FileUtils.deleteDir(app);
-            removePackage(packageName);
-            BProcessManagerService.get().killAllByPackageName(packageName);
-            BPackageManagerService.get().onPackageUninstalled(packageName, true, BUserHandle.USER_ALL);
-            Slog.d(TAG, "bad Package: " + packageName);
+            // A record that cannot be read must stay on disk. Deleting the
+            // directory here is what emptied user 0 after an upgrade.
+            Slog.e(TAG, "skipped package " + packageName + " without deleting its files: " + e);
+            return false;
         } finally {
             packageSettingsIn.recycle();
         }
+    }
+
+    /** A data directory with no user-state row is still an installed clone. */
+    private int restoreInstalledFromDataDirs(BPackageSettings settings) {
+        if (settings.pkg == null || settings.pkg.packageName == null) return 0;
+        File parent = BEnvironment.getUserDir(0).getParentFile();
+        File[] children = parent == null ? null : parent.listFiles();
+        if (children == null) return 0;
+        int restored = 0;
+        for (File child : children) {
+            if (!child.isDirectory()) continue;
+            int userId;
+            try {
+                userId = Integer.parseInt(child.getName());
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            if (userId < 0 || settings.userState.containsKey(userId)) continue;
+            if (!BUserManagerService.get().exists(userId)) continue;
+            // Leftover directories must not turn a deleted user back into an install.
+            if (BUserManagerService.get().isRecoveredStub(userId)) continue;
+            File data = BEnvironment.getDataDir(settings.pkg.packageName, userId);
+            if (!data.isDirectory()) continue;
+            settings.setInstalled(true, userId);
+            restored++;
+            Slog.w(TAG, "restored installed flag for " + settings.pkg.packageName + " user " + userId);
+        }
+        return restored;
     }
 
     private BPackageSettings reInstallBySystem(PackageInfo systemPackageInfo, InstallOption option) throws Exception {

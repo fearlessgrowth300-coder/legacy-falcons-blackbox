@@ -18,7 +18,11 @@ public class FileSystemProxy extends ClassInvocationStub {
 
     @Override
     protected Object getWho() {
-        return null; 
+        // java.io.File is not a binder. Hooking every mkdir from Pine has crashed
+        // guest file traffic before, so this proxy stays unattached and path
+        // isolation is enforced in IOCore instead.
+        Slog.w(TAG, "File mkdir proxy left inactive; path isolation covers guest files");
+        return null;
     }
 
     @Override

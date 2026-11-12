@@ -171,8 +171,10 @@ public class FileUtils {
             }
             if (!link) {
                 String[] children = dir.list();
-                for (String file : children) {
-                    count += deleteDir(new File(dir, file));
+                if (children != null) {
+                    for (String file : children) {
+                        count += deleteDir(new File(dir, file));
+                    }
                 }
             }
         }

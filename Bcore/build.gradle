@@ -13,6 +13,7 @@ android {
     }
     buildFeatures {
         prefab true
+        buildConfig true
     }
     defaultConfig {
         minSdkVersion rootProject.ext.minSdk
@@ -29,7 +30,15 @@ android {
     }
 
     buildTypes {
+        debug {
+            def diagnosticPackage = providers.gradleProperty('diagnosticWebViewPackage').orElse('').get()
+            if (!(diagnosticPackage ==~ /[A-Za-z0-9_.]*/)) {
+                throw new GradleException('diagnosticWebViewPackage must be a package name')
+            }
+            buildConfigField 'String', 'DIAGNOSTIC_WEBVIEW_PACKAGE', '"'+diagnosticPackage+'"'
+        }
         release {
+            buildConfigField 'String', 'DIAGNOSTIC_WEBVIEW_PACKAGE', '""'
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

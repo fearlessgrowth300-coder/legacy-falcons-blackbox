@@ -232,8 +232,11 @@ public class LauncherActivity extends Activity {
                 try {
                     Slog.e(TAG, "Failed to launch app: "
                             + (failure == null ? "unknown error" : failure.getMessage()));
-                    android.widget.Toast.makeText(LauncherActivity.this,
-                            R.string.launch_failed_low_memory,
+                    String message = failure == null ? null : failure.getMessage();
+                    if (message == null || message.trim().isEmpty()) {
+                        message = getString(R.string.launch_failed_low_memory);
+                    }
+                    android.widget.Toast.makeText(LauncherActivity.this, message,
                             android.widget.Toast.LENGTH_LONG).show();
                 } catch (Exception uiException) {
                     Slog.e(TAG, "Error showing error message", uiException);

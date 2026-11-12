@@ -1,5 +1,6 @@
 package top.niunaijun.blackbox.fake.service.context.providers;
 
+import android.os.Bundle;
 import android.os.IInterface;
 
 import java.lang.reflect.InvocationTargetException;
@@ -7,8 +8,10 @@ import java.lang.reflect.Method;
 
 import black.android.content.BRAttributionSource;
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.core.DeviceProfile;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
+import top.niunaijun.blackbox.utils.compat.SettingsIdentity;
 
 
 public class SystemProviderStub extends ClassInvocationStub implements BContentProvider {
@@ -46,6 +49,12 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
         if ("asBinder".equals(method.getName())) {
             return invokeBase(method, args);
         }
+        try {
+            String guest = top.niunaijun.blackbox.app.BActivityThread.getAppPackageName();
+            top.niunaijun.blackbox.core.SystemCallerIdentity.rewrite(
+                    args, guest, BlackBoxCore.getHostPkg());
+        } catch (Throwable ignored) {
+        }
         
         String methodName = method.getName();
         
@@ -64,6 +73,8 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
                     }
                 }
             }
+            Bundle cloneAndroidId = secureAndroidIdResult(args);
+            if (cloneAndroidId != null) return cloneAndroidId;
             return invokeBase(method, args);
         }
         
@@ -85,6 +96,15 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
             }
         }
         return invokeBase(method, args);
+    }
+
+    private static Bundle secureAndroidIdResult(Object[] args) {
+        if (!SettingsIdentity.isSecureAndroidIdCall(args)) return null;
+        DeviceProfile profile = DeviceProfile.CURRENT;
+        if (profile == null || profile.androidId == null) return null;
+        Bundle result = new Bundle();
+        result.putString("value", profile.androidId);
+        return result;
     }
 
     private Object invokeBase(Method method, Object[] args) throws Throwable {

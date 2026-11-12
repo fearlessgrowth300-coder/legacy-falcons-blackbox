@@ -26,6 +26,7 @@ import top.niunaijun.blackbox.fake.service.IPermissionManagerProxy;
 import top.niunaijun.blackbox.utils.HackAppUtils;
 import top.niunaijun.blackbox.utils.compat.ActivityCompat;
 import top.niunaijun.blackbox.utils.compat.ActivityManagerCompat;
+import top.niunaijun.blackbox.utils.compat.ApplicationOnCreateGuard;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 
 public final class AppInstrumentation extends BaseInstrumentationDelegate implements IInjectHook {
@@ -206,12 +207,14 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
 
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle, PersistableBundle persistentState) {
+        top.niunaijun.blackbox.core.SensorSignalIsolation.wrapBase(activity);
         checkActivity(activity);
         fixActivityStateClassLoader(activity, icicle);
         deferInputFocusUntilActivityReady(activity);
         java.util.concurrent.atomic.AtomicBoolean finished = watchSlowActivityCreate(activity);
         try {
             super.callActivityOnCreate(activity, icicle, persistentState);
+            BActivityThread.enableActivityWebViewDiagnostics();
         } finally {
             finished.set(true);
             releaseDeferredInputFocus(activity);
@@ -220,12 +223,14 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
 
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle) {
+        top.niunaijun.blackbox.core.SensorSignalIsolation.wrapBase(activity);
         checkActivity(activity);
         fixActivityStateClassLoader(activity, icicle);
         deferInputFocusUntilActivityReady(activity);
         java.util.concurrent.atomic.AtomicBoolean finished = watchSlowActivityCreate(activity);
         try {
             super.callActivityOnCreate(activity, icicle);
+            BActivityThread.enableActivityWebViewDiagnostics();
         } finally {
             finished.set(true);
             releaseDeferredInputFocus(activity);
@@ -234,8 +239,25 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
 
     @Override
     public void callApplicationOnCreate(Application app) {
+        // Android 13+ can hand the same Application to a second LoadedApk. A second
+        // onCreate kills guests whose initializer is not idempotent.
+        if (ApplicationOnCreateGuard.alreadyInvoked(app)) {
+            Log.w(TAG, "Skipping duplicate Application.onCreate for " + app.getClass().getName());
+            return;
+        }
         checkHCallback();
-        super.callApplicationOnCreate(app);
+        top.niunaijun.blackbox.core.GuestAshmemCheck.verifyOrDisableBootIdSpoof();
+        try {
+            super.callApplicationOnCreate(app);
+            ApplicationOnCreateGuard.markInvoked(app);
+        } catch (RuntimeException error) {
+            if (ApplicationOnCreateGuard.isDuplicateInitialization(error)) {
+                ApplicationOnCreateGuard.markInvoked(app);
+                Log.w(TAG, "Guest Application.onCreate was already initialized; continuing");
+                return;
+            }
+            throw error;
+        }
     }
 
     public Activity newActivity(ClassLoader cl, String className, Intent intent) throws InstantiationException, IllegalAccessException, ClassNotFoundException {

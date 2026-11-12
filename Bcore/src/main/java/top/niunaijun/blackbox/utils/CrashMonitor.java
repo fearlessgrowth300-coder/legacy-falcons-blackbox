@@ -141,6 +141,20 @@ public class CrashMonitor {
                 @Override
                 public void uncaughtException(Thread thread, Throwable throwable) {
                     handleCrash("JavaException", thread, throwable);
+                    // A dead main thread leaves a process whose Looper is gone: it cannot
+                    // answer service/broadcast calls, and Android showed "BlackBox isn't
+                    // responding" minutes later. End it like stock Android does. Recoverable
+                    // main-thread races are absorbed earlier by SimpleCrashFix's main-loop
+                    // guard. Not chained: earlier handlers (StackTraceFilter,
+                    // NativeCrashPrevention) swallow too.
+                    // ponytail: worker-thread crashes are still swallowed, as before; guest
+                    // GMS loses e.g. a SafetyCenter worker and keeps running. Kill on those
+                    // too if a stuck worker ever causes an ANR.
+                    android.os.Looper main = android.os.Looper.getMainLooper();
+                    if (main != null && thread == main.getThread()) {
+                        android.os.Process.killProcess(android.os.Process.myPid());
+                        System.exit(10);
+                    }
                 }
             });
             

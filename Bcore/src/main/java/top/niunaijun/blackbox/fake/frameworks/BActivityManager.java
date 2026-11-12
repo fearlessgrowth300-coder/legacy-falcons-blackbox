@@ -105,6 +105,15 @@ public class BActivityManager extends BlackManager<IBActivityManagerService> {
         }
     }
 
+    public int getVirtualUidForPid(int pid) {
+        try {
+            IBActivityManagerService service = getService();
+            return service == null ? -1 : service.getVirtualUidForPid(pid);
+        } catch (RemoteException error) {
+            return -1;
+        }
+    }
+
     public void restartProcess(String packageName, String processName, int userId) {
         try {
             IBActivityManagerService service = getService();

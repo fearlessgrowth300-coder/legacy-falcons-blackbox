@@ -90,6 +90,9 @@ android {
 
     buildTypes {
         debug {
+            // The phone-test build must not automatically expose every guest's
+            // WebView or run-as data. Bcore opts in only the requested WebView.
+            debuggable !providers.gradleProperty('diagnosticWebViewPackage').isPresent()
             // Never let Gradle create/use its machine-specific debug keystore.
             signingConfig signingConfigs.suiteRelease
         }

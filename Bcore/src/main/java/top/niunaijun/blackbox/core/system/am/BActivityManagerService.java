@@ -88,6 +88,19 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
         return false;
     }
 
+    @Override
+    public int getVirtualUidForPid(int pid) {
+        if (Binder.getCallingUid() != BlackBoxCore.getHostUid() || pid <= 0) return -1;
+        BProcessManagerService processes = BProcessManagerService.get();
+        ProcessRecord requester = processes.findProcessByPid(Binder.getCallingPid());
+        ProcessRecord sender = processes.findProcessByPid(pid);
+        // Resolve only live registered guests in the requesting guest's own workspace.
+        if (requester == null || sender == null || requester.userId != sender.userId
+                || sender.bActivityThread == null
+                || !sender.bActivityThread.asBinder().isBinderAlive()) return -1;
+        return sender.buid;
+    }
+
     private static boolean isPidAlive(int pid) {
         return pid > 0 && new java.io.File("/proc/" + pid).exists();
     }

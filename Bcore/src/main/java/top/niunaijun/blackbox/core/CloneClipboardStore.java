@@ -163,6 +163,6 @@ public final class CloneClipboardStore {
     }
 
     private static byte[] aad(int userId, String pkg) {
-        return ("BlackBoxClipboard|1|" + userId + "|" + pkg).getBytes(StandardCharsets.UTF_8);
+        return WorkspaceIsolation.clipboardScope(userId, pkg).getBytes(StandardCharsets.UTF_8);
     }
 }

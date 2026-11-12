@@ -24,8 +24,8 @@ public class ProcessRecord extends Binder {
     public int bpid;
     public int callingBUid;
     public int userId;
-    // Stable host-side connection that keeps a proxy-configured clone main process from being
-    // classified as an empty process by Samsung Chimera/LMKD.
+    // Unstable provider reference: a guest crash must not kill the BlackBox manager.
+    // Android may still reclaim background guests under memory pressure.
     public ContentProviderClient keepAliveProviderClient;
 
     public ConditionVariable initLock = new ConditionVariable();

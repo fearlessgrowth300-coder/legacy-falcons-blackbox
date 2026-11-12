@@ -74,10 +74,28 @@ public class ContentProviderDelegate {
                 sInjected.add(providerName);
                 final IInterface iInterface = BRActivityThreadProviderClientRecordP.get(value).mProvider();
                 BRActivityThreadProviderClientRecordP.get(value)._set_mProvider(
-                        new ContentProviderStub().wrapper(iInterface, BlackBoxCore.getHostPkg()));
+                        new ContentProviderStub().wrapper(iInterface, providerOwner(value)));
                 BRActivityThreadProviderClientRecordP.get(value)._set_mNames(new String[]{providerName});
             }
         }
+    }
+
+    /**
+     * The guest's own providers live in this map too. Wrapping them as the host made a guest
+     * call its own provider as "top.niunaijun.blackbox", which Facebook's caller check rejects.
+     */
+    private static String providerOwner(Object record) {
+        try {
+            Object holder = top.niunaijun.blackbox.utils.Reflector.with(record).field("mHolder").get();
+            android.content.pm.ProviderInfo info = holder == null ? null
+                    : top.niunaijun.blackbox.utils.Reflector.with(holder).field("info").get();
+            String guest = top.niunaijun.blackbox.app.BActivityThread.getAppPackageName();
+            // Only the guest's own providers. System providers (settings) in this map must keep
+            // the host identity, or Android rejects the guest package for the host uid.
+            if (info != null && guest != null && guest.equals(info.packageName)) return guest;
+        } catch (Throwable ignored) {
+        }
+        return BlackBoxCore.getHostPkg();
     }
 
     public static void clearSettingProvider() {

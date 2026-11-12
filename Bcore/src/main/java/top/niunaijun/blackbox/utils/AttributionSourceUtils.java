@@ -27,12 +27,15 @@ public class AttributionSourceUtils {
             Object arg = args[i];
             if (arg != null && arg.getClass().getName().contains("AttributionSource")) {
                 try {
-                    fixAttributionSourceUid(arg, uid, packageName);
-                    // Android 16 keeps an immutable parcel state in some vendor builds.  A
-                    // reflective field write can appear to succeed while the old uid is still
-                    // marshalled to the destination provider.  Rebuilding the outer source makes
-                    // the Binder-visible identity deterministic.
-                    args[i] = rebuildAttributionSource(arg, uid, packageName);
+                    // Copy the host identity into the outgoing argument. Leave the
+                    // caller's object alone so the guest context still reports its
+                    // own package after the call returns.
+                    Object rebuilt = rebuildAttributionSource(arg, uid, packageName);
+                    if (rebuilt != null && rebuilt != arg) {
+                        args[i] = rebuilt;
+                    } else {
+                        fixAttributionSourceUid(arg, uid, packageName);
+                    }
                     Slog.d(TAG, "Fixed AttributionSource UID in method arguments");
                 } catch (Exception e) {
                     Slog.w(TAG, "Failed to fix AttributionSource in args: " + e.getMessage());
@@ -182,8 +185,11 @@ public class AttributionSourceUtils {
                     Object value = getMethod.invoke(bundle, key);
                     
                     if (value != null && value.getClass().getName().contains("AttributionSource")) {
-                        fixAttributionSourceUid(value, uid, packageName);
                         Object replacement = rebuildAttributionSource(value, uid, packageName);
+                        if (replacement == null || replacement == value) {
+                            fixAttributionSourceUid(value, uid, packageName);
+                            replacement = value;
+                        }
                         if (replacement instanceof android.os.Parcelable) {
                             ((android.os.Bundle) bundle).putParcelable(
                                     key, (android.os.Parcelable) replacement);

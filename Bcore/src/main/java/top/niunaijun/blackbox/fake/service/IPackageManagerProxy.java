@@ -1,6 +1,7 @@
 package top.niunaijun.blackbox.fake.service;
 
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
@@ -17,6 +18,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import black.android.app.BRActivityThread;
@@ -194,7 +196,8 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 }
                 return packageInfo;
             }
-            if (AppSystemEnv.isOpenPackage(packageName)) {
+            if (AppSystemEnv.isOpenPackage(packageName)
+                    || top.niunaijun.blackbox.core.HostVisiblePackages.isHostService(packageName)) {
                 return method.invoke(who, args);
             }
             return null;
@@ -368,7 +371,8 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             int flags = MethodParameterUtils.toInt(args[0]);
             List<ApplicationInfo> installedApplications = BlackBoxCore.getBPackageManager().getInstalledApplications(flags, BlackBoxCore.getUserId());
-            return ParceledListSliceCompat.create(installedApplications);
+            if (installedApplications == null) installedApplications = Collections.emptyList();
+            return ParceledListSliceCompat.create(method, installedApplications);
         }
     }
 
@@ -379,7 +383,7 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             int flags = MethodParameterUtils.toInt(args[0]);
             List<PackageInfo> installedPackages = BlackBoxCore.getBPackageManager().getInstalledPackages(flags, BlackBoxCore.getUserId());
-            return ParceledListSliceCompat.create(installedPackages);
+            return ParceledListSliceCompat.create(method, installedPackages);
         }
     }
 
@@ -397,7 +401,8 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             if (applicationInfo != null) {
                 return applicationInfo;
             }
-            if (AppSystemEnv.isOpenPackage(packageName)) {
+            if (AppSystemEnv.isOpenPackage(packageName)
+                    || top.niunaijun.blackbox.core.HostVisiblePackages.isHostService(packageName)) {
                 return method.invoke(who, args);
             }
             return null;
@@ -411,27 +416,280 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             int flags = MethodParameterUtils.toInt(args[2]);
             List<ProviderInfo> providers = BlackBoxCore.getBPackageManager().
                     queryContentProviders(BlackBoxCore.getAppProcessName(), BlackBoxCore.getBUid(), flags, BlackBoxCore.getUserId());
-            return ParceledListSliceCompat.create(providers);
+            return ParceledListSliceCompat.create(method, providers);
         }
     }
 
     @ProxyMethod("queryIntentReceivers")
     public static class QueryBroadcastReceivers extends MethodHook {
+        private static String lastSmsNote = "";
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Intent intent = MethodParameterUtils.getFirstParam(args, Intent.class);
             String type = MethodParameterUtils.getFirstParam(args, String.class);
             Integer flags = MethodParameterUtils.getFirstParam(args, Integer.class);
             List<ResolveInfo> resolves = BlackBoxCore.getBPackageManager().queryBroadcastReceivers(intent, flags, type, BActivityThread.getUserId());
-            Slog.d(TAG, "queryIntentReceivers count: " + (resolves == null ? 0 : resolves.size()));
+            int count = resolves == null ? 0 : resolves.size();
+            String action = intent == null ? null : intent.getAction();
+            String target = intent == null ? null : intent.getPackage();
+            Slog.d(TAG, "queryIntentReceivers count: " + count + " action=" + action + " pkg=" + target);
+            if (count == 0 && intent != null && top.niunaijun.blackbox.core.HostVisiblePackages
+                    .intentTargetsHostService(target,
+                            intent.getComponent() == null ? null : intent.getComponent().getPackageName(),
+                            action)) {
+                Slog.d(TAG, "queryIntentReceivers using the phone for " + action);
+                return method.invoke(who, args);
+            }
+            if (count == 0 && top.niunaijun.blackbox.core.HostVisiblePackages.useHostReceivers(action)) {
+                return smsReceiversFromPhone(who, method, args, action);
+            }
 
             
             if (BuildCompat.isN()) {
-                return ParceledListSliceCompat.create(resolves);
+                return ParceledListSliceCompat.create(method, resolves);
             }
 
             
             return resolves;
+        }
+
+        private static Object smsReceiversFromPhone(Object who, Method method, Object[] args, String action) throws Throwable {
+            Object[] hostArgs = hostReceiverArgs(args);
+            Object host;
+            long identity = android.os.Binder.clearCallingIdentity();
+            try {
+                host = method.invoke(who, hostArgs);
+            } finally {
+                android.os.Binder.restoreCallingIdentity(identity);
+            }
+            java.util.List<ResolveInfo> raw = receiverList(host);
+            java.util.List<ResolveInfo> kept = new java.util.ArrayList<>();
+            String smsHolder = defaultSmsHolder();
+            if (raw != null) {
+                int userId = BActivityThread.getUserId();
+                for (ResolveInfo info : raw) {
+                    String pkg = info != null && info.activityInfo != null ? info.activityInfo.packageName : null;
+                    if (keepSmsPackage(pkg, smsHolder, userId)) kept.add(info);
+                }
+            }
+            if (smsHolder != null && top.niunaijun.blackbox.core.SmsReceiverVisibility.includeHolder(
+                    smsHolder, containsPackage(kept, smsHolder),
+                    installedClone(smsHolder, BActivityThread.getUserId()))) {
+                kept.add(holderReceiver(smsHolder));
+            }
+            Slog.i(TAG, "queryIntentReceivers phone " + action
+                    + " holder=" + smsHolder
+                    + " raw=" + (raw == null ? -1 : raw.size())
+                    + " kept=" + kept.size()
+                    + (lastSmsNote.isEmpty() ? "" : " note=" + lastSmsNote));
+            if (BuildCompat.isN()) {
+                return ParceledListSliceCompat.create(method, kept);
+            }
+            return kept;
+        }
+
+        private static java.util.List<ResolveInfo> receiverList(Object slice) {
+            if (slice instanceof java.util.List) {
+                return (java.util.List<ResolveInfo>) slice;
+            }
+            if (slice == null) return null;
+            try {
+                Method getList = slice.getClass().getMethod("getList");
+                Object list = getList.invoke(slice);
+                if (list instanceof java.util.List) return (java.util.List<ResolveInfo>) list;
+            } catch (Throwable ignored) {
+            }
+            return null;
+        }
+
+        private static boolean keepSmsPackage(String pkg, String smsHolder, int userId) {
+            boolean installed = false;
+            try {
+                installed = pkg != null && BlackBoxCore.getBPackageManager().isInstalled(pkg, userId);
+            } catch (Throwable ignored) {
+            }
+            boolean guard = top.niunaijun.blackbox.core.SmsReceiverVisibility.guardAllows(
+                    pkg, top.niunaijun.blackbox.core.env.AppSystemEnv.isOpenPackage(pkg));
+            return top.niunaijun.blackbox.core.SmsReceiverVisibility.visible(
+                    pkg, guard, pkg != null && pkg.equals(smsHolder), installed);
+        }
+
+        private static boolean containsPackage(java.util.List<ResolveInfo> infos, String pkg) {
+            for (ResolveInfo info : infos) {
+                if (info != null && info.activityInfo != null && pkg.equals(info.activityInfo.packageName)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static ResolveInfo holderReceiver(String pkg) {
+            ResolveInfo info = new ResolveInfo();
+            ActivityInfo activity = new ActivityInfo();
+            activity.packageName = pkg;
+            activity.name = pkg;
+            activity.exported = true;
+            activity.applicationInfo = new ApplicationInfo();
+            activity.applicationInfo.packageName = pkg;
+            info.activityInfo = activity;
+            return info;
+        }
+
+        private static volatile String cachedSmsHolder;
+        private static volatile boolean smsHolderCached;
+
+        // Telephony's lookup queries SMS receivers, which lands back in this hook on the same
+        // thread. Without this guard Facebook's main thread recursed until the stack overflowed,
+        // logged millions of lines and showed a white screen.
+        private static final ThreadLocal<Boolean> sLookingUpSmsHolder = new ThreadLocal<>();
+
+        private static String defaultSmsHolder() {
+            if (smsHolderCached) return cachedSmsHolder;
+            if (Boolean.TRUE.equals(sLookingUpSmsHolder.get())) return null;
+            synchronized (QueryBroadcastReceivers.class) {
+                if (smsHolderCached) return cachedSmsHolder;
+                sLookingUpSmsHolder.set(Boolean.TRUE);
+                try {
+                    StringBuilder note = new StringBuilder();
+                    String holder = smsFromTelephonyAsHostUser(note);
+                    if (holder == null) holder = smsFromSettingAsHostUser(note);
+                    // Cache a miss too: the answer does not change while the clone runs, and
+                    // retrying on every receiver query is what flooded the log.
+                    cachedSmsHolder = holder;
+                    smsHolderCached = true;
+                    lastSmsNote = note.toString();
+                    return holder;
+                } finally {
+                    sLookingUpSmsHolder.remove();
+                }
+            }
+        }
+
+        private static String smsFromTelephonyAsHostUser(StringBuilder note) {
+            long identity = android.os.Binder.clearCallingIdentity();
+            try {
+                Context context = hostUserContext();
+                if (context == null) {
+                    note.append("telephony no context; ");
+                    return null;
+                }
+                int user = top.niunaijun.blackbox.core.system.user.BUserHandle.getUserId(
+                        android.os.Process.myUid());
+                try {
+                    Class<?> smsApp = Class.forName("com.android.internal.telephony.SmsApplication");
+                    Method method = smsApp.getDeclaredMethod(
+                            "getDefaultSmsApplicationAsUser", Context.class, boolean.class, int.class);
+                    method.setAccessible(true);
+                    Object component = method.invoke(null, context, Boolean.FALSE, user);
+                    if (component instanceof ComponentName) {
+                        String pkg = ((ComponentName) component).getPackageName();
+                        if (pkg != null && !pkg.isEmpty()) {
+                            Slog.i(TAG, "sms default telephony user " + user + " " + pkg);
+                            return pkg;
+                        }
+                    }
+                    note.append("telephony internal empty user ").append(user).append("; ");
+                } catch (Throwable error) {
+                    Throwable cause = unwrap(error);
+                    note.append("telephony internal ").append(cause.getClass().getSimpleName())
+                            .append(" ").append(cause.getMessage()).append("; ");
+                    Slog.w(TAG, "sms internal lookup failed", cause);
+                }
+                try {
+                    String value = android.provider.Telephony.Sms.getDefaultSmsPackage(context);
+                    if (value != null && !value.isEmpty()) {
+                        Slog.i(TAG, "sms default package " + value);
+                        return value;
+                    }
+                    note.append("telephony empty; ");
+                } catch (Throwable error) {
+                    Throwable cause = unwrap(error);
+                    note.append("telephony ").append(cause.getClass().getSimpleName())
+                            .append(" ").append(cause.getMessage()).append("; ");
+                    Slog.w(TAG, "sms telephony lookup failed", cause);
+                }
+            } finally {
+                android.os.Binder.restoreCallingIdentity(identity);
+            }
+            return null;
+        }
+
+        private static String smsFromSettingAsHostUser(StringBuilder note) {
+            long identity = android.os.Binder.clearCallingIdentity();
+            try {
+                Context context = hostUserContext();
+                if (context == null) {
+                    note.append("settings no context; ");
+                    return null;
+                }
+                String value = android.provider.Settings.Secure.getString(
+                        context.getContentResolver(), "sms_default_application");
+                if (value != null && !value.isEmpty()) {
+                    Slog.i(TAG, "sms default from settings " + value);
+                    return value;
+                }
+                note.append("settings empty; ");
+            } catch (Throwable error) {
+                Throwable cause = unwrap(error);
+                note.append("settings ").append(cause.getClass().getSimpleName())
+                        .append(" ").append(cause.getMessage()).append("; ");
+                Slog.w(TAG, "sms default setting failed", cause);
+            } finally {
+                android.os.Binder.restoreCallingIdentity(identity);
+            }
+            return null;
+        }
+
+        private static Throwable unwrap(Throwable error) {
+            if (error instanceof java.lang.reflect.InvocationTargetException && error.getCause() != null) {
+                return error.getCause();
+            }
+            return error;
+        }
+
+        private static Context hostUserContext() {
+            Context base = BlackBoxCore.getContext();
+            if (base == null) return null;
+            String host = BlackBoxCore.getHostPkg();
+            if (host == null) return base;
+            try {
+                Method method = Context.class.getMethod("createPackageContextAsUser",
+                        String.class, int.class, android.os.UserHandle.class);
+                Object created = method.invoke(base, host, Context.CONTEXT_IGNORE_SECURITY,
+                        android.os.Process.myUserHandle());
+                if (created instanceof Context) return (Context) created;
+            } catch (Throwable error) {
+                Slog.w(TAG, "host user context failed: " + unwrap(error).getMessage());
+            }
+            return base;
+        }
+
+        private static Object[] hostReceiverArgs(Object[] args) {
+            if (args == null) return null;
+            Object[] copy = args.clone();
+            int hostUser = top.niunaijun.blackbox.core.system.user.BUserHandle.getUserId(
+                    android.os.Process.myUid());
+            if (copy.length > 2 && copy[2] instanceof Integer) {
+                copy[2] = ((Integer) copy[2]) | PackageManager.MATCH_ALL;
+            } else if (copy.length > 2 && copy[2] instanceof Long) {
+                copy[2] = ((Long) copy[2]) | PackageManager.MATCH_ALL;
+            }
+            for (int i = copy.length - 1; i >= 3; i--) {
+                if (copy[i] instanceof Integer) {
+                    copy[i] = top.niunaijun.blackbox.core.SmsReceiverVisibility.hostQueryUser(
+                            hostUser, (Integer) copy[i]);
+                    break;
+                }
+            }
+            return copy;
+        }
+
+        private static boolean installedClone(String pkg, int userId) {
+            try {
+                return pkg != null && BlackBoxCore.getBPackageManager().isInstalled(pkg, userId);
+            } catch (Throwable ignored) {
+                return false;
+            }
         }
     }
 
@@ -441,11 +699,19 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String authority = (String) args[0];
             int flags = MethodParameterUtils.toInt(args[1]);
-            ProviderInfo providerInfo = BlackBoxCore.getBPackageManager().resolveContentProvider(authority, flags, BActivityThread.getUserId());
-            if (providerInfo == null) {
-                return method.invoke(who, args);
+            int userId = BActivityThread.getUserId();
+            ProviderInfo providerInfo = BlackBoxCore.getBPackageManager()
+                    .resolveContentProvider(authority, flags, userId);
+            if (providerInfo == null && (flags & android.content.pm.PackageManager.GET_META_DATA) != 0) {
+                providerInfo = BlackBoxCore.getBPackageManager()
+                        .resolveContentProvider(authority, flags & ~android.content.pm.PackageManager.GET_META_DATA, userId);
             }
-            return providerInfo;
+            if (providerInfo != null) return providerInfo;
+            if (IActivityManagerProxy.refuseClonedAuthority(authority, userId)) {
+                Slog.e(TAG, "refusing phone provider for cloned authority " + authority);
+                return null;
+            }
+            return method.invoke(who, args);
         }
     }
 
@@ -458,18 +724,139 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         }
     }
 
+    /**
+     * Same-package checks must use the cloned APK's own certificate. Do not rewrite the
+     * guest name to the host before asking, or Facebook compares itself with Blackbox.
+     */
+    @ProxyMethod("checkSignatures")
+    public static class CheckSignatures extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            if (args != null && args.length >= 2 && args[0] instanceof String
+                    && args[0].equals(args[1])) {
+                return PackageManager.SIGNATURE_MATCH;
+            }
+            return method.invoke(who, args);
+        }
+    }
+
     @ProxyMethod("getPackagesForUid")
     public static class GetPackagesForUid extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             int uid = (Integer) args[0];
-            if (uid == BlackBoxCore.getHostUid()) {
-                args[0] = BActivityThread.getBUid();
-                uid = (int) args[0];
+            int queryUid = uid == BlackBoxCore.getHostUid() ? BActivityThread.getBUid() : uid;
+            String[] packagesForUid = new String[0];
+            try {
+                packagesForUid = BlackBoxCore.getBPackageManager().getPackagesForUid(queryUid);
+            } catch (Throwable error) {
+                Slog.w(TAG, "GetPackagesForUid failed for " + uid);
             }
-            String[] packagesForUid = BlackBoxCore.getBPackageManager().getPackagesForUid(uid);
-            Slog.d(TAG, args[0] + " , " + BActivityThread.getAppProcessName() + " GetPackagesForUid: " + Arrays.toString(packagesForUid));
-            return packagesForUid;
+            String[] named = top.niunaijun.blackbox.fake.service.context.providers.UidPackageIdentity
+                    .packagesForCaller(uid, BlackBoxCore.getHostUid(), BActivityThread.getBUid(),
+                            BActivityThread.getBAppId(), BActivityThread.getAppPackageName(),
+                            packagesForUid);
+            Slog.d(TAG, uid + " , " + BActivityThread.getAppProcessName()
+                    + " GetPackagesForUid: " + Arrays.toString(named));
+            return named;
+        }
+    }
+
+    /**
+     * The process uid is the host uid. A guest asking who that uid is must hear its own
+     * package, or its trusted-caller check treats the call as coming from Blackbox.
+     */
+    @ProxyMethod("getNameForUid")
+    public static class GetNameForUid extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int uid = (Integer) args[0];
+            String guest = top.niunaijun.blackbox.fake.service.context.providers.UidPackageIdentity
+                    .nameForUid(uid, BlackBoxCore.getHostUid(), BActivityThread.getBUid(),
+                            BActivityThread.getBAppId(), BActivityThread.getAppPackageName());
+            if (guest != null) return guest;
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("checkUidSignatures")
+    public static class CheckUidSignatures extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            if (args != null && args.length >= 2 && args[0] instanceof Integer
+                    && args[1] instanceof Integer) {
+                int first = (Integer) args[0];
+                int second = (Integer) args[1];
+                int host = BlackBoxCore.getHostUid();
+                int virtual = BActivityThread.getBUid();
+                int appId = BActivityThread.getBAppId();
+                boolean firstGuest = top.niunaijun.blackbox.fake.service.context.providers.UidPackageIdentity
+                        .representsGuest(first, host, virtual, appId);
+                boolean secondGuest = top.niunaijun.blackbox.fake.service.context.providers.UidPackageIdentity
+                        .representsGuest(second, host, virtual, appId);
+                if (first == second || (firstGuest && secondGuest)) {
+                    return PackageManager.SIGNATURE_MATCH;
+                }
+            }
+            return method.invoke(who, args);
+        }
+    }
+
+    /**
+     * Compare the presented bytes with the cloned APK's own certificate.
+     * A package the virtual user did not install is left to the real package manager.
+     */
+    @ProxyMethod("hasSigningCertificate")
+    public static class HasSigningCertificate extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            String packageName = null;
+            if (args != null && args.length > 0 && args[0] instanceof String) {
+                packageName = (String) args[0];
+            } else if (args != null && args.length > 0 && args[0] instanceof Integer) {
+                int uid = (Integer) args[0];
+                if (top.niunaijun.blackbox.fake.service.context.providers.UidPackageIdentity
+                        .representsGuest(uid, BlackBoxCore.getHostUid(), BActivityThread.getBUid(),
+                                BActivityThread.getBAppId())) {
+                    packageName = BActivityThread.getAppPackageName();
+                }
+            }
+            byte[] presented = null;
+            int type = top.niunaijun.blackbox.utils.compat.SigningCertificateMatch.RAW_X509;
+            if (args != null) {
+                for (Object arg : args) {
+                    if (arg instanceof byte[]) presented = (byte[]) arg;
+                }
+                if (args.length >= 3 && args[args.length - 1] instanceof Integer) {
+                    type = (Integer) args[args.length - 1];
+                }
+            }
+            byte[][] certificates = certificatesOf(packageName);
+            if (certificates != null) {
+                return top.niunaijun.blackbox.utils.compat.SigningCertificateMatch
+                        .matches(certificates, presented, type);
+            }
+            return method.invoke(who, args);
+        }
+
+        private static byte[][] certificatesOf(String packageName) {
+            if (packageName == null) return null;
+            try {
+                android.content.pm.PackageInfo info = BlackBoxCore.getBPackageManager()
+                        .getPackageInfo(packageName, PackageManager.GET_SIGNATURES,
+                                BActivityThread.getUserId());
+                if (info == null || info.signatures == null || info.signatures.length == 0) {
+                    return null;
+                }
+                byte[][] certificates = new byte[info.signatures.length][];
+                for (int i = 0; i < info.signatures.length; i++) {
+                    certificates[i] = info.signatures[i] == null
+                            ? null : info.signatures[i].toByteArray();
+                }
+                return certificates;
+            } catch (Throwable ignored) {
+                return null;
+            }
         }
     }
 
@@ -549,7 +936,7 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             
-            return ParceledListSliceCompat.create(new ArrayList<>());
+            return ParceledListSliceCompat.create(method, new ArrayList<>());
         }
     }
 
@@ -602,8 +989,24 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 Slog.d(TAG, "SimpleAudioPermissionHook: Granting notification/Xiaomi permission: " + permission + " to " + packageName);
                 return PackageManager.PERMISSION_GRANTED;
             }
-            
-            
+            Integer virtual = GuestPermissionBridge.grantedForPackageOrNull(permission, packageName);
+            if (virtual != null) return virtual;
+            top.niunaijun.blackbox.core.SystemCallerIdentity.rewrite(args,
+                    top.niunaijun.blackbox.app.BActivityThread.getAppPackageName(),
+                    BlackBoxCore.getHostPkg());
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("checkUidPermission")
+    public static class CheckUidPermission extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            String permission = args != null && args.length > 0 ? (String) args[0] : null;
+            int uid = args != null && args.length > 1 && args[1] instanceof Integer
+                    ? (Integer) args[1] : -1;
+            Integer virtual = GuestPermissionBridge.grantedOrNull(permission, uid);
+            if (virtual != null) return virtual;
             return method.invoke(who, args);
         }
     }
@@ -660,8 +1063,9 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 Slog.d(TAG, "ShouldShowRequestPermissionRationale: Not showing rationale for notification/Xiaomi permission: " + permission);
                 return false;
             }
-            
-            
+            top.niunaijun.blackbox.core.SystemCallerIdentity.rewrite(args,
+                    top.niunaijun.blackbox.app.BActivityThread.getAppPackageName(),
+                    BlackBoxCore.getHostPkg());
             return method.invoke(who, args);
         }
     }

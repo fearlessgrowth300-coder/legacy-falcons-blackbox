@@ -7,6 +7,9 @@ import android.os.Looper;
 import android.util.Log;
 import android.app.Application;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import top.niunaijun.blackbox.BlackBoxCore;
 
 
@@ -68,11 +71,14 @@ public class SimpleCrashFix {
                             Looper.loop();
                             return; // loop only returns on quit() — let the thread end normally
                         } catch (Throwable e) {
-                            boolean sw = isSwallowable(e);
+                            String key = CrashLoopPolicy.key(e);
+                            int seen = noteFailure(key);
+                            boolean sw = CrashLoopPolicy.allowSwallow(e, isSwallowable(e), seen);
                             // Always retain the complete local stack trace. Logging only the outer
                             // RuntimeException hid the real guest startup failure and left a
                             // windowless proxy activity behind, which later surfaced as an ANR.
-                            Slog.w(TAG, "main-loop guard caught (swallow=" + sw + ")", e);
+                            Slog.w(TAG, "main-loop guard caught (swallow=" + sw
+                                    + " seen=" + seen + ")", e);
                             if (sw) {
                                 // drop the bad message, resume the loop → app survives
                             } else {
@@ -86,6 +92,15 @@ public class SimpleCrashFix {
         } catch (Throwable e) {
             Slog.e(TAG, "Failed to install main-loop guard: " + e.getMessage());
         }
+    }
+
+    private static final Map<String, Integer> FAILURES = new HashMap<>();
+
+    private static int noteFailure(String key) {
+        Integer seen = FAILURES.get(key);
+        int next = seen == null ? 1 : seen + 1;
+        FAILURES.put(key, next);
+        return next;
     }
 
     /** True if this crash is one we can safely swallow to keep the guest running.
@@ -241,21 +256,25 @@ public class SimpleCrashFix {
         }
         
         String message = throwable.getMessage();
-        if (message != null) {
-            return message.contains("Google Play Services") ||
+        if (message != null && (message.contains("Google Play Services") ||
                    message.contains("GooglePlayServicesUtil") ||
                    message.contains("GoogleApiAvailability") ||
-                   message.contains("com.google.android.gms");
+                   message.contains("com.google.android.gms"))) {
+            return true;
         }
         
-        
+        // Fall through to the stack even when there is a message. Play services dynamite
+        // modules (e.g. Firebase measurement) are obfuscated, so "com.google.android.gms"
+        // appears only in the frame's file name: m7.eq.m(:com.google.android.gms.dynamite_...).
         StackTraceElement[] stackTrace = throwable.getStackTrace();
         if (stackTrace != null) {
             for (StackTraceElement element : stackTrace) {
                 String className = element.getClassName();
+                String fileName = element.getFileName();
                 if (className.contains("com.google.android.gms") ||
                     className.contains("GooglePlayServicesUtil") ||
-                    className.contains("GoogleApiAvailability")) {
+                    className.contains("GoogleApiAvailability") ||
+                    (fileName != null && fileName.contains("com.google.android.gms"))) {
                     return true;
                 }
             }

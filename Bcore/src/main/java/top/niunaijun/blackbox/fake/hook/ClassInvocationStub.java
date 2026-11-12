@@ -9,6 +9,9 @@ import java.lang.reflect.Proxy;
 import java.util.HashMap;
 import java.util.Map;
 
+import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.core.SystemCallerIdentity;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
 
 
@@ -40,18 +43,42 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
         onlyProxy = o;
     }
 
+    /** Class whose methods should be Pine-hooked when this stub has no binder base. */
+    protected Class<?> hookTargetClass() {
+        return null;
+    }
+
+    public boolean hasHook(String name) {
+        return name != null && mMethodHookMap.containsKey(name);
+    }
+
+    /** Pine after-call. Default keeps the original result. Must not throw out of the hook. */
+    protected void afterPineHook(String methodName, Object self, Object[] args, Object frame) {
+    }
+
     @Override
     public void injectHook() {
-        mBase = getWho();
-        
-        if (mBase == null) {
-            return;
+        try {
+            bindAnnotations();
+            mBase = getWho();
+            if (mBase == null) {
+                Log.w(TAG, getClass().getSimpleName() + " has no base; binder proxy not installed");
+                attachPine();
+                return;
+            }
+            mProxyInvocation = Proxy.newProxyInstance(mBase.getClass().getClassLoader(),
+                    MethodParameterUtils.getAllInterface(mBase.getClass()), this);
+            if (!onlyProxy) {
+                inject(mBase, mProxyInvocation);
+            }
+            attachPine();
+        } catch (Throwable error) {
+            Log.w(TAG, getClass().getSimpleName() + " inject degraded: "
+                    + error.getClass().getSimpleName());
         }
-        mProxyInvocation = Proxy.newProxyInstance(mBase.getClass().getClassLoader(), MethodParameterUtils.getAllInterface(mBase.getClass()), this);
-        if (!onlyProxy) {
-            inject(mBase, mProxyInvocation);
-        }
+    }
 
+    private void bindAnnotations() {
         onBindMethod();
         Class<?>[] declaredClasses = this.getClass().getDeclaredClasses();
         for (Class<?> declaredClass : declaredClasses) {
@@ -64,6 +91,34 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
                     initAnnotation(declaredClass);
                 }
             }
+        }
+    }
+
+    private void attachPine() {
+        Class<?> target;
+        try {
+            target = hookTargetClass();
+        } catch (Throwable error) {
+            Log.w(TAG, getClass().getSimpleName() + " hook target unavailable");
+            return;
+        }
+        if (target == null) return;
+        long page = 4096L;
+        try {
+            page = android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE);
+        } catch (Throwable ignored) {
+        }
+        if (top.niunaijun.blackbox.core.PineRuntime.hooksCrashThisRuntime(
+                android.os.Build.VERSION.SDK_INT, page)) {
+            Log.w(TAG, getClass().getSimpleName()
+                    + " class hooks skipped; Pine is unsafe on this runtime");
+            return;
+        }
+        try {
+            PineClassAttacher.attach(target, this);
+        } catch (Throwable error) {
+            Log.w(TAG, getClass().getSimpleName() + " class hooks degraded: "
+                    + error.getClass().getSimpleName());
         }
     }
 
@@ -100,8 +155,52 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
         mMethodHookMap.put(name, methodHook);
     }
 
+    private static boolean blockClonedProvider(String methodName, Object[] args) {
+        if (!top.niunaijun.blackbox.core.ProviderAcquireGuard.isAcquire(methodName) || args == null) {
+            return false;
+        }
+        int userId;
+        try {
+            userId = BActivityThread.getUserId();
+        } catch (Throwable ignored) {
+            return false;
+        }
+        for (Object arg : args) {
+            if (!(arg instanceof String)) continue;
+            boolean owned = top.niunaijun.blackbox.core.ProviderAcquireGuard.ownedByInstalledPackage(
+                    (String) arg, packageName -> {
+                        try {
+                            return BlackBoxCore.getBPackageManager().isInstalled(packageName, userId);
+                        } catch (Throwable ignored) {
+                            return false;
+                        }
+                    });
+            if (top.niunaijun.blackbox.core.ProviderAcquireGuard.blockUnhookedAcquire(owned)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        // Guest contexts name the clone. system_server checks that name against
+        // this process uid, so every outgoing call presents the host package.
+        // Package lookups keep the clone name. The AttributionSource is a copy.
+        try {
+            String guest = null;
+            try {
+                guest = BActivityThread.getAppPackageName();
+            } catch (Throwable ignored) {
+            }
+            String host = BlackBoxCore.getHostPkg();
+            if (!SystemCallerIdentity.keepsTargetPackage(method.getName())) {
+                SystemCallerIdentity.rewrite(args, guest, host);
+            }
+            top.niunaijun.blackbox.core.CallerIdentityParcels.rewrite(args, guest, host);
+            top.niunaijun.blackbox.utils.AttributionSourceUtils.fixAttributionSourceInArgs(args);
+        } catch (Throwable ignored) {
+        }
 
 
 
@@ -115,6 +214,10 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
 
         MethodHook methodHook = mMethodHookMap.get(method.getName());
         if (methodHook == null || !methodHook.isEnable()) {
+            if (blockClonedProvider(method.getName(), args)) {
+                Log.e(TAG, "refusing to open the phone's provider for a cloned app: " + method.getName());
+                return null;
+            }
             try {
                 return method.invoke(mBase, args);
             } catch (Throwable e) {

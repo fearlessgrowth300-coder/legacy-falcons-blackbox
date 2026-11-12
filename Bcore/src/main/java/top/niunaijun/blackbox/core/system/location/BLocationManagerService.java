@@ -36,6 +36,7 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
 
     private static final BLocationManagerService sService = new BLocationManagerService();
     private final SparseArray<HashMap<String, BLocationConfig>> mLocationConfigs = new SparseArray<>();
+    private volatile boolean mConfigLoaded;
     private final BLocationConfig mGlobalConfig = new BLocationConfig();
     private final Map<IBinder, LocationRecord> mLocationListeners = new HashMap<>();
     private final Executor mThreadPool = Executors.newCachedThreadPool();
@@ -293,6 +294,7 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
         try {
             File fakeLocationConf = BEnvironment.getFakeLocationConf();
             if (!fakeLocationConf.exists()) {
+                mConfigLoaded = true;
                 return;
             }
             is = new FileInputStream(BEnvironment.getFakeLocationConf());
@@ -314,14 +316,30 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
                     Slog.d(TAG, "load userId: " + userId + ", config: " + configArrayMap);
                 }
             }
+            mConfigLoaded = true;
         } catch (Exception e) {
             e.printStackTrace();
-            Slog.d(TAG, "bad config");
-            FileUtils.deleteDir(BEnvironment.getFakeLocationConf());
+            Slog.e(TAG, "location config could not be read; the file was kept: " + e);
         } finally {
             parcel.recycle();
             CloseUtils.close(is);
         }
+    }
+
+    /** Drop one user's saved locations and rewrite the config. Does not touch other users. */
+    public void deleteUser(int userId) {
+        boolean removed;
+        synchronized (mLocationConfigs) {
+            if (!mConfigLoaded) {
+                Slog.w(TAG, "location config is not loaded; user " + userId + " was left in the file");
+                return;
+            }
+            removed = mLocationConfigs.indexOfKey(userId) >= 0;
+            if (removed) mLocationConfigs.remove(userId);
+        }
+        if (!removed) return;
+        save();
+        Slog.w(TAG, "removed location config for user " + userId);
     }
 
     @Override

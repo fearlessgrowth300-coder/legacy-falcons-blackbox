@@ -102,7 +102,82 @@ public class NativeCore {
 
     public static native void enableIO();
 
+    /**
+     * Installs the AudioTrack.native_setup hook for the reflected method.
+     * Slots come from {@code AudioClientIdentity.nativeSetupSlots}.
+     * Returns a short install result, never null.
+     */
+    public static native String hookAudioTrack(Object method, String descriptor,
+                                               int parcelSlot, int stringSlot, int sessionSlot);
+
     public static native void addIORule(String targetPath, String relocatePath);
+
+    /** Per-user boot_id for guest readers. Ashmem paths stay on /dev/ashmem either way. */
+    public static native void setBootIdSpoof(boolean enabled);
+
+    /** Guest-only path jail. A failure here must not crash the process. */
+    public static native void setPathIsolation(String virtualRoot, String externalRoot, int userId);
+
+    /** Added to CLOCK_BOOTTIME / CLOCK_MONOTONIC so uptime is not the phone's. */
+    public static native void setUptimeOffsetMs(long offsetMs);
+
+    /**
+     * Host and virtual uids for the Android 16 Binder.getCallingUid hook.
+     * The hook must not call back into Java on that runtime.
+     */
+    public static native void setCallerIdentity(int hostUid, int virtualUid, int presentedUid);
+
+    /**
+     * A guest is inside its own in-process provider. getCallingUid must stay the
+     * process uid; the API 37 hook otherwise rewrites it to the virtual uid.
+     */
+    private static native void nativeEnterSelfProviderCall();
+
+    private static native void nativeExitSelfProviderCall();
+
+    private static native int nativeSelfProviderDepth();
+
+    /** 1 when this thread's native caller hook is inside a self-provider call. */
+    public static int selfProviderNativeDepth() {
+        try {
+            return nativeSelfProviderDepth();
+        } catch (Throwable ignored) {
+            return -1;
+        }
+    }
+
+    public static int javaSelfProviderDepth() {
+        return SELF_PROVIDER_CALL.get();
+    }
+
+    private static final ThreadLocal<Integer> SELF_PROVIDER_CALL =
+            new ThreadLocal<Integer>() {
+                @Override
+                protected Integer initialValue() {
+                    return 0;
+                }
+            };
+
+    public static void enterSelfProviderCall() {
+        SELF_PROVIDER_CALL.set(SELF_PROVIDER_CALL.get() + 1);
+        try {
+            nativeEnterSelfProviderCall();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void exitSelfProviderCall() {
+        int depth = SELF_PROVIDER_CALL.get() - 1;
+        if (depth <= 0) SELF_PROVIDER_CALL.remove();
+        else SELF_PROVIDER_CALL.set(depth);
+        try {
+            nativeExitSelfProviderCall();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Directory of pid files read by the Android 16 Binder.getCallingUid hook. */
+    public static native void setCallerUidDirectory(String path);
 
     public static native void hideXposed();
 
@@ -111,56 +186,30 @@ public class NativeCore {
     public static native boolean disableResourceLoading();
 
 
+    private static final ThreadLocal<Boolean> RESOLVING_CALLER_UID = new ThreadLocal<>();
+
     @Keep
     public static int getCallingUid(int origCallingUid) {
-        try {
-            
-            if (origCallingUid > 0 && origCallingUid < Process.FIRST_APPLICATION_UID)
-                return origCallingUid;
-            
-            if (origCallingUid > Process.LAST_APPLICATION_UID)
-                return origCallingUid;
-
-            if (origCallingUid == BlackBoxCore.getHostUid()) {
-                
-                String appPackageName = BlackBoxCore.getAppPackageName();
-                if (appPackageName != null && appPackageName.equals("com.google.android.gms")){
-                    // Android's real AccountManager invokes an authenticator as a trusted system
-                    // caller.  BlackBox's per-user AccountManager must stay outside system_server
-                    // so accounts remain isolated, but that makes the shared host UID look like an
-                    // untrusted third-party caller to modern GMS.  Normalize only calls currently
-                    // executing through Android's account-authenticator Transport.  Do not treat
-                    // arbitrary guest-to-GMS Binder calls as GMS itself.
-                    if (isAccountAuthenticatorTransportCall()) {
-                        return Process.myUid();
-                    }
-                }
-                
-                
-                
-                if (appPackageName != null && appPackageName.equals("com.google.android.webview")){
-                    return Process.myUid();
-                }
-                
-                
-                try {
-                    int callingBUid = BlackBoxCore.getCallingBUid();
-                    if (callingBUid > 0 && callingBUid < Process.LAST_APPLICATION_UID) {
-                        return callingBUid;
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "Error getting calling BUid: " + e.getMessage());
-                }
-                // Do not infer privileged callers from class or method names. Apart from being
-                // unsafe inside this native callback on Android 16, that let arbitrary guest code
-                // with matching stack-frame names receive the system UID.
-                return BlackBoxCore.getHostUid();
-            }
+        // The original Linux UID is authoritative for system and external callers.
+        // Never use AppConfig.callingBUid here: it describes the process launcher,
+        // not the sender of the current Binder transaction.
+        if (SELF_PROVIDER_CALL.get() > 0) {
+            return GuestUid.myUid(true, BActivityThread.getBUid(), origCallingUid);
+        }
+        if (Boolean.TRUE.equals(RESOLVING_CALLER_UID.get())
+                || BActivityThread.getAppConfig() == null) {
             return origCallingUid;
-        } catch (Exception e) {
-            Log.e(TAG, "Error in getCallingUid: " + e.getMessage());
-            
-            return Process.myUid();
+        }
+        try {
+            RESOLVING_CALLER_UID.set(true);
+            return CallerUidResolver.resolve(origCallingUid, BlackBoxCore.getHostUid(),
+                    android.os.Binder.getCallingPid(), Process.myPid(), BActivityThread.getBUid(),
+                    pid -> BlackBoxCore.getBActivityManager().getVirtualUidForPid(pid));
+        } catch (Throwable error) {
+            // Unknown senders must retain their real identity, never an assumed guest/system UID.
+            return origCallingUid;
+        } finally {
+            RESOLVING_CALLER_UID.remove();
         }
     }
 

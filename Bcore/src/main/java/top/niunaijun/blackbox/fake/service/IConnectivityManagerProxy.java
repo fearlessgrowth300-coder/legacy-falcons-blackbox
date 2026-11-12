@@ -432,6 +432,45 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
     }
 
     
+    private static Object sanitizeLinkProperties(Object linkProperties) {
+        try {
+            top.niunaijun.blackbox.core.DeviceProfile profile =
+                    top.niunaijun.blackbox.core.DeviceProfile.CURRENT;
+            String seed = profile != null && profile.androidId != null ? profile.androidId : "profile";
+            int userId = top.niunaijun.blackbox.BlackBoxCore.getUserId();
+            java.net.InetAddress address = java.net.InetAddress.getByAddress(
+                    top.niunaijun.blackbox.core.NetworkIdentity.localIpv4(userId, seed));
+            boolean replaced = false;
+            try {
+                java.lang.reflect.Method setLinkAddresses = linkProperties.getClass()
+                        .getMethod("setLinkAddresses", java.util.Collection.class);
+                Class<?> linkAddress = Class.forName("android.net.LinkAddress");
+                Object one = linkAddress.getConstructor(java.net.InetAddress.class, int.class)
+                        .newInstance(address, 24);
+                setLinkAddresses.invoke(linkProperties, java.util.Collections.singletonList(one));
+                replaced = true;
+            } catch (Throwable ignored) {
+            }
+            if (!replaced) return createLinkProperties();
+            try {
+                java.lang.reflect.Method setDns = linkProperties.getClass()
+                        .getMethod("setDnsServers", java.util.List.class);
+                setDns.invoke(linkProperties, java.util.Collections.emptyList());
+            } catch (Throwable ignored) {
+            }
+            try {
+                java.lang.reflect.Method setRoutes = linkProperties.getClass()
+                        .getMethod("setRoutes", java.util.Collection.class);
+                setRoutes.invoke(linkProperties, java.util.Collections.emptyList());
+            } catch (Throwable ignored) {
+            }
+            return linkProperties;
+        } catch (Throwable error) {
+            Slog.w(TAG, "link properties left without the phone address");
+            return createLinkProperties();
+        }
+    }
+
     @ProxyMethod("getLinkProperties")
     public static class GetLinkProperties extends MethodHook {
         @Override
@@ -441,7 +480,7 @@ public class IConnectivityManagerProxy extends BinderInvocationStub {
                 try {
                     Object result = method.invoke(who, args);
                     if (result != null) {
-                        return result;
+                        return sanitizeLinkProperties(result);
                     }
 
                     

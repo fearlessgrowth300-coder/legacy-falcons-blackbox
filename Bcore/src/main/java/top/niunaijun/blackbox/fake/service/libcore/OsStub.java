@@ -7,6 +7,7 @@ import java.lang.reflect.Method;
 import black.libcore.io.BRLibcore;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.core.GuestUid;
 import top.niunaijun.blackbox.core.IOCore;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
@@ -88,11 +89,8 @@ public class OsStub extends ClassInvocationStub {
     private static int getFakeUid(int callUid) {
         if (callUid > 0 && callUid <= Process.FIRST_APPLICATION_UID)
             return callUid;
-
-        if (BActivityThread.isThreadInit() && BActivityThread.currentActivityThread().isInit()) {
-            return BActivityThread.getBAppId();
-        } else {
-            return BlackBoxCore.getHostUid();
-        }
+        boolean guestReady = BActivityThread.isThreadInit()
+                && BActivityThread.currentActivityThread().isInit();
+        return GuestUid.myUid(guestReady, BActivityThread.getBUid(), BlackBoxCore.getHostUid());
     }
 }

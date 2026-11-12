@@ -9,16 +9,12 @@ import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.TypedArray;
-import android.graphics.Bitmap;
-import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.view.WindowManager;
 
 import black.android.app.BRActivity;
 import black.com.android.internal.BRRstyleable;
 import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.app.BActivityThread;
-import top.niunaijun.blackbox.utils.DrawableUtils;
 
 
 public class ActivityCompat {
@@ -54,33 +50,17 @@ public class ActivityCompat {
                 try {
                     String label = TaskDescriptionCompat.getTaskDescriptionLabel(
                             BlackBoxCore.getUserId(), applicationInfo.loadLabel(pm));
-
-                    Bitmap icon = null;
-                    Drawable drawable = getActivityIcon(activity);
-                    if (drawable != null) {
-                        ActivityManager am = (ActivityManager) baseContext.getSystemService(Context.ACTIVITY_SERVICE);
-                        int iconSize = am.getLauncherLargeIconSize();
-                        icon = DrawableUtils.drawableToBitmap(drawable, iconSize, iconSize);
+                    // No bitmap. TaskDescription parcels an icon through Bitmap.asShared,
+                    // which SIGSEGVs on a hardware, recycled, or null-backed bitmap.
+                    ActivityManager.TaskDescription description =
+                            TaskDescriptionCompat.withoutIcon(label, 0);
+                    if (description != null) {
+                        activity.setTaskDescription(description);
                     }
-
-                    activity.setTaskDescription(new ActivityManager.TaskDescription(label, icon));
                 } catch (Throwable e) {
                     e.printStackTrace();
                 }
             }
         }
-    }
-
-    private static Drawable getActivityIcon(Activity activity) {
-        PackageManager pm = activity.getPackageManager();
-        try {
-            Drawable icon = pm.getActivityIcon(activity.getComponentName());
-            if (icon != null)
-                return icon;
-        } catch (PackageManager.NameNotFoundException ignore) {
-        }
-
-        ApplicationInfo applicationInfo = activity.getApplicationInfo();
-        return applicationInfo.loadIcon(pm);
     }
 }

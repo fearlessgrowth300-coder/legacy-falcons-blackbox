@@ -12,7 +12,7 @@ public final class BUserHandle implements Parcelable {
     
 
     
-    public static final int PER_USER_RANGE = 100000;
+    public static final int PER_USER_RANGE = top.niunaijun.blackbox.core.GuestUid.PER_USER_RANGE;
 
     
     public static final int USER_ALL = -1;
@@ -143,7 +143,7 @@ public final class BUserHandle implements Parcelable {
 
     
     public static int getAppId(int uid) {
-        return uid % PER_USER_RANGE;
+        return top.niunaijun.blackbox.core.GuestUid.appId(uid);
     }
 
     

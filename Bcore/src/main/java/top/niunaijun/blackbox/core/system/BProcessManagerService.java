@@ -54,6 +54,10 @@ public class BProcessManagerService implements ISystemService {
         ApplicationInfo info = BPackageManagerService.get().getApplicationInfo(packageName, 0, userId);
         if (info == null)
             return null;
+        if (top.niunaijun.blackbox.core.PlayProcessPolicy.refuseStart(packageName, processName)) {
+            Slog.w(TAG, "refusing Play quick_launch process: " + processName);
+            return null;
+        }
         // Fail before allocating a physical proxy process when a protected app has lost,
         // corrupted, or conflicting route credentials. GMS clients retry failed binds very
         // aggressively; allowing each retry to start another proxy process can exhaust every
@@ -97,6 +101,12 @@ public class BProcessManagerService implements ISystemService {
                         + " user=" + userId + " (all " + ProxyManifest.freeCount() + " in use)");
                 return null;
             }
+            if (!top.niunaijun.blackbox.core.ProcessRestartPolicy.allow(
+                    userId, packageName, processName, android.os.SystemClock.elapsedRealtime())) {
+                Slog.e(TAG, "refusing to restart crashing guest " + packageName
+                        + " process=" + processName + " user=" + userId);
+                return null;
+            }
             app = new ProcessRecord(info, processName);
             app.uid = Process.myUid();
             app.bpid = bpid;
@@ -132,6 +142,12 @@ public class BProcessManagerService implements ISystemService {
                 app = null;
             } else {
                 app.pid = getPid(BlackBoxCore.getContext(), ProxyManifest.getProcessName(app.bpid));
+                try {
+                    java.io.File uidDir = top.niunaijun.blackbox.core.CallerUidMap.directory(
+                            top.niunaijun.blackbox.core.env.BEnvironment.getSystemDir());
+                    top.niunaijun.blackbox.core.CallerUidMap.publish(uidDir, app.pid, app.buid);
+                } catch (Throwable ignored) {
+                }
             }
         }
         return app;
@@ -244,17 +260,15 @@ public class BProcessManagerService implements ISystemService {
         if (!mainProcess && !routedGmsPersistent) return;
         try {
             Uri uri = Uri.parse("content://" + record.getProviderAuthority());
-            // The main app uses an unstable hold so an intentional stop remains independent.
-            // Routed GMS is the explicitly enabled push daemon, so use a stable hold to prevent
-            // Android reclaiming its empty runtime before GcmService is delivered.
-            ContentProviderClient client = routedGmsPersistent
-                    ? BlackBoxCore.getContext().getContentResolver()
-                            .acquireContentProviderClient(uri)
-                    : BlackBoxCore.getContext().getContentResolver()
-                            .acquireUnstableContentProviderClient(uri);
+            // Never make the manager depend on a guest's survival. A stable GMS
+            // reference caused Android to kill :black when the guest hit a broadcast
+            // ANR. Keep the reference unstable; binder death already releases the
+            // record through onProcessDie. This does not suppress or fix the guest ANR.
+            ContentProviderClient client = BlackBoxCore.getContext().getContentResolver()
+                    .acquireUnstableContentProviderClient(uri);
             if (client != null) {
                 record.keepAliveProviderClient = client;
-                Slog.d(TAG, "Holding stable provider connection for proxy main process: user="
+                Slog.d(TAG, "Holding unstable guest provider connection: user="
                         + record.userId + " pkg=" + record.info.packageName + " slot=" + record.bpid);
             }
         } catch (Throwable e) {
@@ -310,6 +324,13 @@ public class BProcessManagerService implements ISystemService {
                 }
             }
             mPidsSelfLocked.remove(record);
+            try {
+                top.niunaijun.blackbox.core.CallerUidMap.clear(
+                        top.niunaijun.blackbox.core.CallerUidMap.directory(
+                                top.niunaijun.blackbox.core.env.BEnvironment.getSystemDir()),
+                        record.pid);
+            } catch (Throwable ignored) {
+            }
 
             removeProc(record);
             BNotificationManagerService.get().deletePackageNotification(record.getPackageName(), record.userId);
