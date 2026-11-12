@@ -7,16 +7,27 @@ package top.niunaijun.blackbox.core;
 public final class ProviderAcquireGuard {
     private ProviderAcquireGuard() {}
 
+    private static final ThreadLocal<Boolean> LOOKING_UP = new ThreadLocal<>();
+
     public static boolean ownedByInstalledPackage(String authority, Installed installed) {
         if (authority == null || authority.isEmpty() || installed == null) return false;
-        String name = authority;
-        while (!name.isEmpty()) {
-            if (installed.installed(name)) return true;
-            int dot = name.lastIndexOf('.');
-            if (dot <= 0) return false;
-            name = name.substring(0, dot);
+        // The installed() lookup reaches the package service through BlackBox's own
+        // provider, whose acquire lands back here. That provider is never a clone's,
+        // and asking again recursed until StackOverflowError and froze startup.
+        if (LOOKING_UP.get() != null) return false;
+        LOOKING_UP.set(Boolean.TRUE);
+        try {
+            String name = authority;
+            while (!name.isEmpty()) {
+                if (installed.installed(name)) return true;
+                int dot = name.lastIndexOf('.');
+                if (dot <= 0) return false;
+                name = name.substring(0, dot);
+            }
+            return false;
+        } finally {
+            LOOKING_UP.remove();
         }
-        return false;
     }
 
     /** The clone did not resolve this authority, and the phone's copy must not be used. */
