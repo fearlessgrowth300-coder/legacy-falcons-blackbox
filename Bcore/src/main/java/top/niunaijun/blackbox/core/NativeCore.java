@@ -102,6 +102,14 @@ public class NativeCore {
 
     public static native void enableIO();
 
+    /**
+     * Installs the AudioTrack.native_setup hook for the reflected method.
+     * Slots come from {@code AudioClientIdentity.nativeSetupSlots}.
+     * Returns a short install result, never null.
+     */
+    public static native String hookAudioTrack(Object method, String descriptor,
+                                               int parcelSlot, int stringSlot, int sessionSlot);
+
     public static native void addIORule(String targetPath, String relocatePath);
 
     /** Per-user boot_id for guest readers. Ashmem paths stay on /dev/ashmem either way. */

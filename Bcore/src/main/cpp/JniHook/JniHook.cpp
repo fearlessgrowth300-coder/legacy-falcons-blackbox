@@ -126,6 +126,66 @@ bool CheckFlags(void *artMethod) {
     }
 }
 
+bool JniHook::HookReflected(JNIEnv *env, jobject reflected, const char *name, const char *sign,
+                            void *new_fun, void **orig_fun, const char **error) {
+    if (error) *error = "hook failed";
+    if (HookEnv.art_method_native_offset == 0) {
+        if (error) *error = "art method offset missing";
+        return false;
+    }
+    if (reflected == nullptr || name == nullptr || sign == nullptr || new_fun == nullptr) {
+        if (error) *error = "method not found";
+        return false;
+    }
+    void *art = nullptr;
+    if (HookEnv.api_level >= __ANDROID_API_Q__) {
+        jclass executable = env->FindClass("java/lang/reflect/Executable");
+        if (executable == nullptr) {
+            env->ExceptionClear();
+            if (error) *error = "Executable class missing";
+            return false;
+        }
+        jfieldID artId = env->GetFieldID(executable, "artMethod", "J");
+        if (artId == nullptr) {
+            env->ExceptionClear();
+            if (error) *error = "artMethod field missing";
+            return false;
+        }
+        art = reinterpret_cast<void *>(env->GetLongField(reflected, artId));
+        if (env->ExceptionCheck() || art == nullptr) {
+            env->ExceptionClear();
+            if (error) *error = "artMethod pointer missing";
+            return false;
+        }
+    } else {
+        art = env->FromReflectedMethod(reflected);
+    }
+    auto artMethod = reinterpret_cast<uintptr_t *>(art);
+    if (!CheckFlags(artMethod)) {
+        if (error) *error = "method is not native";
+        return false;
+    }
+    if (orig_fun) *orig_fun = reinterpret_cast<void *>(artMethod[HookEnv.art_method_native_offset]);
+    jclass methodClass = env->GetObjectClass(reflected);
+    jmethodID getDeclaring = env->GetMethodID(methodClass, "getDeclaringClass", "()Ljava/lang/Class;");
+    jclass clazz = (jclass) env->CallObjectMethod(reflected, getDeclaring);
+    if (clazz == nullptr || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        if (error) *error = "declaring class missing";
+        return false;
+    }
+    JNINativeMethod hooked[] = {{name, sign, new_fun}};
+    if (env->RegisterNatives(clazz, hooked, 1) < 0) {
+        env->ExceptionClear();
+        if (error) *error = "RegisterNatives failed";
+        return false;
+    }
+    ClearAccessFlag((char *) artMethod, kAccCriticalNative);
+    ClearAccessFlag((char *) artMethod, kAccFastNative);
+    if (error) *error = "installed";
+    return true;
+}
+
 void JniHook::HookJniFun(JNIEnv *env, jobject java_method, void *new_fun,
                          void **orig_fun, bool is_static) {
     const char *class_name = GetMethodDeclaringClass(env, java_method);

@@ -1,9 +1,13 @@
 package top.niunaijun.blackbox.core;
 
 import android.os.Parcel;
+import android.os.Process;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.io.FileInputStream;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
@@ -17,8 +21,108 @@ import top.niunaijun.blackbox.utils.compat.ContextCompat;
  */
 public final class AudioTrackHost {
     public static final String TAG = "AudioTrackProxy";
+    private static final AtomicBoolean STARTED = new AtomicBoolean(false);
 
     private AudioTrackHost() {}
+
+    /** Called from native enableIO and from guest bind. One attempt per process. */
+    public static void installFromNative() {
+        install(null);
+    }
+
+    public static void install(String processName) {
+        int pid = Process.myPid();
+        String cmdline = commandLine();
+        if (!STARTED.compareAndSet(false, true)) {
+            Slog.e(TAG, "hook install already pid=" + pid + " process=" + processName
+                    + " cmdline=" + cmdline);
+            return;
+        }
+        Slog.e(TAG, "hook install begin pid=" + pid + " process=" + processName
+                + " cmdline=" + cmdline);
+        try {
+            try {
+                top.niunaijun.blackbox.core.NativeCore.disableHiddenApi();
+            } catch (Throwable ignored) {
+            }
+            Class<?> audio = Class.forName("android.media.AudioTrack");
+            boolean found = false;
+            for (Method method : audio.getDeclaredMethods()) {
+                if (!"native_setup".equals(method.getName())
+                        || !Modifier.isNative(method.getModifiers())) {
+                    continue;
+                }
+                found = true;
+                method.setAccessible(true);
+                String desc = descriptor(method);
+                int[] slots = AudioClientIdentity.nativeSetupSlots(desc);
+                Slog.e(TAG, "native_setup signature=" + desc
+                        + (slots == null ? " slots=unsupported"
+                        : " parcelSlot=" + slots[0] + " stringSlot=" + slots[1]
+                        + " sessionSlot=" + slots[2]));
+                String result;
+                try {
+                    if (slots == null) {
+                        result = "unsupported signature";
+                    } else {
+                        result = top.niunaijun.blackbox.core.NativeCore.hookAudioTrack(
+                                method, desc, slots[0], slots[1], slots[2]);
+                    }
+                } catch (UnsatisfiedLinkError missing) {
+                    result = "native missing " + missing.getMessage();
+                } catch (Throwable error) {
+                    result = "failed " + error.getClass().getSimpleName() + " " + error.getMessage();
+                }
+                if (result == null) result = "failed null";
+                Slog.e(TAG, "hook install result pid=" + pid + " cmdline=" + cmdline
+                        + " " + result + " signature=" + desc);
+            }
+            if (!found) {
+                Slog.e(TAG, "hook install result pid=" + pid + " cmdline=" + cmdline
+                        + " method not found declared=" + audio.getDeclaredMethods().length);
+            }
+        } catch (Throwable error) {
+            Slog.e(TAG, "hook install result pid=" + pid + " cmdline=" + cmdline
+                    + " failed " + error.getClass().getSimpleName() + " " + error.getMessage());
+        }
+    }
+
+    static String descriptor(Method method) {
+        StringBuilder out = new StringBuilder("(");
+        for (Class<?> parameter : method.getParameterTypes()) {
+            out.append(jniType(parameter));
+        }
+        out.append(')');
+        out.append(jniType(method.getReturnType()));
+        return out.toString();
+    }
+
+    private static String jniType(Class<?> type) {
+        if (type == int.class) return "I";
+        if (type == boolean.class) return "Z";
+        if (type == long.class) return "J";
+        if (type == void.class) return "V";
+        if (type == byte.class) return "B";
+        if (type == char.class) return "C";
+        if (type == short.class) return "S";
+        if (type == float.class) return "F";
+        if (type == double.class) return "D";
+        if (type.isArray()) return "[" + jniType(type.getComponentType());
+        return "L" + type.getName().replace('.', '/') + ";";
+    }
+
+    private static String commandLine() {
+        try (FileInputStream input = new FileInputStream("/proc/self/cmdline")) {
+            byte[] raw = new byte[256];
+            int size = input.read(raw);
+            if (size <= 0) return "?";
+            int end = 0;
+            while (end < size && raw[end] != 0) end++;
+            return new String(raw, 0, end);
+        } catch (Throwable ignored) {
+            return "?";
+        }
+    }
 
     public static boolean inGuest() {
         return AudioClientIdentity.inGuest(guestPackage(), hostPackage());

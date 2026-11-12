@@ -44,6 +44,7 @@ Hook/VMClassLoaderHook.cpp \
 Hook/UnixFileSystemHook.cpp \
 Hook/BinderHook.cpp \
 Hook/AudioTrackHook.cpp \
+Hook/AudioTrackStub.S \
 Hook/BaseHook.cpp \
 JniHook/JniHook.cpp
 

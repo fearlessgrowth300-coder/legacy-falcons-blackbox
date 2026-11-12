@@ -32,7 +32,19 @@ public final class AudioClientIdentityTest {
         check(AudioClientIdentity.createTrackLog(
                 "top.niunaijun.blackbox", 10477, 0, 0, -20, false).endsWith("parcel=kept"),
                 "a failed parcel rewrite is visible in the log");
-        System.out.println("AudioClientIdentityTest ok (11 checks)");
+        String parcel5 = "(Ljava/lang/Object;Ljava/lang/Object;[IIIIII[ILandroid/os/Parcel;JZILjava/lang/Object;Ljava/lang/String;)I";
+        int[] slots = AudioClientIdentity.nativeSetupSlots(parcel5);
+        check(slots != null && slots[0] == 11 && slots[1] == 16 && slots[2] == 10 && slots[3] == 17,
+                "the Android 16 AudioTrack descriptor maps parcel, string, and session");
+        String extra = "(Ljava/lang/Object;Ljava/lang/Object;[IIIIII[ILandroid/os/Parcel;JZILjava/lang/Object;Ljava/lang/String;I)I";
+        int[] extraSlots = AudioClientIdentity.nativeSetupSlots(extra);
+        check(extraSlots != null && extraSlots[0] == 11 && extraSlots[1] == 16 && extraSlots[2] == 10,
+                "a trailing argument does not move the parcel or the package string");
+        check(AudioClientIdentity.nativeSetupSlots("(FF)I") == null,
+                "a float signature is not hooked");
+        check(AudioClientIdentity.nativeSetupSlots("(Ljava/lang/String;)V") == null,
+                "a non-int return is not hooked");
+        System.out.println("AudioClientIdentityTest ok (15 checks)");
     }
 
     private static void check(boolean condition, String message) {

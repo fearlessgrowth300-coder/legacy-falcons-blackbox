@@ -61,4 +61,76 @@ public final class AudioClientIdentity {
                 + " status=" + status
                 + " parcel=" + (parcelRewritten ? "host" : "kept");
     }
+
+    /**
+     * Argument slots for an instance {@code native_setup} descriptor.
+     * Slot 0 is {@code JNIEnv*}, slot 1 is {@code this}, and Java arguments follow
+     * in integer registers then 8-byte stack slots. Returns
+     * {@code {parcel, string, session, end}} or null when the descriptor is not
+     * a hookable integer/object method. {@code -1} means that argument is absent.
+     * The second {@code int[]} is the session; a lone {@code int[]} is used when
+     * there is only one.
+     */
+    public static int[] nativeSetupSlots(String descriptor) {
+        if (descriptor == null || descriptor.length() < 3 || descriptor.charAt(0) != '(') {
+            return null;
+        }
+        int end = descriptor.lastIndexOf(')');
+        if (end < 1 || !descriptor.endsWith(")I")) return null;
+        int slot = 2;
+        int intArrays = 0;
+        int parcel = -1;
+        int string = -1;
+        int session = -1;
+        int i = 1;
+        while (i < end) {
+            char c = descriptor.charAt(i);
+            if (c == 'F' || c == 'D') return null;
+            int at = slot;
+            if (c == '[') {
+                int dims = 0;
+                while (i < end && descriptor.charAt(i) == '[') {
+                    dims++;
+                    i++;
+                }
+                if (i >= end) return null;
+                char elem = descriptor.charAt(i);
+                if (elem == 'F' || elem == 'D') return null;
+                if (elem == 'L') {
+                    int semi = descriptor.indexOf(';', i);
+                    if (semi < 0 || semi >= end) return null;
+                    i = semi + 1;
+                } else if (elem == 'B' || elem == 'C' || elem == 'I' || elem == 'J'
+                        || elem == 'S' || elem == 'Z') {
+                    i++;
+                } else {
+                    return null;
+                }
+                if (dims == 1 && elem == 'I') {
+                    intArrays++;
+                    if (session < 0 || intArrays == 2) session = at;
+                }
+                slot++;
+                continue;
+            }
+            if (c == 'L') {
+                int semi = descriptor.indexOf(';', i);
+                if (semi < 0 || semi >= end) return null;
+                String type = descriptor.substring(i, semi + 1);
+                if (parcel < 0 && "Landroid/os/Parcel;".equals(type)) parcel = at;
+                if ("Ljava/lang/String;".equals(type)) string = at;
+                i = semi + 1;
+                slot++;
+                continue;
+            }
+            if (c == 'B' || c == 'C' || c == 'I' || c == 'J' || c == 'S' || c == 'Z') {
+                i++;
+                slot++;
+                continue;
+            }
+            return null;
+        }
+        if (string < 0) return null;
+        return new int[] {parcel, string, session, slot};
+    }
 }

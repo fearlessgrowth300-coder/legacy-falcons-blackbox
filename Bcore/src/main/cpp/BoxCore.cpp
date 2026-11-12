@@ -315,6 +315,7 @@ void hideXposed(JNIEnv *env, jclass clazz) {
 
 void init(JNIEnv *env, jobject clazz, jint api_level) {
     ALOGD("NativeCore init.");
+    __android_log_print(ANDROID_LOG_ERROR, "AudioTrackProxy", "native init pid=%d", getpid());
     VMEnv.api_level = api_level;
     VMEnv.NativeCoreClass = (jclass) env->NewGlobalRef(env->FindClass(VMCORE_CLASS));
     VMEnv.getCallingUidId = env->GetStaticMethodID(VMEnv.NativeCoreClass, "getCallingUid", "(I)I");
@@ -390,6 +391,16 @@ void enableIO(JNIEnv *env, jclass clazz) {
     ALOGD("set enableIO");
     IO::init(env);
     nativeHook(env);
+}
+
+static jstring hookAudioTrack(JNIEnv *env, jclass clazz, jobject method, jstring descriptor,
+                              jint parcelSlot, jint stringSlot, jint sessionSlot) {
+    (void) clazz;
+    const char *desc = descriptor ? env->GetStringUTFChars(descriptor, nullptr) : nullptr;
+    const char *result = AudioTrackHook::hook(env, method, desc, parcelSlot, stringSlot, sessionSlot);
+    if (descriptor && desc) env->ReleaseStringUTFChars(descriptor, desc);
+    if (result == nullptr) result = "hook failed";
+    return env->NewStringUTF(result);
 }
 
 bool disableHiddenApi(JNIEnv *env, jclass clazz) {
@@ -505,6 +516,8 @@ static JNINativeMethod gMethods[] = {
         {"nativeSelfProviderDepth", "()I", (void *) selfProviderDepth},
         {"setCallerUidDirectory", "(Ljava/lang/String;)V", (void *) setCallerUidDirectory},
         {"enableIO",   "()V",                                     (void *) enableIO},
+        {"hookAudioTrack", "(Ljava/lang/Object;Ljava/lang/String;III)Ljava/lang/String;",
+                (void *) hookAudioTrack},
         {"init",       "(I)V",                                    (void *) init},
 };
 

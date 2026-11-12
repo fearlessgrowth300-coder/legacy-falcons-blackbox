@@ -561,6 +561,12 @@ public class BActivityThread extends IBActivityThread.Stub {
         NativeCore.init(Build.VERSION.SDK_INT);
         assert packageContext != null;
         IOCore.get().enableRedirect(packageContext);
+        try {
+            top.niunaijun.blackbox.core.AudioTrackHost.install(processName);
+        } catch (Throwable audioHookError) {
+            Slog.e("AudioTrackProxy", "hook install failed pid=" + android.os.Process.myPid()
+                    + " " + audioHookError);
+        }
 
         AppBindData bindData = new AppBindData();
         bindData.appInfo = applicationInfo;
