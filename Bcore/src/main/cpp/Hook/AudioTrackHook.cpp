@@ -220,6 +220,10 @@ const char *AudioTrackHook::hook(JNIEnv *env, jobject method, const char *descri
     return "trampoline unsupported on this abi";
 #else
     if (gOrig != nullptr) return "already installed";
+    // Resolve AudioTrackHost now, while BlackBox code is on the stack. Inside the
+    // hooked AudioTrack.native_setup, FindClass searches the boot class loader and
+    // cannot see it, so every guest AudioTrack kept the clone's package and was refused.
+    if (!resolveJava(env)) return "AudioTrackHost unresolved";
     gParcelSlot = parcelSlot;
     gStringSlot = stringSlot;
     gSessionSlot = sessionSlot;
