@@ -7,6 +7,7 @@
 #include "IO.h"
 #include "RuntimePathPolicy.h"
 #include "Hook/BinderHook.h"
+#include "Hook/AudioTrackHook.h"
 #include <jni.h>
 #include <cstdio>
 #include <cstdlib>
@@ -303,6 +304,7 @@ void nativeHook(JNIEnv *env) {
     VMClassLoaderHook::init(env);
 
     BinderHook::init(env);
+    AudioTrackHook::init(env);
     DexFileHook::init(env);
 }
 

@@ -82,6 +82,10 @@ jobs:
             tools/diagnostics/SmsReceiverVisibilityTest.java
           java -cp build/diagnostic-tests SmsReceiverVisibilityTest
           javac -d build/diagnostic-tests \
+            Bcore/src/main/java/top/niunaijun/blackbox/core/AudioClientIdentity.java \
+            tools/diagnostics/AudioClientIdentityTest.java
+          java -cp build/diagnostic-tests AudioClientIdentityTest
+          javac -d build/diagnostic-tests \
             Bcore/src/main/java/top/niunaijun/blackbox/core/SystemCallerIdentity.java \
             tools/diagnostics/SystemCallerIdentityTest.java
           java -cp build/diagnostic-tests SystemCallerIdentityTest
