@@ -260,6 +260,12 @@ int BoxCore::getCallingUid(JNIEnv *env, int orig) {
         if (pid > 0 && pid != getpid()) {
             looked = lookup_published_uid(pid, &look_errno);
             if (looked >= 10000) returned = looked;
+        } else if (pid == getpid() && g_presented_uid > 0) {
+            // No other caller: this process is calling itself (or no transaction is
+            // active). Android then makes getCallingUid() == Process.myUid(), and
+            // Firebase Messaging's in-app service enforces exactly that ("Binding only
+            // allowed within app"). Process.myUid() is the presented app id.
+            returned = g_presented_uid;
         }
         log_calling_uid(orig, jni_pid, raw_pid, looked, look_errno, returned);
         return returned;
