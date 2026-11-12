@@ -141,6 +141,15 @@ public class CrashMonitor {
                 @Override
                 public void uncaughtException(Thread thread, Throwable throwable) {
                     handleCrash("JavaException", thread, throwable);
+                    // An uncaught exception has already unwound this thread; for the main
+                    // thread the Looper is gone. Swallowing it left a process that could not
+                    // answer service/broadcast calls, and Android showed "BlackBox isn't
+                    // responding" minutes later. End the process like stock Android does.
+                    // Not chained: the handlers installed before this one (StackTraceFilter,
+                    // NativeCrashPrevention) swallow too. Recoverable main-thread races are
+                    // absorbed earlier by SimpleCrashFix's main-loop guard.
+                    android.os.Process.killProcess(android.os.Process.myPid());
+                    System.exit(10);
                 }
             });
             

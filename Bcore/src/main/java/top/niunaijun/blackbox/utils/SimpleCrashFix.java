@@ -256,21 +256,25 @@ public class SimpleCrashFix {
         }
         
         String message = throwable.getMessage();
-        if (message != null) {
-            return message.contains("Google Play Services") ||
+        if (message != null && (message.contains("Google Play Services") ||
                    message.contains("GooglePlayServicesUtil") ||
                    message.contains("GoogleApiAvailability") ||
-                   message.contains("com.google.android.gms");
+                   message.contains("com.google.android.gms"))) {
+            return true;
         }
         
-        
+        // Fall through to the stack even when there is a message. Play services dynamite
+        // modules (e.g. Firebase measurement) are obfuscated, so "com.google.android.gms"
+        // appears only in the frame's file name: m7.eq.m(:com.google.android.gms.dynamite_...).
         StackTraceElement[] stackTrace = throwable.getStackTrace();
         if (stackTrace != null) {
             for (StackTraceElement element : stackTrace) {
                 String className = element.getClassName();
+                String fileName = element.getFileName();
                 if (className.contains("com.google.android.gms") ||
                     className.contains("GooglePlayServicesUtil") ||
-                    className.contains("GoogleApiAvailability")) {
+                    className.contains("GoogleApiAvailability") ||
+                    (fileName != null && fileName.contains("com.google.android.gms"))) {
                     return true;
                 }
             }
