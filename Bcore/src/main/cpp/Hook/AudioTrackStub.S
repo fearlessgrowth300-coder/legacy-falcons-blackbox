@@ -23,7 +23,13 @@ audio_setup_trampoline:
     adr x30, audio_setup_return
     blr x16
 audio_setup_return:
+    // x0 = native_setup's status. audio_finish returns the caller's lr in x0,
+    // so keep the status and hand it back; otherwise Java reads lr as the status.
+    sub sp, sp, #16
+    str x0, [sp]
     bl audio_finish
     mov x30, x0
+    ldr x0, [sp]
+    add sp, sp, #16
     ret
 #endif
