@@ -49,6 +49,7 @@ class MainActivity : LoadingActivity() {
     private val fragmentList = mutableListOf<AppsFragment>()
 
     private var currentUser = 0
+    private val menuProfileSeparation = 71021
 
     private val driveFolderPicker =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -62,6 +63,17 @@ class MainActivity : LoadingActivity() {
                     showDriveRequired()
                 }
             } else if (!DriveFolderStore.isConnected(this)) showDriveRequired()
+        }
+
+    private val managedProfileProvisioning =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            top.niunaijun.blackboxa.profile.ManagedProfileStore.capture(this, result.data)
+            if (result.resultCode == RESULT_OK) {
+                top.niunaijun.blackboxa.profile.ManagedProfileStore.commitPendingWorkspace(this)
+                startActivity(Intent(this, top.niunaijun.blackboxa.profile.ProfileStatusActivity::class.java))
+            } else {
+                toast("Android did not create the separate profile")
+            }
         }
 
     private val accountSettingsLauncher =
@@ -423,7 +435,17 @@ class MainActivity : LoadingActivity() {
                 .getString("Remark${user.id}", "User ${user.id}")
                 .orEmpty().ifBlank { "User ${user.id}" }
             val defaultName = "User ${user.id}"
-            labels.add(if (name == defaultName) defaultName else "$name  •  $defaultName")
+            val shown = if (name == defaultName) defaultName else "$name  •  $defaultName"
+            val separate = top.niunaijun.blackboxa.profile.WorkspaceModeStore
+                .launchesInManagedProfile(this, user.id)
+            val mode = top.niunaijun.blackbox.core.ManagedProfilePolicy.shortLabel(
+                if (separate) {
+                    top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.SEPARATE
+                } else {
+                    top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.HOOKED
+                }
+            )
+            labels.add("$shown  •  $mode")
         }
         AlertDialog.Builder(this)
             .setTitle("Manage BlackBox users")
@@ -437,18 +459,46 @@ class MainActivity : LoadingActivity() {
 
     private fun showCreateUserDialog() {
         val nextId = (BlackBoxCore.get().users.maxOfOrNull { it.id } ?: -1) + 1
+        val recommended = top.niunaijun.blackbox.core.ManagedProfilePolicy.recommended(nextId)
+        val choices = arrayOf(
+            "Separate Android profile (recommended for a second account)",
+            "Same profile, hooked (weaker, shared Linux uid)"
+        )
+        val start = if (recommended == top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.SEPARATE) 0 else 1
+        AlertDialog.Builder(this)
+            .setTitle("How should User $nextId be isolated?")
+            .setSingleChoiceItems(choices, start, null)
+            .setPositiveButton("Next") { dialog, _ ->
+                val selected = (dialog as AlertDialog).listView.checkedItemPosition
+                val mode = if (selected == 0) {
+                    top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.SEPARATE
+                } else {
+                    top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.HOOKED
+                }
+                askUserName(nextId, mode)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun askUserName(nextId: Int, mode: top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode) {
         MaterialDialog(this).show {
             title(text = "Create BlackBox user")
-            message(text = "A user is an isolated space for another app clone.")
+            message(text = top.niunaijun.blackbox.core.ManagedProfilePolicy.shortLabel(mode))
             input(hint = "User name", prefill = "User $nextId") { _, value ->
-                createUser(nextId, value.toString().trim().ifBlank { "User $nextId" })
+                createUser(nextId, value.toString().trim().ifBlank { "User $nextId" }, mode)
             }
             positiveButton(text = "Create")
             negativeButton(text = "Cancel")
         }
     }
 
-    private fun createUser(userId: Int, name: String) {
+    private fun createUser(
+        userId: Int,
+        name: String,
+        mode: top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode =
+            top.niunaijun.blackbox.core.ManagedProfilePolicy.recommended(userId)
+    ) {
         showLoading()
         lifecycleScope.launch {
             val created = withContext(Dispatchers.IO) {
@@ -459,19 +509,63 @@ class MainActivity : LoadingActivity() {
                 toast("Could not create User $userId")
                 return@launch
             }
+            top.niunaijun.blackboxa.profile.WorkspaceModeStore.set(this@MainActivity, userId, mode)
             AppManager.mRemarkSharedPreferences.edit {
                 putString("Remark$userId", name)
             }
             refreshUserPages(userId)
             toast("$name created")
+            if (mode == top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.SEPARATE) {
+                offerSeparateProfile(userId)
+            }
         }
+    }
+
+    private fun offerSeparateProfile(workspaceId: Int) {
+        val controller = top.niunaijun.blackboxa.profile.ManagedProfileController(this)
+        if (controller.otherProfiles().isNotEmpty() || controller.isProfileOwner()) {
+            top.niunaijun.blackboxa.profile.ManagedProfileStore.bindWorkspace(this, workspaceId)
+            startActivity(Intent(this, top.niunaijun.blackboxa.profile.ProfileStatusActivity::class.java))
+            return
+        }
+        val reason = controller.blockReason()
+        if (reason != null) {
+            AlertDialog.Builder(this)
+                .setTitle("Separate profile is not available")
+                .setMessage(reason)
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Create the Android profile?")
+            .setMessage(
+                "Android will ask you to confirm a work profile. Blackbox becomes its profile " +
+                    "owner. The second account then has its own uid, data directory, Android ID, " +
+                    "keystore, and accounts. ShieldProxy must also be installed inside that profile."
+            )
+            .setPositiveButton("Continue") { _, _ ->
+                try {
+                    top.niunaijun.blackboxa.profile.ManagedProfileStore.setPendingWorkspace(this, workspaceId)
+                    managedProfileProvisioning.launch(controller.provisionIntent())
+                } catch (error: Throwable) {
+                    toast("Android did not open profile setup")
+                }
+            }
+            .setNegativeButton("Not now", null)
+            .show()
     }
 
     private fun showUserActions(userId: Int) {
         val name = AppManager.mRemarkSharedPreferences
             .getString("Remark$userId", "User $userId")
             .orEmpty().ifBlank { "User $userId" }
-        val actions = mutableListOf("Open user", "Rename user")
+        val actions = mutableListOf(
+            "Open user",
+            "Rename user",
+            "Isolation mode",
+            "Profile separation status"
+        )
         if (!top.niunaijun.blackbox.core.KeystoreIsolation.isEnabled(userId)) {
             actions.add("Protect encrypted logins")
         }
@@ -482,9 +576,48 @@ class MainActivity : LoadingActivity() {
                 when (actions[which]) {
                     "Open user" -> selectUser(userId)
                     "Rename user" -> showRenameUserDialog(userId, name)
+                    "Isolation mode" -> showIsolationModeDialog(userId, name)
+                    "Profile separation status" -> startActivity(
+                        Intent(this, top.niunaijun.blackboxa.profile.ProfileStatusActivity::class.java)
+                    )
                     "Protect encrypted logins" -> showKeystoreUpgradeDialog(userId, name)
                     "Delete user" -> showDeleteUserDialog(userId, name)
                 }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showIsolationModeDialog(userId: Int, name: String) {
+        val current = if (top.niunaijun.blackboxa.profile.WorkspaceModeStore
+                .launchesInManagedProfile(this, userId)
+        ) {
+            top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.SEPARATE
+        } else {
+            top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.HOOKED
+        }
+        AlertDialog.Builder(this)
+            .setTitle("$name isolation")
+            .setMessage(
+                "Now: ${top.niunaijun.blackbox.core.ManagedProfilePolicy.shortLabel(current)}.\n\n" +
+                    "Separate Android profile is the strong mode: a real Android user and Linux uid. " +
+                    "Same profile keeps the hooked virtual user, which shares this app's uid. " +
+                    "Switching does not move data that is already stored."
+            )
+            .setPositiveButton("Separate Android profile") { _, _ ->
+                top.niunaijun.blackboxa.profile.WorkspaceModeStore.set(
+                    this, userId, top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.SEPARATE
+                )
+                offerSeparateProfile(userId)
+            }
+            .setNeutralButton("Hooked mode") { _, _ ->
+                top.niunaijun.blackboxa.profile.WorkspaceModeStore.set(
+                    this, userId, top.niunaijun.blackbox.core.ManagedProfilePolicy.Mode.HOOKED
+                )
+                if (top.niunaijun.blackboxa.profile.ManagedProfileStore.boundWorkspaceId(this) == userId) {
+                    top.niunaijun.blackboxa.profile.ManagedProfileStore.clearBoundWorkspace(this)
+                }
+                toast("User $userId stays in the hooked profile")
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -832,6 +965,7 @@ class MainActivity : LoadingActivity() {
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         try {
             menuInflater.inflate(R.menu.menu_main, menu)
+            menu?.add(Menu.NONE, menuProfileSeparation, 0, "Profile separation")
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Error creating options menu: ${e.message}")
@@ -842,6 +976,9 @@ class MainActivity : LoadingActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         try {
             when (item.itemId) {
+                menuProfileSeparation -> startActivity(
+                    Intent(this, top.niunaijun.blackboxa.profile.ProfileStatusActivity::class.java)
+                )
                 R.id.main_account -> openAccountSettings()
                 R.id.main_git -> {
                     val intent =

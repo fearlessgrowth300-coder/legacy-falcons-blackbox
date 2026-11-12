@@ -51,8 +51,8 @@ public class BlackBoxSystem {
             return;
         BEnvironment.load();
 
-        mServices.add(BPackageManagerService.get());
         mServices.add(BUserManagerService.get());
+        mServices.add(BPackageManagerService.get());
         mServices.add(BActivityManagerService.get());
         mServices.add(BJobManagerService.get());
         mServices.add(BStorageManagerService.get());
@@ -79,6 +79,9 @@ public class BlackBoxSystem {
         }
         
         JarManager.getInstance().initializeAsync();
+        // Shallow directory names only, and not on this thread. The scan logs
+        // surviving clone data without holding startup.
+        BPackageManagerService.get().logOrphanedPackageData();
         
         
      

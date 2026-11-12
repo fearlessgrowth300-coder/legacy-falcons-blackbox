@@ -11,6 +11,7 @@
 class BinderHook : public BaseHook{
 public:
     static void init(JNIEnv *env);
+    static int callingPid(JNIEnv *env);
 };
 
 #endif 

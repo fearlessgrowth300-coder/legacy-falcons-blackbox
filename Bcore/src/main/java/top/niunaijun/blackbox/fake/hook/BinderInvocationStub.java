@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.io.FileDescriptor;
+import java.lang.reflect.Method;
 import java.util.Map;
 
 import black.android.os.BRServiceManager;
@@ -76,5 +77,17 @@ public abstract class BinderInvocationStub extends ClassInvocationStub implement
     protected void replaceSystemService(String name) {
         Map<String, IBinder> services = BRServiceManager.get().sCache();
         services.put(name, this);
+    }
+
+    /** The real AIDL object, so the generated proxy implements that interface. */
+    public static Object asInterface(String stubClass, IBinder binder) {
+        if (binder == null || stubClass == null) return null;
+        try {
+            Class<?> stub = Class.forName(stubClass + "$Stub");
+            Method asInterface = stub.getMethod("asInterface", IBinder.class);
+            return asInterface.invoke(null, binder);
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 }

@@ -69,15 +69,6 @@ public final class SharedUserSetting implements Parcelable {
             
             
             
-            if (sharedUsersBytes.length < 100) { 
-                Slog.w(TAG, "Detected old format SharedUserSetting data, clearing for fresh start");
-                BEnvironment.getSharedUserConf().delete();
-                synchronized (sSharedUsers) {
-                    sSharedUsers.clear();
-                }
-                return;
-            }
-            
             parcel.unmarshall(sharedUsersBytes, 0, sharedUsersBytes.length);
             parcel.setDataPosition(0);
 
@@ -87,18 +78,7 @@ public final class SharedUserSetting implements Parcelable {
                 sSharedUsers.putAll(hashMap);
             }
         } catch (Exception e) {
-            
-            try {
-                
-                BEnvironment.getSharedUserConf().delete();
-            } catch (Exception deleteException) {
-                
-            }
-            
-            
-            synchronized (sSharedUsers) {
-                sSharedUsers.clear();
-            }
+            Slog.e(TAG, "shared-user.conf could not be read; the file was kept: " + e);
         } finally {
             parcel.recycle();
         }

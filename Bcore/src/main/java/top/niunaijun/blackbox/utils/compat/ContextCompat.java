@@ -11,6 +11,8 @@ import black.android.content.BRAttributionSource;
 import black.android.content.BRAttributionSourceState;
 import black.android.content.BRContentResolver;
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.core.GuestPackageName;
 import top.niunaijun.blackbox.utils.Slog;
 
 
@@ -18,14 +20,18 @@ public class ContextCompat {
     public static final String TAG = "ContextCompat";
 
     public static void fixAttributionSourceState(Object obj, int uid) {
+        fixAttributionSourceState(obj, uid, BlackBoxCore.getHostPkg());
+    }
+
+    public static void fixAttributionSourceState(Object obj, int uid, String packageName) {
         Object mAttributionSourceState;
         if (obj != null && BRAttributionSource.get(obj)._check_mAttributionSourceState() != null) {
             mAttributionSourceState = BRAttributionSource.get(obj).mAttributionSourceState();
 
             AttributionSourceStateContext attributionSourceStateContext = BRAttributionSourceState.get(mAttributionSourceState);
-            attributionSourceStateContext._set_packageName(BlackBoxCore.getHostPkg());
+            attributionSourceStateContext._set_packageName(packageName);
             attributionSourceStateContext._set_uid(uid);
-            fixAttributionSourceState(BRAttributionSource.get(obj).getNext(), uid);
+            fixAttributionSourceState(BRAttributionSource.get(obj).getNext(), uid, packageName);
         }
     }
 
@@ -59,7 +65,17 @@ public class ContextCompat {
                 e.printStackTrace();
             }
 
-            String callerPackage = BlackBoxCore.getHostPkg();
+            String reported = null;
+            try {
+                reported = context.getPackageName();
+            } catch (Throwable ignored) {
+            }
+            String guest = null;
+            try {
+                guest = BActivityThread.getAppPackageName();
+            } catch (Throwable ignored) {
+            }
+            String callerPackage = GuestPackageName.visible(reported, guest, BlackBoxCore.getHostPkg());
             BRContextImpl.get(context)._set_mBasePackageName(callerPackage);
             BRContextImplKitkat.get(context)._set_mOpPackageName(callerPackage);
             
@@ -71,9 +87,11 @@ public class ContextCompat {
 
             if (BuildCompat.isS()) {
                 try {
-                    
-                    
-                    fixAttributionSourceState(BRContextImpl.get(context).getAttributionSource(), BlackBoxCore.getHostUid());
+                    // The uid stays the process uid so system_server accepts the call.
+                    // The package is the one guest code reads back from this context.
+                    // Binder hooks copy a host package onto the outgoing source.
+                    fixAttributionSourceState(BRContextImpl.get(context).getAttributionSource(),
+                            BlackBoxCore.getHostUid(), callerPackage);
                 } catch (Exception e) {
                     Slog.w(TAG, "Failed to fix attribution source state: " + e.getMessage());
                 }

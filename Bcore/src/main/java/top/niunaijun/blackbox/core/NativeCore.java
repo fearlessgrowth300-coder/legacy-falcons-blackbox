@@ -102,7 +102,82 @@ public class NativeCore {
 
     public static native void enableIO();
 
+    /**
+     * Installs the AudioTrack.native_setup hook for the reflected method.
+     * Slots come from {@code AudioClientIdentity.nativeSetupSlots}.
+     * Returns a short install result, never null.
+     */
+    public static native String hookAudioTrack(Object method, String descriptor,
+                                               int parcelSlot, int stringSlot, int sessionSlot);
+
     public static native void addIORule(String targetPath, String relocatePath);
+
+    /** Per-user boot_id for guest readers. Ashmem paths stay on /dev/ashmem either way. */
+    public static native void setBootIdSpoof(boolean enabled);
+
+    /** Guest-only path jail. A failure here must not crash the process. */
+    public static native void setPathIsolation(String virtualRoot, String externalRoot, int userId);
+
+    /** Added to CLOCK_BOOTTIME / CLOCK_MONOTONIC so uptime is not the phone's. */
+    public static native void setUptimeOffsetMs(long offsetMs);
+
+    /**
+     * Host and virtual uids for the Android 16 Binder.getCallingUid hook.
+     * The hook must not call back into Java on that runtime.
+     */
+    public static native void setCallerIdentity(int hostUid, int virtualUid, int presentedUid);
+
+    /**
+     * A guest is inside its own in-process provider. getCallingUid must stay the
+     * process uid; the API 37 hook otherwise rewrites it to the virtual uid.
+     */
+    private static native void nativeEnterSelfProviderCall();
+
+    private static native void nativeExitSelfProviderCall();
+
+    private static native int nativeSelfProviderDepth();
+
+    /** 1 when this thread's native caller hook is inside a self-provider call. */
+    public static int selfProviderNativeDepth() {
+        try {
+            return nativeSelfProviderDepth();
+        } catch (Throwable ignored) {
+            return -1;
+        }
+    }
+
+    public static int javaSelfProviderDepth() {
+        return SELF_PROVIDER_CALL.get();
+    }
+
+    private static final ThreadLocal<Integer> SELF_PROVIDER_CALL =
+            new ThreadLocal<Integer>() {
+                @Override
+                protected Integer initialValue() {
+                    return 0;
+                }
+            };
+
+    public static void enterSelfProviderCall() {
+        SELF_PROVIDER_CALL.set(SELF_PROVIDER_CALL.get() + 1);
+        try {
+            nativeEnterSelfProviderCall();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void exitSelfProviderCall() {
+        int depth = SELF_PROVIDER_CALL.get() - 1;
+        if (depth <= 0) SELF_PROVIDER_CALL.remove();
+        else SELF_PROVIDER_CALL.set(depth);
+        try {
+            nativeExitSelfProviderCall();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Directory of pid files read by the Android 16 Binder.getCallingUid hook. */
+    public static native void setCallerUidDirectory(String path);
 
     public static native void hideXposed();
 
@@ -118,6 +193,9 @@ public class NativeCore {
         // The original Linux UID is authoritative for system and external callers.
         // Never use AppConfig.callingBUid here: it describes the process launcher,
         // not the sender of the current Binder transaction.
+        if (SELF_PROVIDER_CALL.get() > 0) {
+            return GuestUid.myUid(true, BActivityThread.getBUid(), origCallingUid);
+        }
         if (Boolean.TRUE.equals(RESOLVING_CALLER_UID.get())
                 || BActivityThread.getAppConfig() == null) {
             return origCallingUid;

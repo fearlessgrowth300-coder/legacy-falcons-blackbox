@@ -51,6 +51,10 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # cmdline-tools 16.0 removed the obsolete "tools" package. The action
+          # default still installs it and sdkmanager fails with "Failed to find package 'tools'".
+          packages: platform-tools
 
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4

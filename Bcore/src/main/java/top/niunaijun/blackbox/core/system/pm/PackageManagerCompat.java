@@ -9,10 +9,11 @@ import android.content.pm.FeatureInfo;
 import android.content.pm.InstrumentationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.content.pm.PackageParser;
 import android.content.pm.PermissionInfo;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ServiceInfo;
+import android.content.pm.Signature;
+import android.content.pm.SigningInfo;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.os.Build;
@@ -22,8 +23,6 @@ import java.util.Set;
 
 import black.android.content.pm.BRApplicationInfoL;
 import black.android.content.pm.BRApplicationInfoN;
-import black.android.content.pm.BRPackageParserSigningDetails;
-import black.android.content.pm.BRSigningInfo;
 import black.android.content.res.BRAssetManager;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.core.env.AppSystemEnv;
@@ -31,6 +30,7 @@ import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.entity.pm.InstallOption;
 import top.niunaijun.blackbox.utils.ArrayUtils;
 import top.niunaijun.blackbox.utils.FileUtils;
+import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
 
@@ -189,30 +189,111 @@ public class PackageManagerCompat {
                 }
             }
         }
-        PackageInfo base = null;
-        try {
-            base = BlackBoxCore.getContext().getPackageManager().getPackageInfo(p.packageName, flags);
-        } catch (PackageManager.NameNotFoundException ignored) {
-        }
-        if ((flags & PackageManager.GET_SIGNATURES) != 0) {
-            if (base == null) {
-                pi.signatures = p.mSignatures;
+        // Trusted-caller checks read signingInfo first and the legacy signatures array
+        // only when signingInfo is absent. An empty signer list is a hard failure, and
+        // the file handover parcels whatever is on this object, so both fields have to
+        // carry the cloned APK's own certificates.
+        boolean wantSignatures = (flags & PackageManager.GET_SIGNATURES) != 0;
+        boolean wantSigning = BuildCompat.isPie()
+                && (flags & PackageManager.GET_SIGNING_CERTIFICATES) != 0;
+        if (wantSignatures || wantSigning) {
+            Signature[] certificates = guestCertificates(p);
+            PackageInfo phone = phoneCopyWithSameSigner(p.packageName, certificates);
+            if (phone != null) {
+                // A rotated key shows as one signature plus a history. Listing every
+                // certificate made Play Store call Google services "invalid signature".
+                pi.signatures = phone.signatures;
+                if (BuildCompat.isPie()) pi.signingInfo = phone.signingInfo;
+            } else if (certificates != null && certificates.length > 0) {
+                pi.signatures = certificates;
+                SigningInfo signingInfo = signingInfoFor(certificates);
+                if (signingInfo != null) pi.signingInfo = signingInfo;
+                Slog.i(TAG, "certificates for " + p.packageName + " count=" + certificates.length
+                        + " signingInfo=" + (pi.signingInfo != null));
             } else {
-                pi.signatures = base.signatures;
-            }
-        }
-        if (BuildCompat.isPie()) {
-            if ((flags & PackageManager.GET_SIGNING_CERTIFICATES) != 0) {
-                if (base == null) {
-                    PackageParser.SigningDetails signingDetails = PackageParser.SigningDetails.UNKNOWN;
-                    BRPackageParserSigningDetails.get(signingDetails)._set_signatures(p.mSigningDetails.signatures);
-                    pi.signingInfo = BRSigningInfo.get()._new(signingDetails);
-                } else {
-                    pi.signingInfo = base.signingInfo;
-                }
+                Slog.w(TAG, "no certificates for " + p.packageName);
             }
         }
         return pi;
+    }
+
+    private static final String TAG = "PackageManagerCompat";
+
+    /** Stored parse result, or the certificates read from the cloned APK file. */
+    /** The phone's own record of this package, when the clone is signed by the same key. */
+    private static PackageInfo phoneCopyWithSameSigner(String pkg, Signature[] certificates) {
+        if (certificates == null || certificates.length == 0) return null;
+        try {
+            int flags = PackageManager.GET_SIGNATURES
+                    | (BuildCompat.isPie() ? PackageManager.GET_SIGNING_CERTIFICATES : 0);
+            PackageInfo phone = BlackBoxCore.getPackageManager().getPackageInfo(pkg, flags);
+            if (phone.signatures == null || phone.signatures.length == 0) return null;
+            for (Signature mine : certificates) {
+                if (mine.equals(phone.signatures[0])) return phone;
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private static Signature[] guestCertificates(BPackage p) {
+        Signature[] stored = p.mSignatures;
+        if ((stored == null || stored.length == 0) && p.mSigningDetails != null) {
+            stored = p.mSigningDetails.signatures;
+        }
+        if (stored != null && stored.length > 0) return stored;
+        stored = certificatesFromApk(p.baseCodePath);
+        if (stored != null && stored.length > 0) p.mSignatures = stored;
+        return stored;
+    }
+
+    /** The APK's own signers. This does not read a package installed on the phone. */
+    private static Signature[] certificatesFromApk(String path) {
+        if (path == null) return null;
+        try {
+            PackageInfo archive = BlackBoxCore.getContext().getPackageManager().getPackageArchiveInfo(
+                    path, PackageManager.GET_SIGNATURES | PackageManager.GET_SIGNING_CERTIFICATES);
+            if (archive == null) return null;
+            if (Build.VERSION.SDK_INT >= 28 && archive.signingInfo != null) {
+                Signature[] signers = archive.signingInfo.getApkContentsSigners();
+                if (signers != null && signers.length > 0) return signers;
+                Signature[] history = archive.signingInfo.getSigningCertificateHistory();
+                if (history != null && history.length > 0) return history;
+            }
+            return archive.signatures;
+        } catch (Throwable error) {
+            Slog.w(TAG, "apk certificates unavailable: " + error.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /**
+     * A single current signer with no rotation history. getSigningCertificateHistory
+     * then returns these certificates, which is the array a trusted-caller check reads.
+     */
+    private static SigningInfo signingInfoFor(Signature[] certificates) {
+        if (certificates == null || certificates.length == 0 || Build.VERSION.SDK_INT < 28) return null;
+        try {
+            Class<?> detailsClass = Class.forName("android.content.pm.PackageParser$SigningDetails");
+            java.lang.reflect.Constructor<?> detailsCtor = null;
+            for (java.lang.reflect.Constructor<?> ctor : detailsClass.getDeclaredConstructors()) {
+                Class<?>[] params = ctor.getParameterTypes();
+                if (params.length == 2 && params[0] == Signature[].class && params[1] == int.class) {
+                    detailsCtor = ctor;
+                    break;
+                }
+            }
+            if (detailsCtor == null) return null;
+            detailsCtor.setAccessible(true);
+            Object details = detailsCtor.newInstance(certificates, 3);
+            java.lang.reflect.Constructor<?> infoCtor =
+                    SigningInfo.class.getDeclaredConstructor(detailsClass);
+            infoCtor.setAccessible(true);
+            return (SigningInfo) infoCtor.newInstance(details);
+        } catch (Throwable error) {
+            Slog.w(TAG, "signing info not built: " + error.getClass().getSimpleName());
+            return null;
+        }
     }
 
     public static ActivityInfo generateActivityInfo(BPackage.Activity a, int flags, BPackageUserState state, int userId) {

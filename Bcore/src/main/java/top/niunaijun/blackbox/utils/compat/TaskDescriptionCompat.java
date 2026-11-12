@@ -1,36 +1,72 @@
 package top.niunaijun.blackbox.utils.compat;
 
 import android.app.ActivityManager;
-import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
-import android.graphics.drawable.Drawable;
 
+import java.lang.reflect.Method;
 import java.util.Locale;
 
 import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.app.BActivityThread;
-import top.niunaijun.blackbox.utils.DrawableUtils;
 
 public class TaskDescriptionCompat {
+    /**
+     * Label and colour only. {@code Bitmap.asShared} SIGSEGVs on API 33+ when the
+     * icon is hardware, recycled, or has no native buffer, including the bitmap
+     * built for the recents tile. That abort cannot be caught, so the published
+     * description never carries an icon.
+     */
     public static ActivityManager.TaskDescription fix(ActivityManager.TaskDescription td) {
-        String label = td.getLabel();
-        Bitmap icon = td.getIcon();
+        String label = null;
+        int color = 0;
+        if (td != null) {
+            try {
+                label = td.getLabel();
+            } catch (Throwable ignored) {
+            }
+            try {
+                color = td.getPrimaryColor();
+            } catch (Throwable ignored) {
+            }
+        }
+        if (label == null) {
+            label = getTaskDescriptionLabel(BlackBoxCore.getUserId(), getApplicationLabel());
+        }
+        return withoutIcon(label, color);
+    }
 
-        if (label != null && icon != null)
-            return td;
+    public static ActivityManager.TaskDescription withoutIcon(String label, int color) {
+        try {
+            return new ActivityManager.TaskDescription(label, (Bitmap) null, color);
+        } catch (Throwable ignored) {
+        }
+        try {
+            return new ActivityManager.TaskDescription(label);
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
 
-        label = getTaskDescriptionLabel(BlackBoxCore.getUserId(), getApplicationLabel());
-        
-        
-        
-        
-
-        
-        
-        
-        td = new ActivityManager.TaskDescription(label, null, td.getPrimaryColor());
-        return td;
+    /**
+     * Replace every task description in the binder call, then invoke.
+     * A parcel or bitmap failure returns without killing the guest.
+     */
+    public static Object publish(Object who, Method method, Object[] args) {
+        try {
+            if (args != null) {
+                for (int i = 0; i < args.length; i++) {
+                    if (args[i] instanceof ActivityManager.TaskDescription) {
+                        ActivityManager.TaskDescription stripped =
+                                fix((ActivityManager.TaskDescription) args[i]);
+                        if (stripped == null) return null;
+                        args[i] = stripped;
+                    }
+                }
+            }
+            return method.invoke(who, args);
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     public static String getTaskDescriptionLabel(int userId, CharSequence label) {
@@ -41,17 +77,8 @@ public class TaskDescriptionCompat {
         try {
             PackageManager pm = BlackBoxCore.getPackageManager();
             return pm.getApplicationLabel(pm.getApplicationInfo(BlackBoxCore.getAppPackageName(), 0));
-        } catch (PackageManager.NameNotFoundException e) {
-            return null;
-        }
-    }
-
-    private static Drawable getApplicationIcon() {
-        try {
-            
-            return null;
-        } catch (Exception ignore) {
-            return null;
+        } catch (Throwable e) {
+            return "";
         }
     }
 }

@@ -35,8 +35,26 @@ public class IGraphicsStatsProxy extends BinderInvocationStub {
     public static class RequestBufferForProcess extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            MethodParameterUtils.replaceFirstAppPkg(args);
+            return requestWithHostPackage(who, method, args);
+        }
+    }
+
+    @ProxyMethod("requestRenderEngineFor")
+    public static class RequestRenderEngineFor extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            return requestWithHostPackage(who, method, args);
+        }
+    }
+
+    private static Object requestWithHostPackage(Object who, Method method, Object[] args) {
+        MethodParameterUtils.replaceFirstAppPkg(args);
+        try {
             return method.invoke(who, args);
+        } catch (Throwable ignored) {
+            // The system server rejects the guest package name. Graphics stats
+            // are optional; a failure here must not surface as a crash.
+            return null;
         }
     }
 }

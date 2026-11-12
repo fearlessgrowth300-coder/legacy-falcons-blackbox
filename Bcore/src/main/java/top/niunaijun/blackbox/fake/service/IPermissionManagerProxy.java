@@ -118,6 +118,8 @@ public class IPermissionManagerProxy extends BinderInvocationStub {
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         String permission = findPermission(args);
+        Integer guestGrant = guestManifestGrant(method, args, permission);
+        if (guestGrant != null) return guestGrant;
         if (isGuestMediaPermission(permission)) {
             String name = method.getName();
             if (name.contains("PermissionFlags")) {
@@ -133,10 +135,34 @@ public class IPermissionManagerProxy extends BinderInvocationStub {
         return super.invoke(proxy, method, args);
     }
 
+    /** checkPermission / checkUidPermission for a guest uid, before the real system. */
+    private static Integer guestManifestGrant(Method method, Object[] args, String permission) {
+        if (method == null || permission == null) return null;
+        String name = method.getName();
+        if (!name.startsWith("check") || method.getReturnType() != int.class) return null;
+        if (args != null) {
+            for (Object arg : args) {
+                if (arg instanceof Integer) {
+                    Integer granted = GuestPermissionBridge.grantedOrNull(permission, (Integer) arg);
+                    if (granted != null) return granted;
+                }
+            }
+            for (Object arg : args) {
+                if (arg instanceof String && arg != permission && ((String) arg).indexOf('.') > 0
+                        && !((String) arg).contains(".permission.")) {
+                    Integer granted = GuestPermissionBridge.grantedForPackageOrNull(
+                            permission, (String) arg);
+                    if (granted != null) return granted;
+                }
+            }
+        }
+        return null;
+    }
+
     private static String findPermission(Object[] args) {
         if (args == null) return null;
         for (Object arg : args) {
-            if (arg instanceof String && ((String) arg).startsWith("android.permission.")) {
+            if (arg instanceof String && ((String) arg).contains(".permission.")) {
                 return (String) arg;
             }
             if (arg instanceof String[]) {

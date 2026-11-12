@@ -13,7 +13,11 @@ import top.niunaijun.blackbox.utils.Slog;
  */
 public final class IAuthServiceProxy extends BinderInvocationStub {
     private static final String SERVICE = "auth";
-    private static final int HW_UNAVAILABLE = 1;
+    // A clone owns no biometric hardware or lock-screen enrollment. Reporting
+    // "no hardware" (a terminal state) instead of "unavailable" (treated as a
+    // transient failure) lets a caller conclude there is nothing to confirm and
+    // skip its device-credential step, the same as any other lockless device.
+    private static final int NO_HARDWARE = 12;
 
     public IAuthServiceProxy() { super(BRServiceManager.get().getService(SERVICE)); }
 
@@ -36,7 +40,7 @@ public final class IAuthServiceProxy extends BinderInvocationStub {
         if (BActivityThread.getAppConfig() == null) return super.invoke(proxy, method, args);
         switch (method.getName()) {
             case "canAuthenticate":
-                return HW_UNAVAILABLE;
+                return NO_HARDWARE;
             case "hasEnrolledBiometrics":
                 return false;
             case "authenticate":
@@ -47,7 +51,7 @@ public final class IAuthServiceProxy extends BinderInvocationStub {
                 // error or choose its own fallback instead of waiting forever.
                 Class.forName("android.hardware.biometrics.IBiometricServiceReceiver")
                         .getMethod("onError", int.class, int.class, int.class)
-                        .invoke(args[3], 0, HW_UNAVAILABLE, 0);
+                        .invoke(args[3], 0, NO_HARDWARE, 0);
                 Slog.i("IAuthServiceProxy", "Reported unavailable biometrics to isolated guest");
                 return method.getReturnType() == long.class ? Long.valueOf(-1L) : null;
             case "cancelAuthentication":

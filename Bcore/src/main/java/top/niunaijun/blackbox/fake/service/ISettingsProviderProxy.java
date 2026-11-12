@@ -43,6 +43,19 @@ public class ISettingsProviderProxy extends ClassInvocationStub {
     }
 
     @Override
+    protected Class<?> hookTargetClass() {
+        return android.provider.Settings.Secure.class;
+    }
+
+    @Override
+    protected void afterPineHook(String methodName, Object self, Object[] args, Object frame) {
+        String id = cloneAndroidIdOrNull(args);
+        if (id != null && ("getString".equals(methodName) || "getStringForUser".equals(methodName))) {
+            top.niunaijun.blackbox.fake.hook.PineClassAttacher.setResult(frame, id);
+        }
+    }
+
+    @Override
     protected Object getWho() {
         return null;
     }

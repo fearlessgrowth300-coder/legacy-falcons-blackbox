@@ -599,11 +599,14 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
 
     public List<ApplicationInfo> getInstalledApplications(int flags, int userId) {
         try {
-            return getService().getInstalledApplications(flags, userId);
+            IBPackageManagerService service = getService();
+            if (service == null) return null;
+            return service.getInstalledApplications(flags, userId);
         } catch (RemoteException e) {
-            e.printStackTrace();
+            clearServiceCache();
+            Log.w(TAG, "Installed-app query lost the workspace service", e);
         }
-        return Collections.emptyList();
+        return null;
     }
 
     public List<PackageInfo> getInstalledPackages(int flags, int userId) {

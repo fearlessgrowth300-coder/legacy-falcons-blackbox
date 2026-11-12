@@ -21,6 +21,20 @@
 #-renamesourcefileattribute SourceFile
 
 -keep class top.niunaijun.blackbox.** {*; }
+
+# Release shrinking must not rename or remove sensor calibration. The install
+# path matches these methods by name and by signature against SensorManager.
+-keep,includedescriptorclasses class top.niunaijun.blackbox.core.SensorSignalIsolation { *; }
+-keep,includedescriptorclasses class top.niunaijun.blackbox.core.SensorSignalIsolation$Hooks { *; }
+-keep,includedescriptorclasses class top.niunaijun.blackbox.core.SensorSignalIsolation$Originals { *; }
+-keepclassmembers class top.niunaijun.blackbox.core.SensorSignalIsolation {
+    public static int probeTarget();
+    public static int probeReplacement();
+}
+-keepclassmembers class top.niunaijun.jnihook.jni.JniHook {
+    public static native void nativeOffset();
+    public static native void nativeOffset2();
+}
 -keep class top.niunaijun.jnihook.** {*; }
 -keep class mirror.** {*; }
 -keep class android.** {*; }

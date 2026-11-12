@@ -7,6 +7,9 @@ import android.os.Looper;
 import android.util.Log;
 import android.app.Application;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import top.niunaijun.blackbox.BlackBoxCore;
 
 
@@ -68,11 +71,14 @@ public class SimpleCrashFix {
                             Looper.loop();
                             return; // loop only returns on quit() — let the thread end normally
                         } catch (Throwable e) {
-                            boolean sw = isSwallowable(e);
+                            String key = CrashLoopPolicy.key(e);
+                            int seen = noteFailure(key);
+                            boolean sw = CrashLoopPolicy.allowSwallow(e, isSwallowable(e), seen);
                             // Always retain the complete local stack trace. Logging only the outer
                             // RuntimeException hid the real guest startup failure and left a
                             // windowless proxy activity behind, which later surfaced as an ANR.
-                            Slog.w(TAG, "main-loop guard caught (swallow=" + sw + ")", e);
+                            Slog.w(TAG, "main-loop guard caught (swallow=" + sw
+                                    + " seen=" + seen + ")", e);
                             if (sw) {
                                 // drop the bad message, resume the loop → app survives
                             } else {
@@ -86,6 +92,15 @@ public class SimpleCrashFix {
         } catch (Throwable e) {
             Slog.e(TAG, "Failed to install main-loop guard: " + e.getMessage());
         }
+    }
+
+    private static final Map<String, Integer> FAILURES = new HashMap<>();
+
+    private static int noteFailure(String key) {
+        Integer seen = FAILURES.get(key);
+        int next = seen == null ? 1 : seen + 1;
+        FAILURES.put(key, next);
+        return next;
     }
 
     /** True if this crash is one we can safely swallow to keep the guest running.

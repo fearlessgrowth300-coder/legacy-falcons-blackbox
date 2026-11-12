@@ -88,6 +88,7 @@ import top.niunaijun.blackbox.utils.GlobalContextWrapper;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ActivityManagerCompat;
 import top.niunaijun.blackbox.utils.compat.ApplicationCreationCompat;
+import top.niunaijun.blackbox.utils.compat.GuestApplicationClass;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 import top.niunaijun.blackbox.utils.compat.StrictModeCompat;
@@ -192,6 +193,21 @@ public class BActivityThread extends IBActivityThread.Stub {
                 return;
             }
             this.mAppConfig = appConfig;
+            try {
+                java.io.File uidDir = top.niunaijun.blackbox.core.CallerUidMap.directory(
+                        top.niunaijun.blackbox.core.env.BEnvironment.getSystemDir());
+                NativeCore.setCallerUidDirectory(uidDir.getAbsolutePath());
+                NativeCore.setCallerIdentity(BlackBoxCore.getHostUid(), appConfig.buid,
+                        top.niunaijun.blackbox.core.GuestUid.myUid(
+                                true, appConfig.buid, BlackBoxCore.getHostUid()));
+                boolean published = top.niunaijun.blackbox.core.CallerUidMap.publish(
+                        uidDir, android.os.Process.myPid(), appConfig.buid);
+                Slog.i(TAG, "CallerUid publish pid=" + android.os.Process.myPid()
+                        + " uid=" + appConfig.buid + " ok=" + published
+                        + " dir=" + uidDir.getAbsolutePath());
+            } catch (Throwable error) {
+                Slog.e(TAG, "CallerUid publish failed: " + error);
+            }
             // Apply this clone's unique, persistent device identity as early as
             // possible (before the guest app loads / references Build.*).
             final top.niunaijun.blackbox.core.DeviceProfile profile;
@@ -210,9 +226,25 @@ public class BActivityThread extends IBActivityThread.Stub {
             try {
                 top.niunaijun.blackbox.core.GuestProxy.ApplyStatus proxyStatus =
                         top.niunaijun.blackbox.core.GuestProxy.apply(appConfig.userId, appConfig.packageName);
+                top.niunaijun.blackbox.core.ProfilePolicy profilePolicy =
+                        top.niunaijun.blackbox.core.ProfilePolicy.defaults();
+                try {
+                    profilePolicy = top.niunaijun.blackbox.core.ProfilePolicy.load(
+                            top.niunaijun.blackbox.core.ProfilePolicy.fileFor(
+                                    top.niunaijun.blackbox.core.env.BEnvironment.getUserDir(
+                                            appConfig.userId)));
+                } catch (Throwable ignored) {
+                }
+                if (proxyStatus == top.niunaijun.blackbox.core.GuestProxy.ApplyStatus.NOT_CONFIGURED
+                        && profilePolicy.requireProxy) {
+                    throw new SecurityException("Direct network is disabled for this profile");
+                }
                 if (proxyStatus != top.niunaijun.blackbox.core.GuestProxy.ApplyStatus.READY
                         && proxyStatus != top.niunaijun.blackbox.core.GuestProxy.ApplyStatus.NOT_CONFIGURED) {
-                    throw new SecurityException("Assigned proxy is not ready: " + proxyStatus);
+                    String detail = top.niunaijun.blackbox.core.GuestProxy.launchBlockReason(
+                            appConfig.userId, appConfig.packageName);
+                    if (detail == null) detail = "Assigned proxy is not ready: " + proxyStatus;
+                    throw new SecurityException(detail);
                 }
             } catch (Throwable t) {
                 top.niunaijun.blackbox.utils.Slog.w("GuestProxy", "apply failed: " + t.getMessage());
@@ -234,8 +266,19 @@ public class BActivityThread extends IBActivityThread.Stub {
                     // Application class can touch its own login-encryption aliases.
                     boolean keystoreReady =
                             top.niunaijun.blackbox.core.KeystoreIsolation.installForCurrentProcess();
-                    if (!identityReady || !keystoreReady) {
-                        throw new SecurityException("Incomplete runtime identity isolation");
+                    // Build-field and native property identity already ran in prepareEarly and
+                    // still fail closed. A single Pine or Keystore2 hook that the runtime does
+                    // not support must not refuse the whole guest: that is what left cloned
+                    // apps unable to start on Android 14-16 when one hidden method moved.
+                    if (!identityReady) {
+                        top.niunaijun.blackbox.utils.Slog.w(TAG,
+                                "Runtime identity hooks incomplete for " + appConfig.packageName
+                                        + "; continuing with the prepared Build identity");
+                    }
+                    if (!keystoreReady) {
+                        top.niunaijun.blackbox.utils.Slog.w(TAG,
+                                "Keystore namespace unavailable for " + appConfig.packageName
+                                        + "; continuing without per-clone key aliases");
                     }
                     mRuntimeIsolationReady = true;
                     top.niunaijun.blackbox.utils.Slog.d(
@@ -313,7 +356,7 @@ public class BActivityThread extends IBActivityThread.Stub {
             );
             BRContextImpl.get(context).setOuterContext(service);
             BRService.get(service).attach(
-                    context,
+                    top.niunaijun.blackbox.core.SensorSignalIsolation.wrapContext(context),
                     BlackBoxCore.mainThread(),
                     serviceInfo.name,
                     token,
@@ -388,7 +431,7 @@ public class BActivityThread extends IBActivityThread.Stub {
             );
             BRContextImpl.get(context).setOuterContext(service);
             BRService.get(service).attach(
-                    context,
+                    top.niunaijun.blackbox.core.SensorSignalIsolation.wrapContext(context),
                     BlackBoxCore.mainThread(),
                     serviceInfo.name,
                     BActivityThread.currentActivityThread().getActivityThread(),
@@ -492,6 +535,7 @@ public class BActivityThread extends IBActivityThread.Stub {
         BRLoadedApk.get(loadedApk)._set_mSecurityViolation(false);
         
         BRLoadedApk.get(loadedApk)._set_mApplicationInfo(applicationInfo);
+        alignLoadedApkPackageName(loadedApk, applicationInfo.packageName);
 
         int targetSdkVersion = applicationInfo.targetSdkVersion;
         if (targetSdkVersion < Build.VERSION_CODES.GINGERBREAD) {
@@ -517,6 +561,12 @@ public class BActivityThread extends IBActivityThread.Stub {
         NativeCore.init(Build.VERSION.SDK_INT);
         assert packageContext != null;
         IOCore.get().enableRedirect(packageContext);
+        try {
+            top.niunaijun.blackbox.core.AudioTrackHost.install(processName);
+        } catch (Throwable audioHookError) {
+            Slog.e("AudioTrackProxy", "hook install failed pid=" + android.os.Process.myPid()
+                    + " " + audioHookError);
+        }
 
         AppBindData bindData = new AppBindData();
         bindData.appInfo = applicationInfo;
@@ -541,6 +591,16 @@ public class BActivityThread extends IBActivityThread.Stub {
         Application application;
         try {
             onBeforeCreateApplication(packageName, processName, packageContext);
+            // Android 16 selects the Application class with Process.myProcessName(). The stub
+            // name misses Facebook's per-process class and instantiates android.app.Application,
+            // whose onCreate never calls AppContext.set.
+            black.android.os.BRProcess.get().setArgV0(processName);
+            String expectedClass = GuestApplicationClass.expected(applicationInfo.className,
+                    processSpecificApplicationClass(applicationInfo, processName));
+            Slog.i(TAG, "creating guest application process=" + processName
+                    + " argv0=" + android.os.Process.myProcessName()
+                    + " manifest=" + applicationInfo.className
+                    + " expected=" + expectedClass);
             // Android 13+ keeps a process-wide Application cache in the internal
             // factory. The legacy entry point deliberately skips that cache;
             // a later activity with another LoadedApk can then run onCreate twice.
@@ -551,15 +611,33 @@ public class BActivityThread extends IBActivityThread.Stub {
                 Slog.e(TAG, "makeApplication application Error! All attempts failed");
                 throw new RuntimeException("Unable to create application - all creation methods failed");
             }
+            if (GuestApplicationClass.needsReplacement(application.getClass().getName(), expectedClass)) {
+                Slog.w(TAG, "framework built " + application.getClass().getName()
+                        + " instead of " + expectedClass + "; attaching the manifest class");
+                application = attachManifestApplication(loadedApk, packageContext, expectedClass);
+            }
+            Slog.i(TAG, "guest application attached class=" + application.getClass().getName()
+                    + " package=" + application.getPackageName());
             
             mInitialApplication = application;
+            top.niunaijun.blackbox.core.SensorSignalIsolation.wrapBase(mInitialApplication);
             BRActivityThread.get(BlackBoxCore.mainThread())._set_mInitialApplication(mInitialApplication);
+            BRLoadedApk.get(loadedApk)._set_mApplication(mInitialApplication);
             ContextCompat.fix((Context) BRActivityThread.get(BlackBoxCore.mainThread()).getSystemContext());
             ContextCompat.fix(mInitialApplication);
             installProviders(mInitialApplication, bindData.processName, bindData.providers);
 
             onBeforeApplicationOnCreate(packageName, processName, application);
-            AppInstrumentation.get().callApplicationOnCreate(application);
+            try {
+                AppInstrumentation.get().callApplicationOnCreate(application);
+            } catch (Throwable error) {
+                Slog.e(TAG, "guest Application.onCreate failed class="
+                        + application.getClass().getName(), error);
+                if (error instanceof Exception) throw (Exception) error;
+                throw new RuntimeException("guest Application.onCreate failed", error);
+            }
+            Slog.i(TAG, "guest Application.onCreate returned class=" + application.getClass().getName());
+            top.niunaijun.blackbox.utils.GuestStackDump.install(application);
             onAfterApplicationOnCreate(packageName, processName, application);
 
             HookManager.get().checkEnv(HCallbackProxy.class);
@@ -998,6 +1076,69 @@ public class BActivityThread extends IBActivityThread.Stub {
         }
     }
 
+    /**
+     * Class named for this process in the manifest's per-process application map.
+     * The field exists on API 36+. Older platforms have only {@code className}.
+     */
+    private static String processSpecificApplicationClass(ApplicationInfo info, String processName) {
+        if (info == null || processName == null) return null;
+        try {
+            java.lang.reflect.Field field = ApplicationInfo.class.getDeclaredField("mAppClassNamesByProcess");
+            field.setAccessible(true);
+            Object map = field.get(info);
+            if (!(map instanceof java.util.Map)) return null;
+            Object value = ((java.util.Map<?, ?>) map).get(processName);
+            return value instanceof String ? (String) value : null;
+        } catch (Throwable error) {
+            Slog.w(TAG, "per-process application class unavailable: " + error.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /**
+     * Instantiates the manifest Application and runs its attachBaseContext. Failures propagate;
+     * a silent fallback to android.app.Application is what skipped AppContext.set.
+     */
+    private static Application attachManifestApplication(Object loadedApk, Context context, String className)
+            throws Exception {
+        ClassLoader loader = BRLoadedApk.get(loadedApk).getClassLoader();
+        if (loader == null) loader = context == null ? null : context.getClassLoader();
+        if (loader == null || context == null) {
+            throw new IllegalStateException("Cannot attach " + className + " without a guest class loader");
+        }
+        try {
+            Class<?> clazz = loader.loadClass(className);
+            Application application = Instrumentation.newApplication(clazz, context);
+            Slog.i(TAG, "attached manifest application " + application.getClass().getName());
+            return application;
+        } catch (Throwable error) {
+            Throwable cause = error instanceof java.lang.reflect.InvocationTargetException
+                    && error.getCause() != null ? error.getCause() : error;
+            Slog.e(TAG, "guest Application.attach failed class=" + className, cause);
+            if (cause instanceof Exception) throw (Exception) cause;
+            throw new RuntimeException("guest Application.attach failed", cause);
+        }
+    }
+
+    /**
+     * The process-wide Application cache is keyed by LoadedApk.mPackageName. A context
+     * created for the host package would otherwise miss the guest entry and construct a
+     * second Application, which runs onCreate twice.
+     */
+    private static void alignLoadedApkPackageName(Object loadedApk, String packageName) {
+        if (loadedApk == null || packageName == null) return;
+        try {
+            java.lang.reflect.Field field = loadedApk.getClass().getDeclaredField("mPackageName");
+            field.setAccessible(true);
+            Object current = field.get(loadedApk);
+            if (!packageName.equals(current)) {
+                field.set(loadedApk, packageName);
+            }
+        } catch (Throwable error) {
+            Slog.w(TAG, "Could not align LoadedApk package name: " + error.getClass().getSimpleName());
+        }
+    }
+
     public static Context createPackageContext(ApplicationInfo info) {
         try {
             return BlackBoxCore.getContext().createPackageContext(info.packageName,
@@ -1108,7 +1249,8 @@ public class BActivityThread extends IBActivityThread.Stub {
                             providerInfo.processName.equals(context.getPackageName()) || providerInfo.multiprocess) {
                         installProvider(BlackBoxCore.mainThread(), context, providerInfo, null);
                     }
-                } catch (Throwable ignored) {
+                } catch (Throwable error) {
+                    Slog.e(TAG, "content provider failed: " + providerInfo.name, error);
                 }
             }
         } finally {
@@ -1243,9 +1385,10 @@ public class BActivityThread extends IBActivityThread.Stub {
             BroadcastReceiver mReceiver = null;
             Intent intent = data.intent;
             ActivityInfo activityInfo = data.activityInfo;
-            BroadcastReceiver.PendingResult pendingResult = data.data.build();
+            BroadcastReceiver.PendingResult pendingResult = null;
 
             try {
+                pendingResult = data.data.build();
                 Context baseContext = mInitialApplication.getBaseContext();
                 ClassLoader classLoader = baseContext.getClassLoader();
                 intent.setExtrasClassLoader(classLoader);
@@ -1253,16 +1396,35 @@ public class BActivityThread extends IBActivityThread.Stub {
                 mReceiver = (BroadcastReceiver) classLoader.loadClass(activityInfo.name).newInstance();
                 BRBroadcastReceiver.get(mReceiver).setPendingResult(pendingResult);
                 mReceiver.onReceive(baseContext, intent);
-                BroadcastReceiver.PendingResult finish = BRBroadcastReceiver.get(mReceiver).getPendingResult();
-                if (finish != null) {
-                    finish.finish();
-                }
-                BlackBoxCore.getBActivityManager().finishBroadcast(data.data);
             } catch (Throwable throwable) {
                 throwable.printStackTrace();
                 Slog.e(TAG,
                         "Error receiving broadcast " + intent
                                 + " in " + mReceiver);
+            } finally {
+                // goAsync() clears the receiver's pending result and finishes that same
+                // object later (often from SharedPreferences.apply on queued-work-looper).
+                // Finishing it here as well throws "Broadcast already finished".
+                boolean receiverInstalled = mReceiver != null;
+                boolean stillHeld = true;
+                if (receiverInstalled) {
+                    try {
+                        stillHeld = BRBroadcastReceiver.get(mReceiver).getPendingResult() != null;
+                    } catch (Throwable ignored) {
+                        stillHeld = true;
+                    }
+                }
+                if (top.niunaijun.blackbox.core.BroadcastFinishPolicy.shouldFinish(
+                        receiverInstalled, stillHeld)) {
+                    try {
+                        if (pendingResult != null) pendingResult.finish();
+                    } catch (Throwable ignored) {
+                    }
+                }
+                try {
+                    BlackBoxCore.getBActivityManager().finishBroadcast(data.data);
+                } catch (Throwable ignored) {
+                }
             }
         });
     }
@@ -1291,42 +1453,56 @@ public class BActivityThread extends IBActivityThread.Stub {
             return out;
         }
 
-        long started = SystemClock.elapsedRealtime();
+            long started = SystemClock.elapsedRealtime();
         try {
             String ip = null;
             Throwable lastProbeError = null;
             // An exit-check vendor can be temporarily unavailable even while the assigned route is
             // carrying app traffic. Probe independent HTTPS endpoints inside this exact guest
             // process; every attempt still passes through the same fail-closed proxy hook.
+            // A cold proxy listener often drops the first dial. Retry inside this process and
+            // keep the clone closed if none of them return an exit IP.
             String[] endpoints = {
                     "https://checkip.amazonaws.com/",
                     "https://api.ipify.org/?format=text"
             };
-            for (String endpoint : endpoints) {
-                HttpURLConnection connection = null;
-                try {
-                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
-                    connection.setConnectTimeout(5000);
-                    connection.setReadTimeout(5000);
-                    connection.setUseCaches(false);
-                    connection.setRequestProperty("Connection", "close");
-                    connection.setRequestProperty("User-Agent", "BlackBoxRouteProbe/1");
-                    int code = connection.getResponseCode();
-                    if (code < 200 || code >= 300) throw new java.io.IOException("HTTP " + code);
-                    try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                            new java.io.InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-                        String candidate = reader.readLine();
-                        candidate = candidate == null ? "" : candidate.trim();
-                        if (!candidate.matches("^[0-9a-fA-F:.]{3,64}$")) {
-                            throw new java.io.IOException("Invalid exit IP response");
-                        }
-                        ip = candidate;
+            for (int attempt = 0; attempt < top.niunaijun.blackbox.core.ExitProbeBudget.ATTEMPTS && ip == null; attempt++) {
+                if (attempt > 0) {
+                    try {
+                        Thread.sleep(top.niunaijun.blackbox.core.ExitProbeBudget.PAUSE_MS);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
                         break;
                     }
-                } catch (Throwable error) {
-                    lastProbeError = error;
-                } finally {
-                    if (connection != null) connection.disconnect();
+                }
+                for (String endpoint : endpoints) {
+                    HttpURLConnection connection = null;
+                    try {
+                        connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                        connection.setConnectTimeout(top.niunaijun.blackbox.core.ExitProbeBudget.CONNECT_TIMEOUT_MS);
+                        connection.setReadTimeout(top.niunaijun.blackbox.core.ExitProbeBudget.READ_TIMEOUT_MS);
+                        connection.setUseCaches(false);
+                        connection.setRequestProperty("Connection", "close");
+                        connection.setRequestProperty("User-Agent", "BlackBoxRouteProbe/1");
+                        int code = connection.getResponseCode();
+                        if (code < 200 || code >= 300) throw new java.io.IOException("HTTP " + code);
+                        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                                new java.io.InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                            String candidate = reader.readLine();
+                            candidate = candidate == null ? "" : candidate.trim();
+                            if (!candidate.matches("^[0-9a-fA-F:.]{3,64}$")) {
+                                throw new java.io.IOException("Invalid exit IP response");
+                            }
+                            ip = candidate;
+                            break;
+                        }
+                    } catch (Throwable error) {
+                        lastProbeError = error;
+                        Slog.w(TAG, "exit probe attempt " + (attempt + 1) + " failed for " + endpoint
+                                + ": " + error.getClass().getSimpleName());
+                    } finally {
+                        if (connection != null) connection.disconnect();
+                    }
                 }
             }
             if (ip == null) {
@@ -1366,7 +1542,12 @@ public class BActivityThread extends IBActivityThread.Stub {
 
     private boolean verifyGeoConsistency(Bundle out) {
         boolean ready = verifyGeoConsistencyOnce(out);
-        if (!ready && top.niunaijun.blackbox.core.GuestProxy.refreshGeoConsistency(
+        boolean localeReady = out.getBoolean("localeGuard", true);
+        if (!localeReady) {
+            android.util.Log.w(TAG, "locale drifted to '" + java.util.Locale.getDefault().toLanguageTag()
+                    + "' expected country " + top.niunaijun.blackbox.core.GuestProxy.CURRENT_COUNTRY_ISO);
+        }
+        if ((!ready || !localeReady) && top.niunaijun.blackbox.core.GuestProxy.refreshGeoConsistency(
                 getUserId(), getAppPackageName())) {
             out.putBoolean("geoRefreshed", true);
             ready = verifyGeoConsistencyOnce(out);
@@ -1418,7 +1599,9 @@ public class BActivityThread extends IBActivityThread.Stub {
         out.putBoolean("localeGuard", localeReady);
         out.putBoolean("timezoneGuard", timezoneReady);
         out.putBoolean("locationGuard", locationReady);
-        boolean ready = simReady && localeReady && timezoneReady && locationReady;
+        // Apps may set their own display language, which clears the region. It is not a network
+        // leak, so verifyGeoConsistency re-applies the locale instead of closing the clone.
+        boolean ready = simReady && timezoneReady && locationReady;
         StringBuilder failures = new StringBuilder();
         if (!simReady) failures.append("SIM");
         if (!localeReady) {
@@ -1443,6 +1626,7 @@ public class BActivityThread extends IBActivityThread.Stub {
         boolean udpGuard = false;
         boolean kernelGuard = false;
         boolean sensorGuard = false;
+        top.niunaijun.blackbox.core.DeviceProfile profile = null;
         try {
             String probe = "route-" + android.os.Process.myPid() + "-"
                     + SystemClock.elapsedRealtime() + ".invalid";
@@ -1470,8 +1654,7 @@ public class BActivityThread extends IBActivityThread.Stub {
             if (socket != null) socket.close();
         }
         try {
-            top.niunaijun.blackbox.core.DeviceProfile profile =
-                    top.niunaijun.blackbox.core.DeviceProfile.CURRENT;
+            profile = top.niunaijun.blackbox.core.DeviceProfile.CURRENT;
             String bootPath = "/proc/sys/kernel/random/boot_id";
             String expected = profile == null ? "" : profile.virtualKernelBootId();
             String observed = readFirstLine(bootPath);
@@ -1500,6 +1683,12 @@ public class BActivityThread extends IBActivityThread.Stub {
         out.putBoolean("udpGuard", udpGuard);
         out.putBoolean("kernelGuard", kernelGuard);
         out.putBoolean("sensorGuard", sensorGuard);
+        if (!sensorGuard) {
+            top.niunaijun.blackbox.utils.Slog.w(TAG, "sensor guard inactive: "
+                    + top.niunaijun.blackbox.core.SensorSignalIsolation.inactiveReason()
+                    + " profileFlag=" + (profile != null && profile.sensorIsolationActive)
+                    + " hook=" + top.niunaijun.blackbox.core.SensorSignalIsolation.isActive());
+        }
         StringBuilder failures = new StringBuilder();
         if (!dnsGuard) failures.append("dns");
         if (!udpGuard) {
@@ -1607,7 +1796,8 @@ public class BActivityThread extends IBActivityThread.Stub {
                     
                     java.lang.reflect.Method attachBaseContext = Activity.class.getDeclaredMethod("attachBaseContext", Context.class);
                     attachBaseContext.setAccessible(true);
-                    attachBaseContext.invoke(activity, packageContext);
+                    attachBaseContext.invoke(activity,
+                            top.niunaijun.blackbox.core.SensorSignalIsolation.wrapContext(packageContext));
                     Slog.d(TAG, "Successfully attached package context to activity: " + activity.getClass().getName());
                 } catch (Exception e) {
                     Slog.w(TAG, "Could not attach base context to activity: " + e.getMessage());

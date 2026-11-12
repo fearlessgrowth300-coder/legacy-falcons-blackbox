@@ -76,7 +76,7 @@ class AppsFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         try {
-            viewBinding.stateView.showEmpty()
+            showListState(top.niunaijun.blackbox.core.AppListLoad.loading())
 
             mAdapter =
                 RVAdapter<AppInfo>(requireContext(), AppsAdapter()).bind(viewBinding.recyclerView)
@@ -152,6 +152,12 @@ class AppsFragment : Fragment() {
 
             mAdapter.setItemClickListener { _, data, _ ->
                 try {
+                    val separate = top.niunaijun.blackboxa.profile.WorkspaceModeStore
+                        .launchesInManagedProfile(requireContext(), userID)
+                    if (separate) {
+                        launchInSeparateProfile(data.packageName)
+                        return@setItemClickListener
+                    }
                     showLoading()
                     viewModel.launchApk(data.packageName, userID)
                 } catch (e: Exception) {
@@ -167,6 +173,36 @@ class AppsFragment : Fragment() {
             Log.e(TAG, "Error in onCreateView: ${e.message}")
             
             return View(requireContext())
+        }
+    }
+
+    private fun launchInSeparateProfile(packageName: String) {
+        val controller = top.niunaijun.blackboxa.profile.ManagedProfileController(requireContext())
+        val others = controller.otherProfiles()
+        if (others.isEmpty()) {
+            val reason = controller.blockReason()
+            android.widget.Toast.makeText(
+                requireContext(),
+                reason ?: "Set up the separate Android profile from Manage users before opening this workspace.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            startActivity(android.content.Intent(requireContext(), top.niunaijun.blackboxa.profile.ProfileStatusActivity::class.java))
+            return
+        }
+        val user = others.first()
+        if (!controller.launchPackage(user, packageName)) {
+            android.widget.Toast.makeText(
+                requireContext(),
+                "That app is not in the separate profile yet. Opening the installer there.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            if (!controller.launchInstallerIn(user)) {
+                android.widget.Toast.makeText(
+                    requireContext(),
+                    "Could not open the other profile. Check cross-profile access for Blackbox.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
@@ -475,19 +511,40 @@ class AppsFragment : Fragment() {
             .show()
     }
 
+    private fun showListState(outcome: top.niunaijun.blackbox.core.AppListLoad.Outcome) {
+        val kind = outcome.kind
+        val overlay = viewBinding.listState
+        if (kind == top.niunaijun.blackbox.core.AppListLoad.Kind.READY) {
+            overlay.visibility = View.GONE
+            return
+        }
+        overlay.visibility = View.VISIBLE
+        viewBinding.listProgress.visibility =
+            if (kind == top.niunaijun.blackbox.core.AppListLoad.Kind.LOADING) View.VISIBLE else View.GONE
+        viewBinding.listMessage.text = outcome.message ?: ""
+        viewBinding.listRetry.visibility =
+            if (kind == top.niunaijun.blackbox.core.AppListLoad.Kind.ERROR) View.VISIBLE else View.GONE
+    }
+
     private fun initData() {
         try {
-            viewBinding.stateView.showLoading()
+            showListState(top.niunaijun.blackbox.core.AppListLoad.loading())
+            viewBinding.listRetry.setOnClickListener {
+                showListState(top.niunaijun.blackbox.core.AppListLoad.loading())
+                viewModel.getInstalledApps(userID)
+            }
             viewModel.getInstalledApps(userID)
+            viewModel.loadState.observe(viewLifecycleOwner) { outcome ->
+                try {
+                    if (outcome != null) showListState(outcome)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error observing load state: ${e.message}")
+                }
+            }
             viewModel.appsLiveData.observe(viewLifecycleOwner) {
                 try {
                     if (it != null) {
                         mAdapter.setItems(it)
-                        if (it.isEmpty()) {
-                            viewBinding.stateView.showEmpty()
-                        } else {
-                            viewBinding.stateView.showContent()
-                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error observing apps data: ${e.message}")

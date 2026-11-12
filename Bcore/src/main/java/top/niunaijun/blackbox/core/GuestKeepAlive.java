@@ -104,6 +104,14 @@ public class GuestKeepAlive {
         return sUsers.contains(userId);
     }
 
+    /** Drop one deleted user. Reloads first so the rewrite cannot erase other users. */
+    public static synchronized void forget(int userId) {
+        reload();
+        if (!sUsers.remove(userId)) return;
+        persist();
+        Slog.d(TAG, "removed keep-alive for deleted user " + userId);
+    }
+
     private static void persist() {
         StringBuilder sb = new StringBuilder();
         for (int u : sUsers) { if (sb.length() > 0) sb.append(","); sb.append(u); }
