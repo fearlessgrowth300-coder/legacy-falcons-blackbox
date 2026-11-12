@@ -12,7 +12,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.utils.Slog;
-import top.niunaijun.blackbox.utils.compat.ContextCompat;
 
 /**
  * Rewrites the attribution parcel and op package that {@code AudioTrack.native_setup}
@@ -148,29 +147,17 @@ public final class AudioTrackHost {
             copy = Parcel.obtain();
             copy.appendFrom(source, 0, size);
             copy.setDataPosition(0);
-            Class<?> type = Class.forName("android.content.AttributionSource");
+            // Edit the raw AttributionSourceState. Building an AttributionSource from a
+            // parcel enforces the calling uid/pid, which the clone's faked uid fails.
+            Class<?> type = Class.forName("android.content.AttributionSourceState");
             Object creator = type.getField("CREATOR").get(null);
             Method create = creator.getClass().getMethod("createFromParcel", Parcel.class);
-            Object parsed = create.invoke(creator, copy);
-            if (parsed == null) return null;
-            Object fixed = parsed;
-            try {
-                Method withPackage = type.getMethod("withPackageName", String.class);
-                Object renamed = withPackage.invoke(parsed, host);
-                if (renamed != null) fixed = renamed;
-            } catch (Throwable ignored) {
-            }
-            writeIdentity(fixed, host, uid);
-            ContextCompat.fixAttributionSourceState(fixed, uid, host);
-            String written = String.valueOf(type.getMethod("getPackageName").invoke(fixed));
-            int writtenUid = (Integer) type.getMethod("getUid").invoke(fixed);
-            if (!host.equals(written) || writtenUid != uid) {
-                Slog.w(TAG, "attribution rewrite missed package=" + host + " uid=" + uid);
-                return null;
-            }
+            Object state = create.invoke(creator, copy);
+            if (state == null) return null;
+            writeIdentity(state, host, uid);
             Parcel out = Parcel.obtain();
             try {
-                type.getMethod("writeToParcel", Parcel.class, int.class).invoke(fixed, out, 0);
+                type.getMethod("writeToParcel", Parcel.class, int.class).invoke(state, out, 0);
                 out.setDataPosition(0);
                 return out;
             } catch (Throwable writeFailed) {
@@ -179,7 +166,8 @@ public final class AudioTrackHost {
             }
         } catch (Throwable t) {
             Slog.w(TAG, "attribution rewrite failed package=" + host + " uid=" + uid
-                    + " " + t.getClass().getSimpleName());
+                    + " " + t.getClass().getSimpleName()
+                    + (t.getCause() != null ? " cause=" + t.getCause() : ""));
             return null;
         } finally {
             if (copy != null) copy.recycle();
@@ -196,22 +184,15 @@ public final class AudioTrackHost {
                 pkg, uid, session, output, status, parcelRewritten));
     }
 
-    private static void writeIdentity(Object source, String host, int uid) {
-        try {
-            Field stateField = source.getClass().getDeclaredField("mAttributionSourceState");
-            stateField.setAccessible(true);
-            Object state = stateField.get(source);
-            if (state == null) return;
-            setIdentity(state, host, uid);
-            Field nextField = state.getClass().getDeclaredField("next");
-            nextField.setAccessible(true);
-            Object next = nextField.get(state);
-            if (next instanceof Object[]) {
-                for (Object child : (Object[]) next) {
-                    if (child != null) setIdentity(child, host, uid);
-                }
+    private static void writeIdentity(Object state, String host, int uid) throws Exception {
+        setIdentity(state, host, uid);
+        Field nextField = state.getClass().getDeclaredField("next");
+        nextField.setAccessible(true);
+        Object next = nextField.get(state);
+        if (next instanceof Object[]) {
+            for (Object child : (Object[]) next) {
+                if (child != null) setIdentity(child, host, uid);
             }
-        } catch (Throwable ignored) {
         }
     }
 
